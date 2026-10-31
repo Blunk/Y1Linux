@@ -48,7 +48,7 @@
  "long_files": {
   "Y2Reborn/app/reborn/src/bin/reborn-preview.rs": 2232,
   "Y2Reborn/app/reborn/src/main_loop.rs": 2382,
-  "Y2Reborn/crates/reborn-core/src/lib.rs": 2381,
+  "Y2Reborn/crates/reborn-core/src/lib.rs": 2376,
   "Y2Reborn/crates/reborn-library/src/lib.rs": 2215,
   "Y2Reborn/crates/reborn-platform/src/client.rs": 1558,
   "Y2Reborn/crates/reborn-ui/src/pages.rs": 1917
@@ -190,7 +190,7 @@
  "unsafe": {
   "platform/y2-platform": 47,
   "platform/y2p-core": 76,
-  "reborn/reborn-audio": 22,
+  "reborn/reborn-audio": 21,
   "reborn/reborn-graphics": 16,
   "reborn/reborn-media": 37,
   "reborn/reborn-platform": 36
