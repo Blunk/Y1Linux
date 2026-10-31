@@ -1,6 +1,13 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.10, Baseline 201 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.11, Baseline 202 — 2026-10-31 (latest, published)
+
+Release `1.0.0-beta.9.2.11`, tag `baseline-202`, Linux `6f56156a`, Reborn `9cd6368`, sequence 12700. Reborn only
+(Y2Linux #73 follow-up): Wi-Fi and Bluetooth status icons only while connected (they showed dim while only on), in
+the standard bar and skins' `indicators`; `wifi_connected` needs the radio on. Details:
+[Beta 9.2.11 report](validation/Y2-LINUX-1.0-BETA-9.2.11.md).
+
+## Y2Linux 1.0 Beta 9.2.10, Baseline 201 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.10`, tag `baseline-201`, Linux `1034c242`, Reborn `530f3ae`, sequence 12600 (includes test
 build 200 = 9.2.9). Reborn only: Settings reorganised into Bluetooth, Wi-Fi, Sound, Display, Skin, Customize (Home

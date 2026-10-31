@@ -1,6 +1,10 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, late night): BETA 9.2.10 (BASELINE 201) RELEASE.** Settings reorganised (owner): eight
+> **START HERE (2026-10-31, late night): BETA 9.2.11 (BASELINE 202) RELEASE.** Status icons only while connected
+> (#73 follow-up). Open: #83 (waiting for a 9.2.8+ report), Reborn #75 #76, Output page scrolling. Next free label
+> 203, sequence above 12700, next version 9.2.12 ([Beta 9.2.11 report](../validation/Y2-LINUX-1.0-BETA-9.2.11.md)).
+>
+> Previous entry: **START HERE (2026-10-31, late night): BETA 9.2.10 (BASELINE 201) RELEASE.** Settings reorganised (owner): eight
 > places, Customize → Home Menu / Browsing / Wheel & Buttons, Library, System; pickers and hints; before adding any
 > setting read Y2Reborn `docs/ui/REBORN-SETTINGS-MAP.md` and find its place first. Menus scroll like lists (#74),
 > Music scrolls, Cover Flow year once (#73). 9.2.9 was test build 200 only. Open: #83 (router rejects, waiting for
