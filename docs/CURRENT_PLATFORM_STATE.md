@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.6, Baseline 197 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.7, Baseline 198 — 2026-10-31 (latest, published)
+
+Release `1.0.0-beta.9.2.7`, tag `baseline-198`, Linux `949d4577`, Reborn `38946ea`, sequence 12300. Reborn only:
+wheel clicks whenever no music plays (owner, #77) — with no stream the sink thread opens or keeps a wired sink for
+clicks (10 s after the last; a start reuses it), a hold on the other route is released, a sleep request closes a kept
+sink; the 9.2.6 crackle (silence rewound on a stale pointer → xruns) fixed by never rewinding (`rb_sink_rewind`
+gone). Device-checked: open 40 ms, close 10 s after. Details: [Beta 9.2.7 report](validation/Y2-LINUX-1.0-BETA-9.2.7.md).
+
+## Y2Linux 1.0 Beta 9.2.6, Baseline 197 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.6`, tag `baseline-197`, Linux `b3848c9a`, Reborn `dc335e8`, sequence 12200. Reborn only:
 Y2Reborn #77 (report ec243f8c) — the wired codec has no device pause, so a held stream is drained to SETUP and

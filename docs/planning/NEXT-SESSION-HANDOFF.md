@@ -1,6 +1,13 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, night): BETA 9.2.6 (BASELINE 197) RELEASE.** Y2Reborn #77: wheel clicks failed while
+> **START HERE (2026-10-31, late night): BETA 9.2.7 (BASELINE 198) RELEASE.** Wheel clicks whenever no music plays
+> (also no song: the sink thread opens/keeps a wired sink 10 s, `click_while_idle`, `keep_for_clicks`), crackle fixed
+> (no rewind), sleep request closes a kept sink ([Beta 9.2.7 report](../validation/Y2-LINUX-1.0-BETA-9.2.7.md)).
+> Device-checked by injected wheel keys (printf input_event to /dev/input/event3, KEY_DOWN 108 / KEY_UP 103 after
+> `rebornctl action screen_wake`). Open: Reborn #73 #74 #75 #76; click loudness by ear. Next free label 199, sequence
+> above 12300, next version 9.2.8.
+>
+> Previous entry: **START HERE (2026-10-31, night): BETA 9.2.6 (BASELINE 197) RELEASE.** Y2Reborn #77: wheel clicks failed while
 > paused (`ALSA -77`: the wired codec has no device pause, a held stream is drained to SETUP); now Off/On, clicks only
 > while paused, the stream prepared after the paused music played out
 > ([Beta 9.2.6 report](../validation/Y2-LINUX-1.0-BETA-9.2.6.md)). Owed: the click by ear. Open: Reborn #73 #74 #75
