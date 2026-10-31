@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.11, Baseline 202 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.12, Baseline 203 — 2026-11-01 (latest, published)
+
+Release `1.0.0-beta.9.2.12`, tag `baseline-203`, Linux `7dc369a6`, Reborn `4a052b3`, sequence 12800. Bluetooth off
+no longer waits for `y2-bt-reconnect`'s page of absent headphones (~20 s, then taps switched it on again): off skips
+`bt-operation.lock`, writes `power_off` and runs `bluetoothctl power off`; on still waits; the sleep quiesce gains the
+same. Reborn #76: the skin remap table takes MUTED/DIM from the theme (9.2.3's brighter greys stayed light on light
+skins). Details: [Beta 9.2.12 report](validation/Y2-LINUX-1.0-BETA-9.2.12.md).
+
+## Y2Linux 1.0 Beta 9.2.11, Baseline 202 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.11`, tag `baseline-202`, Linux `6f56156a`, Reborn `9cd6368`, sequence 12700. Reborn only
 (Y2Linux #73 follow-up): Wi-Fi and Bluetooth status icons only while connected (they showed dim while only on), in

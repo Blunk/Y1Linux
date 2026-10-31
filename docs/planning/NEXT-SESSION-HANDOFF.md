@@ -1,6 +1,11 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, late night): BETA 9.2.11 (BASELINE 202) RELEASE.** Status icons only while connected
+> **START HERE (2026-11-01): BETA 9.2.12 (BASELINE 203) RELEASE.** Bluetooth off at once (reconnect page held the
+> lock ~20 s, taps turned it on again), light skins' grey text (Reborn #76). Open: #83 (waiting for a 9.2.8+
+> report), Reborn #75, Output page scrolling. Next free label 204, sequence above 12800, next version 9.2.13
+> ([Beta 9.2.12 report](../validation/Y2-LINUX-1.0-BETA-9.2.12.md)).
+>
+> Previous entry: **START HERE (2026-10-31, late night): BETA 9.2.11 (BASELINE 202) RELEASE.** Status icons only while connected
 > (#73 follow-up). Open: #83 (waiting for a 9.2.8+ report), Reborn #75 #76, Output page scrolling. Next free label
 > 203, sequence above 12700, next version 9.2.12 ([Beta 9.2.11 report](../validation/Y2-LINUX-1.0-BETA-9.2.11.md)).
 >
