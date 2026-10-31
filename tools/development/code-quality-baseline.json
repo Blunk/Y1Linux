@@ -10,7 +10,7 @@
   "reborn/reborn-ui": 12
  },
  "json_lookups": {
-  "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs": 3,
+  "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs": 4,
   "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/recovery.rs": 3,
   "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/scan.rs": 2,
   "Y2Linux/platform/crates/y2-platform/src/commands/mod.rs": 2,
@@ -54,7 +54,7 @@
   "Y2Reborn/crates/reborn-ui/src/pages.rs": 1917
  },
  "long_functions": {
-  "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs::event": 151,
+  "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs::event": 152,
   "Y2Linux/platform/crates/y2-platform/src/commands/observation/bench/measure.rs::run": 174,
   "Y2Linux/platform/crates/y2-platform/src/commands/observation/health.rs::check_from": 175,
   "Y2Linux/platform/crates/y2-platform/src/commands/observation/snapshot/storage.rs::volume": 161,
