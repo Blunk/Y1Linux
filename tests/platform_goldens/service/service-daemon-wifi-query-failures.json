@@ -302,6 +302,7 @@
       "counts": {},
       "interrupted_handshakes": 0,
       "last_disconnect": null,
+      "rejects": {},
       "since_s": 0.0
      },
      "supplicant_observation": {

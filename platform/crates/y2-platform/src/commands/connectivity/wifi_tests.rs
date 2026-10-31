@@ -481,6 +481,28 @@ fn a_handshake_cut_short_here_is_no_password_verdict() {
     assert!(!summary.to_string().contains("aa:bb"));
 }
 
+#[test]
+fn rejects_are_counted_by_the_access_points_status_code() {
+    // #83: the access point refused the association again and again; which code it sent (or none,
+    // a timeout) tells band steering or a full access point from a radio that is not heard.
+    let mut wifi = Evidence::new();
+    for event in [
+        "<3>CTRL-EVENT-ASSOC-REJECT bssid=aa:bb:cc:dd:ee:01 status_code=17",
+        "<3>CTRL-EVENT-ASSOC-REJECT bssid=aa:bb:cc:dd:ee:01 status_code=1 timeout",
+        "<3>CTRL-EVENT-ASSOC-REJECT bssid=aa:bb:cc:dd:ee:01 status_code=1 timeout",
+        "<3>CTRL-EVENT-AUTH-REJECT aa:bb:cc:dd:ee:01 auth_type=0 auth_transaction=2 status_code=1",
+    ] {
+        wifi.event(event);
+    }
+    let summary = wifi.monitor.summary(None).into_sorted();
+    assert_eq!(
+        summary["rejects"],
+        json!({"association 17": 1, "association 1 timeout": 2, "authentication 1": 1})
+    );
+    assert_eq!(summary["counts"]["ASSOC-REJECT"], 3);
+    assert!(!summary.to_string().contains("aa:bb"));
+}
+
 // ---- F52 self-heal ---------------------------------------------------------------------------
 
 /// A player with its /data verified (journal rows are written) and two saved networks in range.

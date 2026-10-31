@@ -55,6 +55,10 @@ pub struct EventMonitor {
     started: f64,
     counts: Vec<(String, u64)>,
     last: Vec<(String, f64)>,
+    /// #83: association and authentication rejects by the access point's status code ("association
+    /// 17", "association 1 timeout"), so a report tells a refusing access point from one that never
+    /// answered.
+    rejects: Vec<(String, u64)>,
     last_disconnect: Value,
     pub(crate) interrupted_handshakes: u64,
     /// The network of the last connect: the one a self-heal selects.
@@ -81,6 +85,7 @@ impl EventMonitor {
             started: root.clock().monotonic(),
             counts: Vec::new(),
             last: Vec::new(),
+            rejects: Vec::new(),
             last_disconnect: Value::Null,
             interrupted_handshakes: 0,
             connected_network: None,
@@ -101,10 +106,15 @@ impl EventMonitor {
         for (kind, at) in &self.last {
             ago = ago.with(kind, round1(now - at));
         }
+        let mut rejects = Object::new();
+        for (status, n) in &self.rejects {
+            rejects = rejects.with(status, *n);
+        }
         Object::new()
             .with("since_s", round1(now - self.started))
             .with("counts", counts)
             .with("ago_s", ago)
+            .with("rejects", rejects)
             .with("last_disconnect", self.last_disconnect.clone())
             .with("interrupted_handshakes", self.interrupted_handshakes)
     }
@@ -213,6 +223,17 @@ impl EventMonitor {
         }
     }
 
+    /// #83: an association or authentication reject, by the access point's status code.
+    fn count_reject(&mut self, kind: &str, body: &str) {
+        let Some(status) = rejection(kind, body) else {
+            return;
+        };
+        match self.rejects.iter_mut().find(|(s, _)| *s == status) {
+            Some(entry) => entry.1 += 1,
+            None => self.rejects.push((status, 1)),
+        }
+    }
+
     /// One supplicant event line (`<3>CTRL-EVENT-… …`).
     pub fn event(&mut self, text: &str) -> Result<(), Failure> {
         let body = text
@@ -234,6 +255,7 @@ impl EventMonitor {
         if EVENT_KINDS.contains(&kind.as_str()) {
             self.count(&kind);
         }
+        self.count_reject(&kind, body);
         if kind == "AUTH-TIMEOUT" {
             self.timed_out = true;
             return Ok(());
@@ -365,6 +387,23 @@ impl EventMonitor {
         }
         publish(root, "wifi-failure", &record).map(drop)
     }
+}
+
+/// An association or authentication reject as its kind and the access point's status code, with
+/// "timeout" when the access point never answered (wpa_supplicant's own timeout); None for any
+/// other event.
+fn rejection(kind: &str, body: &str) -> Option<String> {
+    let what = match kind {
+        "ASSOC-REJECT" => "association",
+        "AUTH-REJECT" => "authentication",
+        _ => return None,
+    };
+    let status = search_value(body, &["status_code"], |c| c.is_ascii_digit(), 5).unwrap_or("?");
+    let timeout = body.split(' ').any(|word| word == "timeout");
+    Some(format!(
+        "{what} {status}{}",
+        if timeout { " timeout" } else { "" }
+    ))
 }
 
 #[cfg(test)]

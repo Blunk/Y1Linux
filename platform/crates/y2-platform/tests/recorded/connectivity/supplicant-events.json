@@ -989,6 +989,9 @@
           "reason": 3,
           "timeout": false
         },
+        "rejects": {
+          "authentication 15": 1
+        },
         "since_s": "<volatile>"
       }
     }
