@@ -46,7 +46,7 @@
   "Y2Reborn/crates/reborn-ui/src/screens.rs": 3
  },
  "long_files": {
-  "Y2Reborn/app/reborn/src/bin/reborn-preview.rs": 2232,
+  "Y2Reborn/app/reborn/src/bin/reborn-preview.rs": 2244,
   "Y2Reborn/app/reborn/src/main_loop.rs": 2386,
   "Y2Reborn/crates/reborn-core/src/lib.rs": 2376,
   "Y2Reborn/crates/reborn-library/src/lib.rs": 2215,
@@ -67,7 +67,7 @@
   "Y2Linux/platform/crates/y2-platform/src/commands/suspend/audit/delta.rs::delta": 271,
   "Y2Linux/platform/crates/y2-platform/src/commands/suspend/receipt.rs::record": 158,
   "Y2Reborn/app/reborn/src/bin/reborn-bench.rs::run": 368,
-  "Y2Reborn/app/reborn/src/bin/reborn-preview.rs::main": 1827,
+  "Y2Reborn/app/reborn/src/bin/reborn-preview.rs::main": 1839,
   "Y2Reborn/app/reborn/src/main_loop.rs::control_requests": 202,
   "Y2Reborn/app/reborn/src/main_loop.rs::run": 546,
   "Y2Reborn/app/reborn/src/main_loop.rs::workers": 172,
@@ -98,7 +98,8 @@
   "Y2Reborn/crates/reborn-ui/src/skin/draw.rs::element": 292,
   "Y2Reborn/crates/reborn-ui/src/views_playing.rs::now_playing": 262,
   "Y2Reborn/crates/reborn-ui/src/views_playlists.rs::page": 157,
-  "Y2Reborn/crates/reborn-ui/src/views_search.rs::page": 167
+  "Y2Reborn/crates/reborn-ui/src/views_search.rs::page": 167,
+  "Y2Reborn/crates/reborn-ui/src/views_settings.rs::radio": 155
  },
  "long_lines": {
   "Y2Linux/platform/crates/y2-platform/src/cli.rs": 15,
