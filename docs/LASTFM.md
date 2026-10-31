@@ -7,7 +7,7 @@ later.
 
 ## Set up
 
-1. **Settings → Last.fm → Connect with Your Phone.** The player shows a QR code.
+1. **Settings → Library → Last.fm → Connect with Your Phone.** The player shows a QR code.
 2. Scan it with your phone's camera. Last.fm's own page opens and asks whether **Y2Reborn** may
    scrobble for you (log in there first if needed). Choose **Allow**.
 3. The player notices by itself within a few seconds: *Scrobbling to Last.fm as …*.
@@ -15,7 +15,7 @@ later.
 No phone at hand? **Sign In with Password** types your Last.fm username and password on the
 player's keyboard instead (see [Your password](#your-password) for how it is handled).
 
-Settings → Last.fm then shows your account and:
+Settings → Library → Last.fm then shows your account and:
 
 | Setting | What it does |
 | --- | --- |
@@ -69,7 +69,7 @@ starts a new one.
   Now Playing sends the same for the current song.
 - The waiting plays live in the player's private data partition (not visible over USB); the log
   file, if you switch it on, is on Internal Storage where you can see it.
-- **Disconnect**, **Settings → About & Updates → Reset Settings** and the platform's settings reset forget the
+- **Disconnect**, **Settings → System → Reset & Maintenance → Reset Reborn Settings** and the platform's settings reset forget the
   sign-in and every waiting play.
 - You can also remove the player's access on Last.fm at any time: last.fm → **Settings →
   Applications → Y2Reborn → Revoke**. The player then says *Sign in to Last.fm again* and keeps

@@ -36,7 +36,7 @@ factory partitions untouched.
 Observed on the maintainer's device (candidates up to 49; 49 was installed over Wi-Fi from its
 public release, and its Firmware-drive install was tested on the device):
 
-- **Over-the-air updates:** Settings → About & Updates checks once a day on Wi-Fi (or on demand);
+- **Over-the-air updates:** Settings → System → Software Update checks once a day on Wi-Fi (or on demand);
   **Update Now** downloads the signed release (Download · Check · Install, with progress, speed
   and time left; Cancel during the download) and restarts into a Y2 recovery image
   that backs up, installs and verifies kernel, rescue and system, then restarts into the new
@@ -67,7 +67,7 @@ public release, and its Firmware-drive install was tested on the device):
 - Headphone level Low/Medium/High (Low is the stock level) and the DAC filter under Settings → Sound →
   Output; headphone profiles that correct 47 common headphones and IEMs (AutoEq), more from an `EQ`
   folder ([Headphone output](docs/HEADPHONE-OUTPUT.md)).
-- **Error reports** (Settings → About & Updates → Error Reports): the player's logs and technical details, with
+- **Error reports** (Settings → System → Error Reports): the player's logs and technical details, with
   personal data removed. Opt-in: sent over Wi-Fi when something goes wrong or with Send Report Now (Beta 8.10), or
   saved to Internal Storage or the SD card to attach to a GitHub issue; progress on screen
   ([Error reports](docs/ERROR-REPORTS.md)).
@@ -78,7 +78,7 @@ public release, and its Firmware-drive install was tested on the device):
   256 kbit/s) and steps down by itself on a weak link.
 - Wi-Fi (2.4 GHz) and **internet radio** (Home → Radio): the radio-browser.info directory
   (popular, by country, by genre, search), favorites and your own `.m3u`/`.pls` lists.
-- **Last.fm scrobbling** (new in Beta 7.7, confirmed on the maintainer's player; Beta 7.8 fixes Now Playing after a pause): Settings → Last.fm →
+- **Last.fm scrobbling** (new in Beta 7.7, confirmed on the maintainer's player; Beta 7.8 fixes Now Playing after a pause): Settings → Library → Last.fm →
   scan a QR code with your phone and allow Y2Reborn. A song counts after half of it or 4 minutes
   of real listening; plays are kept on the player while offline and sent when Wi-Fi is back;
   Now Playing on your profile; an optional Rockbox-style `.scrobbler.log` works without an
@@ -104,10 +104,10 @@ public release, and its Firmware-drive install was tested on the device):
 - **Internal Storage** (5.4 GB) on every player ([how storage works](docs/STORAGE.md)): the stock
   player's own storage is set up by itself at the first start; files that were on it are kept in *Old Player Files* (up to about
   400 MB) or, for a larger old library, shown read-only as *Old Storage* until you choose
-  Settings → Storage → Set Up Internal Storage.
+  Settings → Library → Storage → Set Up Internal Storage.
 - microSD card for music (`/media/sd`): FAT32, exFAT or ext4. Each card is checked read-only
   before use; a card that was only pulled out while in use is used again, a damaged one is left
-  untouched and Settings → Storage says *Needs repair · Check it on a computer*.
+  untouched and Settings → Library → Storage says *Needs repair · Check it on a computer*.
 - Charging over USB (conservative 650 mA default ceiling) with the stock top-off: the battery
   is charged until really full, shows 100 % then counts down 99, 98, …, and keeps its
   percentage across a restart. An offline charging screen when the player is off.

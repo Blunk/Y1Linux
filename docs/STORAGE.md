@@ -50,7 +50,7 @@ If more than about 400 MB is on the old storage, Y2Linux does not touch it:
 
 - Reborn asks once: *Set Up Internal Storage?* — **Cancel** keeps everything as it is.
 - Over USB the old files appear as a read-only drive **Old Storage**: copy them to a computer.
-- **Settings → Storage → Set Up Internal Storage** (it shows how many old files there are) sets
+- **Settings → Library → Storage → Set Up Internal Storage** (it shows how many old files there are) sets
   the storage up when you are ready. This **erases** the old files; the player restarts
   afterwards. It is refused while a computer is connected (unplug first).
 - Until then music goes on the SD card, and the radio firmware has its own drive (below).
@@ -59,9 +59,9 @@ If more than about 400 MB is on the old storage, Y2Linux does not touch it:
 
 The update itself never touches your storage. If the player still has the old storage, the setup
 runs at the **first restart after the update is confirmed** — never during the update's own
-health check (a slow start there could make the update roll back). Until then Settings → Storage
+health check (a slow start there could make the update roll back). Until then Settings → Library → Storage
 says *Restart to finish setting up*. It also waits while the battery is below 25 % and no charger
-is connected; Settings → Storage then says *Connect a charger and restart*, and the setup runs at
+is connected; Settings → Library → Storage then says *Connect a charger and restart*, and the setup runs at
 the next start with the charger connected (any USB port is enough).
 
 ### Safe against power loss
@@ -87,8 +87,8 @@ automatically.
   and checked in the background; when the check passes it is writable as usual. Until then a
   computer sees it read-only.
 - A FAT32 or exFAT card whose check finds **real damage** (or whose background check has not
-  finished after 30 minutes) still plays, but **read-only**: Settings → Storage says *Has errors · Playing only* and nothing is
-  written to it, so the damage cannot spread. **Repair SD Card** (Settings → Storage) fixes it on
+  finished after 30 minutes) still plays, but **read-only**: Settings → Library → Storage says *Has errors · Playing only* and nothing is
+  written to it, so the damage cannot spread. **Repair SD Card** (Settings → Library → Storage) fixes it on
   the player: keep it on the charger or above 30 %. Damaged files may be shortened or removed; the
   rest stays. A copy of the card's tables is kept on the player for support. A computer can repair
   it too (Windows: Properties → Tools → Check; macOS: Disk Utility → First Aid), but First Aid
@@ -134,7 +134,7 @@ folder named `Firmware` on the SD card works too.
 | Action | Music (Internal Storage, SD) | Settings and library | Radio firmware |
 | --- | --- | --- | --- |
 | Update over Wi-Fi | kept | kept | kept |
-| Settings → About & Updates → Reset Settings | kept | settings reset, library kept | kept |
+| Settings → System → Reset & Maintenance → Reset Reborn Settings | kept | settings reset, library kept | kept |
 | Reinstall Y2Linux with SP Flash Tool (first-install package) | kept (Internal Storage is not in the flash package) | erased | erased (copy `system.img` again) |
 | Going back to stock Android | see below | erased | erased |
 

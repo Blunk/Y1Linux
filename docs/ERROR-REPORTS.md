@@ -7,7 +7,7 @@ Beta 8.10 the player can send them over Wi-Fi if you turn that on, and you can a
 ## Send reports over Wi-Fi (Beta 8.10 and later)
 
 After updating to Beta 8.10 the player asks once: **Help Improve Y2Linux?** Choose **Send Reports** or **No Thanks**.
-You can change it any time under Settings → **About & Updates** → **Error Reports** → **Send Error Reports**.
+You can change it any time under Settings → **System** → **Error Reports** → **Send Error Reports**.
 
 With it on:
 
@@ -26,7 +26,7 @@ With it off, nothing is collected or sent.
 
 ## Save a report
 
-1. Settings → **About & Updates** → **Error Reports** → **Save Report**.
+1. Settings → **System** → **Error Reports** → **Save Report**.
 2. Choose **Internal Storage** or **SD Card** (only the ones the player can write to right now are listed).
 
 The report is saved straight away and holds everything; say what went wrong in the GitHub issue you attach it to.

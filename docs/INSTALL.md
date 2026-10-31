@@ -96,7 +96,7 @@ below) the computer shows a separate **Firmware** drive instead; it has room for
 Innioasis's zip, but not for an unpacked copy (about 860 MB, as in the community `rom_y2.zip`):
 Reborn then says *Not Enough Space for That File*, and the SD card's `Firmware` folder is the way.
 
-From now on, updates come over Wi-Fi: Settings → About & Updates → Check for Updates →
+From now on, updates come over Wi-Fi: Settings → System → Software Update → Check for Updates →
 **Update Now** (Beta 7.1 and later; on Beta 7 and earlier: Download Update → Restart and
 Install). The radio firmware stays on the player and is kept
 across every update. How that works: [Recovery and updates](RECOVERY-AND-UPDATES.md).
@@ -172,7 +172,7 @@ cat /run/y2/internal-media-setup.json    # what the setup did at this start
 
 ## Updating
 
-**Over Wi-Fi (recommended):** Settings → About & Updates → Check for Updates → **Update Now**.
+**Over Wi-Fi (recommended):** Settings → System → Software Update → Check for Updates → **Update Now**.
 Use the charger or at least half a battery (the player says so before it downloads anything).
 One screen shows Download, Check and Install; Cancel stops the download. The player then
 restarts, installs (about a minute), restarts into the new version and confirms it; on any
