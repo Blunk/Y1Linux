@@ -1,6 +1,15 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.8, Baseline 199 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.10, Baseline 201 — 2026-10-31 (latest, published)
+
+Release `1.0.0-beta.9.2.10`, tag `baseline-201`, Linux `1034c242`, Reborn `530f3ae`, sequence 12600 (includes test
+build 200 = 9.2.9). Reborn only: Settings reorganised into Bluetooth, Wi-Fi, Sound, Display, Skin, Customize (Home
+Menu, Browsing, Wheel & Buttons), Library, System, with pickers and hints (`customize.rs`; map and placement rule
+in Y2Reborn `docs/ui/REBORN-SETTINGS-MAP.md`; sub-pages reuse existing screens so sessions stay rollback-safe); menus
+scroll on the screen like lists (#74), Music scrolls, Cover Flow's year once (#73). User guides follow the new
+paths. Details: [Beta 9.2.10 report](validation/Y2-LINUX-1.0-BETA-9.2.10.md).
+
+## Y2Linux 1.0 Beta 9.2.8, Baseline 199 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.8`, tag `baseline-199`, Linux `c824964c`, Reborn `a39176e`, sequence 12400. Platform
 diagnostics only (Y2Linux #83, F60 reopened): `EventMonitor::count_reject` records association/authentication

@@ -1,6 +1,13 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, late night): BETA 9.2.8 (BASELINE 199) RELEASE.** Diagnostics for #83 (F60 reopened):
+> **START HERE (2026-10-31, late night): BETA 9.2.10 (BASELINE 201) RELEASE.** Settings reorganised (owner): eight
+> places, Customize → Home Menu / Browsing / Wheel & Buttons, Library, System; pickers and hints; before adding any
+> setting read Y2Reborn `docs/ui/REBORN-SETTINGS-MAP.md` and find its place first. Menus scroll like lists (#74),
+> Music scrolls, Cover Flow year once (#73). 9.2.9 was test build 200 only. Open: #83 (router rejects, waiting for
+> a 9.2.8+ report), Reborn #75 #76, Output page scrolling with many BT devices. Next free label 202, sequence above
+> 12600, next version 9.2.11 ([Beta 9.2.10 report](../validation/Y2-LINUX-1.0-BETA-9.2.10.md)).
+>
+> Previous entry: **START HERE (2026-10-31, late night): BETA 9.2.8 (BASELINE 199) RELEASE.** Diagnostics for #83 (F60 reopened):
 > `supplicant_events.rejects` counts ASSOC/AUTH-REJECT by status code (+timeout). #83 reporter's AP is seen at
 > −55…−61 dBm among ≈50 networks yet rejected 12–20 times; reply posted asking router/band steering. Next report
 > from install a204f45a on 9.2.8 decides. Open: Reborn #73 #74 #75 #76. Next free label 200, sequence above 12400,
