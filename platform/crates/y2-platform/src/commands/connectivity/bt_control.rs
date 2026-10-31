@@ -67,25 +67,29 @@ pub fn intent(root: &Root, operation: &str) -> Result<(), Failure> {
     result.at(&temporary)
 }
 
-/// Switch the radio with the reconnect owner held off: bluetoothctl's result, or the busy refusal
-/// while y2-bt-reconnect holds the operation lock.
+/// Switch the radio with the reconnect owner held off: bluetoothctl's result, or, switching on,
+/// the busy refusal while y2-bt-reconnect holds the operation lock.
 pub fn power(root: &Root, value: &str) -> Result<Object, Failure> {
     if value != "on" && value != "off" {
         return Err(Failure::value("invalid_bluetooth_power"));
     }
     // /run/y2 is not made here: without it the boot never started the radio (FileNotFoundError).
     let path = root.path("/run/y2/bt-operation.lock");
-    let Some(_lock) = y2p_core::lock::try_exclusive(&path).at(&path)? else {
-        // The owner holds the lock while it pages a headset: ≈20 s for headphones that are off,
-        // which held the sleep helper's radio quiesce that long (test build 190). `power_pending`
-        // makes it cancel the page and wait for the intent's deadline, so a retry gets the lock
-        // within a second, as Reborn's own waiting power change does. Advice only: unwritten, the
-        // caller still gets the busy answer and retries as before.
+    let lock = y2p_core::lock::try_exclusive(&path).at(&path)?;
+    if lock.is_none() && value == "on" {
+        // The owner holds the lock while it pages a headset. `power_pending` asks it to cancel
+        // the page and wait for the intent's deadline (advice only: unwritten, the caller still
+        // gets the busy answer and retries as before).
         let _ = intent(root, "power_pending");
         return Ok(Object::new()
             .with("ok", false)
             .with("reason", "platform_bluetooth_operation_in_progress"));
-    };
+    }
+    // Off never waits for the lock: the owner pages headphones that are off for ≈20 s and this
+    // controller does not end the page when it is asked to (owner's player, 9.2.11: Bluetooth
+    // off took that long, and taps meanwhile switched it on again; test build 190: the sleep
+    // helper's radio quiesce waited as long). The radio going off ends the page in BlueZ, and
+    // `power_off` keeps the owner from paging again.
     intent(
         root,
         if value == "on" {
@@ -95,6 +99,7 @@ pub fn power(root: &Root, value: &str) -> Result<Object, Failure> {
         },
     )?;
     let result = command::run(root, &["bluetoothctl", "power", value], 15.0);
+    drop(lock);
     intent(
         root,
         &if result.ok {
