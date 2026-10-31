@@ -359,6 +359,7 @@ Indexed pages: **341**. Explicit scope notices: **228**.
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
+| [Y2Linux 1.0 Beta 9.2.8 report](validation/Y2-LINUX-1.0-BETA-9.2.8.md) | Beta 9.2.8 (Baseline 199): error reports record why a Wi-Fi router refuses the player (#83); written for players' owners |
 | [Y2Linux 1.0 Beta 9.2.7 report](validation/Y2-LINUX-1.0-BETA-9.2.7.md) | Beta 9.2.7 (Baseline 198): wheel clicks whenever no music plays, also with no song, without crackle (Y2Reborn #77); written for players' owners |
 | [Y2Linux 1.0 Beta 9.2.6 report](validation/Y2-LINUX-1.0-BETA-9.2.6.md) | Beta 9.2.6 (Baseline 197): the wheel click while paused, Wheel Click On or Off (Y2Reborn #77); written for players' owners |
 | [Y2Linux 1.0 Beta 9.2.5 report](validation/Y2-LINUX-1.0-BETA-9.2.5.md) | Beta 9.2.5 (Baseline 196): Wi-Fi switched off and on by itself when it keeps missing the saved network after a wake (#83); written for players' owners |

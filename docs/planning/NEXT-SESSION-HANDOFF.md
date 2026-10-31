@@ -1,6 +1,12 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, late night): BETA 9.2.7 (BASELINE 198) RELEASE.** Wheel clicks whenever no music plays
+> **START HERE (2026-10-31, late night): BETA 9.2.8 (BASELINE 199) RELEASE.** Diagnostics for #83 (F60 reopened):
+> `supplicant_events.rejects` counts ASSOC/AUTH-REJECT by status code (+timeout). #83 reporter's AP is seen at
+> −55…−61 dBm among ≈50 networks yet rejected 12–20 times; reply posted asking router/band steering. Next report
+> from install a204f45a on 9.2.8 decides. Open: Reborn #73 #74 #75 #76. Next free label 200, sequence above 12400,
+> next version 9.2.9 ([Beta 9.2.8 report](../validation/Y2-LINUX-1.0-BETA-9.2.8.md)).
+>
+> Previous entry: **START HERE (2026-10-31, late night): BETA 9.2.7 (BASELINE 198) RELEASE.** Wheel clicks whenever no music plays
 > (also no song: the sink thread opens/keeps a wired sink 10 s, `click_while_idle`, `keep_for_clicks`), crackle fixed
 > (no rewind), sleep request closes a kept sink ([Beta 9.2.7 report](../validation/Y2-LINUX-1.0-BETA-9.2.7.md)).
 > Device-checked by injected wheel keys (printf input_event to /dev/input/event3, KEY_DOWN 108 / KEY_UP 103 after

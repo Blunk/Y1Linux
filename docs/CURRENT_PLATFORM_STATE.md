@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.7, Baseline 198 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.8, Baseline 199 — 2026-10-31 (latest, published)
+
+Release `1.0.0-beta.9.2.8`, tag `baseline-199`, Linux `c824964c`, Reborn `a39176e`, sequence 12400. Platform
+diagnostics only (Y2Linux #83, F60 reopened): `EventMonitor::count_reject` records association/authentication
+rejects by status code (and timeout) in network.json `supplicant_events.rejects` and the self-heal journal rows.
+#83's reports: saved AP seen at −55…−61 dBm among ≈50 networks, rejected 12–20 times. Details:
+[Beta 9.2.8 report](validation/Y2-LINUX-1.0-BETA-9.2.8.md).
+
+## Y2Linux 1.0 Beta 9.2.7, Baseline 198 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.7`, tag `baseline-198`, Linux `949d4577`, Reborn `38946ea`, sequence 12300. Reborn only:
 wheel clicks whenever no music plays (owner, #77) — with no stream the sink thread opens or keeps a wired sink for
