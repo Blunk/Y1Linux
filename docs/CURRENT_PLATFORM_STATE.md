@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.5, Baseline 196 — 2026-10-31 (latest, published)
+## Y2Linux 1.0 Beta 9.2.6, Baseline 197 — 2026-10-31 (latest, published)
+
+Release `1.0.0-beta.9.2.6`, tag `baseline-197`, Linux `b3848c9a`, Reborn `dc335e8`, sequence 12200. Reborn only:
+Y2Reborn #77 (report ec243f8c) — the wired codec has no device pause, so a held stream is drained to SETUP and
+9.2.4's clicks failed `ALSA -77`; clicks now prepare the stream after the paused music played out, only while
+paused; Wheel Click Off/On (`when_paused` kept as On's name). Details:
+[Beta 9.2.6 report](validation/Y2-LINUX-1.0-BETA-9.2.6.md).
+
+## Y2Linux 1.0 Beta 9.2.5, Baseline 196 — 2026-10-31 (published)
 
 Release `1.0.0-beta.9.2.5`, tag `baseline-196`, Linux `76bd154d`, Reborn `f45f6bc`, sequence 12100. Platform only:
 F60 (Y2Linux #83, report fa30bf96) — `WifiRecovery::restart_unseen` blocks and unblocks Wi-Fi's rfkill (waiting for

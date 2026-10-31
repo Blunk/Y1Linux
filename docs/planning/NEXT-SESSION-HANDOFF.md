@@ -1,6 +1,12 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-10-31, night): BETA 9.2.5 (BASELINE 196) RELEASE.** F60 (Y2Linux #83, report fa30bf96): after a
+> **START HERE (2026-10-31, night): BETA 9.2.6 (BASELINE 197) RELEASE.** Y2Reborn #77: wheel clicks failed while
+> paused (`ALSA -77`: the wired codec has no device pause, a held stream is drained to SETUP); now Off/On, clicks only
+> while paused, the stream prepared after the paused music played out
+> ([Beta 9.2.6 report](../validation/Y2-LINUX-1.0-BETA-9.2.6.md)). Owed: the click by ear. Open: Reborn #73 #74 #75
+> #76. Next free label 198, sequence above 12200, next version 9.2.7.
+>
+> Previous entry: **START HERE (2026-10-31, night): BETA 9.2.5 (BASELINE 196) RELEASE.** F60 (Y2Linux #83, report fa30bf96): after a
 > wake, scans missed the saved network and Join could not help; the platform now cycles Wi-Fi's rfkill once after
 > 4 blind scans over 60 s (`WifiRecovery::restart_unseen`, journal `wifi_restart`, ≤ every 10 min). Cause unproven
 > (Bluetooth reconnect paging at the same time; y2-bt-reconnect logs no timing). Open: Reborn #73 #74 #75 #76
