@@ -1,17 +1,129 @@
 # Y2Linux
 
-Linux 6.18 and a Buildroot userspace for the **Innioasis Y2** music player
-(MediaTek MT6582), together with the native music player
-[Y2Reborn](https://github.com/SchulzCode/Y2Reborn). It replaces the stock
-Android system on the internal eMMC and leaves the bootloaders, calibration and
-factory partitions untouched.
+**A new life for the Innioasis Y2.** Y2Linux replaces the player's stock Android system with a small, fast Linux
+system built only for music, and with [Reborn](https://github.com/SchulzCode/Y2Reborn), a music player made for the
+Y2's click wheel. Cover Flow, gapless playback, Bluetooth headphones with AAC and LDAC, internet radio, audiobooks,
+Last.fm and sixteen skins. Once it's installed, the player updates itself over Wi-Fi.
 
-> **Status: Y2Linux 1.0 Beta 9.2.13 (Baseline 204, 2026-11-01), public beta.** It runs every day
-> on the maintainer's Y2. Install it once from the ready-made images of the
-> [GitHub releases](https://github.com/SchulzCode/Y2Linux/releases) with SP Flash Tool
-> ([INSTALL](docs/INSTALL.md)); after that the player updates itself over Wi-Fi. Only one
-> hardware revision has been tested (see [Supported hardware](#supported-hardware)). Read
-> [Known issues](#known-issues) before you flash: battery life in sleep is not yet stock-like.
+<p align="center">
+  <img src="docs/images/reborn-hero.png" alt="Reborn on the Y2: the Home screen, Now Playing with its progress wave, and Cover Flow" width="100%">
+</p>
+
+> **Current version: Y2Linux 1.0 Beta 9.2.13** (1 November 2026), a public beta.
+> **[Download it from the releases page](https://github.com/SchulzCode/Y2Linux/releases/latest)** and follow the
+> [install guide](docs/INSTALL.md). It runs every day on the developer's Y2 and on many others, but it is still a
+> beta: read [Known issues](#known-issues) first.
+
+## What you get
+
+**Your music, the way you like to find it**
+- Artists, albums, songs, genres and folders, from the player's 5.4 GB Internal Storage and a microSD card
+  (FAT32, exFAT or ext4). Libraries of 120 000 songs stay quick.
+- Albums in **Cover Flow** or as a grid, covers from the album folder or from the file.
+- **Search** that shows results while you type, across artists, albums, songs and playlists.
+- **Up Next**: a play queue you can edit (Play Next, Add to Queue, move, remove) with the songs you heard before.
+- **Playlists** made on the player or copied from a computer (`.m3u`/`.m3u8`), and a Favorites list with a heart.
+- Japanese, Chinese and Korean titles shown properly.
+
+**Sound**
+- FLAC, ALAC, MP3, AAC/M4A, Opus, Ogg Vorbis, WAV, AIFF, APE and WavPack; gapless playback and crossfade.
+- A five-band equalizer with presets, **profiles for 47 popular headphones and IEMs** (AutoEq) and your own
+  AutoEq files, Normalize Volume (ReplayGain), left/right balance, three headphone levels and the DAC's filters.
+- The internal speaker plays when no headphones are plugged in; plugging them in moves the music to them.
+
+**Wireless**
+- **Bluetooth headphones** with SBC, AAC (256 kbit/s on AirPods) and LDAC, chosen automatically; the player follows
+  your headphones as they connect and disconnect, and its volume controls theirs.
+- **Internet radio** from the free radio-browser.info directory (popular, by country, by genre, search), favorites
+  and your own station lists.
+- **Last.fm scrobbling**: sign in by scanning a QR code with your phone; plays wait on the player while offline.
+
+**Audiobooks**
+- A place of their own on Home: the player remembers your spot in every book, moves by chapter, plays each book at
+  its own speed (0.75–2×) and has a sleep timer. Books stay out of your music shuffle.
+
+**Make it yours**
+- **Sixteen skins**, from Classic to Walkman, Winamp and Bunny Bow, and more you can copy onto the player.
+- Choose what Home shows and in which order, Cover Flow on or off, lists that wrap around, what the wheel does on
+  Now Playing, a wheel click, haptic ticks and what the buttons do while the screen is off.
+
+**Everyday**
+- Copy music over USB (MTP) from Windows, macOS or Linux at about 30 MB/s; the player charges at the same time.
+- Deep sleep when the screen turns off, waking with Power in about half a second; a clock that sets its time zone
+  by itself.
+- **Updates over Wi-Fi** (Settings → System → Software Update). Each one checks itself and goes back to the
+  previous version on its own if anything fails; **Restore Previous System** brings back the version you had.
+- Optional **error reports**: if something goes wrong, the player can send its logs, with personal data removed,
+  so the problem can be found ([how it works](docs/ERROR-REPORTS.md)).
+
+## A look around
+
+<p align="center">
+  <img src="docs/images/reborn-browse.png" alt="Music, an album page and live search results" width="100%">
+  <br><em>Music, an album and live search</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/reborn-listen.png" alt="Internet radio, an audiobook playing and the Up Next queue" width="100%">
+  <br><em>Internet radio, an audiobook and Up Next</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/reborn-settings.png" alt="Settings, the sound output page and a software update downloading" width="100%">
+  <br><em>Settings, where the sound goes, and an update over Wi-Fi</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/reborn-skins.png" alt="Now Playing in eight of the sixteen skins" width="100%">
+  <br><em>Now Playing in eight of the sixteen skins</em>
+</p>
+
+*The pictures are drawn by Reborn's own drawing code with sample music (Beta 9.2.13).*
+
+## Install
+
+You need a computer (Windows or Linux) with SP Flash Tool v5.2032, a USB cable, the Y2Linux first-install package from the
+[latest release](https://github.com/SchulzCode/Y2Linux/releases/latest) and the **Innioasis Y2 firmware package
+v3.2.0** from Innioasis (it is also your way back to stock).
+
+1. Flash the Y2Linux package once with SP Flash Tool (*Download Only*).
+2. Start the player: it sets up its storage, then Reborn starts and music plays.
+3. Copy `system.img` from the Innioasis package into the player's **Firmware** folder over USB. The player takes
+   its Wi-Fi and Bluetooth firmware from it; Y2Linux itself contains none of MediaTek's firmware.
+4. Copy your music onto the player.
+
+Every step in detail: **[Install guide](docs/INSTALL.md)**. After that, updates come over
+Wi-Fi ([how updates work](docs/RECOVERY-AND-UPDATES.md)). More guides: [Storage](docs/STORAGE.md) ·
+[Audiobooks](docs/AUDIOBOOKS.md) · [Headphone output](docs/HEADPHONE-OUTPUT.md) · [Last.fm](docs/LASTFM.md) ·
+[Error reports](docs/ERROR-REPORTS.md) · [Making skins](https://github.com/SchulzCode/Y2Reborn/blob/main/docs/skins.md)
+
+## Known issues
+
+- **Tested hardware.** One hardware revision has been tested closely (see [Supported hardware](#supported-hardware));
+  both screen types the Y2 ships with (GC9503V and ST7701S) are supported.
+- **Battery life in sleep** is about 2 mA overnight on the developer's player (estimated from the battery voltage);
+  stock is about 1.3 mA.
+- **Some players turned off by themselves during playback.** The cause is not found yet. If yours does, start it
+  again and send an error report.
+- **The speaker** uses the same volume as the headphones; its loudest step is the stock speaker's. Start low the
+  first time.
+- **Radio:** stations that stream only in HLS (such as the BBC) don't play yet. FM radio is planned for a later beta.
+- **Going back to stock** doesn't restore the old storage format: copy your music off first; stock Android then has
+  to format that storage ([Storage](docs/STORAGE.md)).
+
+If something doesn't work, please [open an issue](https://github.com/SchulzCode/Y2Linux/issues) and send an error
+report (Settings → System → Error Reports). The full technical list is in the
+[current platform state](docs/CURRENT_PLATFORM_STATE.md), and every release has a plain-language report in
+[docs/validation](docs/DOCUMENTATION_CATALOG.md).
+
+## Supported hardware
+
+The Innioasis Y2 (board `eastaeon82_wet_kk`, MediaTek MT6582, 7.8 GB eMMC) as shipped with Innioasis firmware
+**v3.2.0 FM (2026-08-13)**. Y2Linux replaces Android on the internal storage and leaves the bootloaders,
+calibration and factory partitions untouched. A Y2 with a different board, storage size or partition table is
+**not supported** until someone verifies it; please report your player's details in an issue.
+
+## For developers
 
 | | 1.0 Beta 9.2.13 (Baseline 204) |
 | --- | --- |
@@ -19,210 +131,36 @@ factory partitions untouched.
 | Release / kernel | `1.0.0-beta.9.2.13` / `6.18.56-y2linux-1.0.0-beta.9.2.13` (Linux 6.18 long-term line) |
 | Root filesystem | `2026.08-platform-v1.227` (Buildroot 2026.08) |
 | Platform | `y2-platform` (Rust 1.99): the battery, sleep, Wi-Fi, Bluetooth, storage, update, USB and report services; no Python on the player |
-| Player | Y2Reborn 1.0.0-beta.9.2.13 (Rust 1.99) with the UI v4 design, a play queue with history, Cover Flow, Genres, audiobooks, a sleep timer, a clock, 16 skins, Last.fm scrobbling and 47 headphone profiles |
+| Player | Y2Reborn 1.0.0-beta.9.2.13 (Rust 1.99, OpenGL ES on the Mali-400 GPU through DRM + Lima, FFmpeg, SQLite) |
 | Bluetooth codecs | SBC, AAC (fdk-aac-free) and LDAC |
 | Main components | GCC 15.3 / glibc 2.44, Mesa 26.2.4, FFmpeg 9.0.2, BlueZ 5.87, OpenSSL 4.0.3 |
-| Images built from | Y2Linux `263c67d7`, Y2Reborn `69d8e37` ([Beta 9.2.13 report](docs/validation/Y2-LINUX-1.0-BETA-9.2.13.md): one song from search, long MP3 and AAC files continue at once after sleep, letter scrolling at a real spin, Bluetooth disconnect reasons in error reports; [9.2.12](docs/validation/Y2-LINUX-1.0-BETA-9.2.12.md): Bluetooth switches off at once while saved headphones are off, readable grey text in light skins; [9.2.11](docs/validation/Y2-LINUX-1.0-BETA-9.2.11.md): Wi-Fi and Bluetooth icons only while connected; [9.2.10](docs/validation/Y2-LINUX-1.0-BETA-9.2.10.md): Settings in eight places with clearer names, choice lists and hints, menus that scroll like lists, Music scrolling to its last lists, Cover Flow's year once; [9.2.8](docs/validation/Y2-LINUX-1.0-BETA-9.2.8.md): error reports record why a Wi-Fi router refuses the player; [9.2.7](docs/validation/Y2-LINUX-1.0-BETA-9.2.7.md): wheel clicks whenever no music plays, also with no song, without crackle; [9.2.6](docs/validation/Y2-LINUX-1.0-BETA-9.2.6.md): the wheel click while paused, Wheel Click On or Off; [9.2.5](docs/validation/Y2-LINUX-1.0-BETA-9.2.5.md): Wi-Fi switched off and on by itself when it keeps missing your network after a wake; [9.2.4](docs/validation/Y2-LINUX-1.0-BETA-9.2.4.md): Home and playlists in your own order, an optional click on each wheel step, Cover Flow's text travelling with its cover; [9.2.3](docs/validation/Y2-LINUX-1.0-BETA-9.2.3.md): album release years with an artist's albums oldest first, joining hidden Wi-Fi networks, Cover Flow's position in its title bar with bigger details, track numbers in every skin's album pages and brighter grey text; [9.2.2](docs/validation/Y2-LINUX-1.0-BETA-9.2.2.md): Wi-Fi, Bluetooth, charging and computer icons in every skin, AM/PM for 12-hour clocks, brightness in 5 % steps from 5 % with the wheel, fast scroll by letter only at full speed, equalizer files with up to 20 filters, and sleep with SD cards that ignore the power-off notice; [9.2](docs/validation/Y2-LINUX-1.0-BETA-9.2.md): a press to wake lights the screen at once while saved Bluetooth headphones are off, going to sleep no longer waits for their reconnect, Reset no longer refuses as "plan changed", and Music opens the Music menu in skins without their own Music page; [9.1](docs/validation/Y2-LINUX-1.0-BETA-9.1.md): housekeeping after the rewrite — the player reads the system's messages in the system's own definitions, its largest files and functions split into named parts, and the update download percentage in the Settings list; [9.0](docs/validation/Y2-LINUX-1.0-BETA-9.0.md): the system services rewritten from Python into Rust — about 6–8× less CPU while idle, a third of the memory, answers in milliseconds instead of half a second, 19 MB more free system space, a faster start — plus fixes for the SD card after unplugging a computer, update checks, Restore Previous System on a low battery, DNS after an address renewal and automatic sleep on the charger; [8.43](docs/validation/Y2-LINUX-1.0-BETA-8.43.md): Home items can be hidden, Now Playing goes to where the music came from, leaving Search, no duplicate albums, Album Order, letter-by-letter scrolling, Cover Flow in light skins, an unplug message and more haptic ticks; [8.42](docs/validation/Y2-LINUX-1.0-BETA-8.42.md): Power sleeps without the screen lighting again, large SD cards play at once and are checked in the background, restarts skip unchanged folders, Wi-Fi and Bluetooth start on players with empty factory partitions (#62), and fixes from 40 error reports (hung restarts and updates, Bluetooth Play after a sleep, Wi-Fi "wrong password", battery percent after a restart, sleep at low battery); [8.41](docs/validation/Y2-LINUX-1.0-BETA-8.41.md): the internal speaker plays while no headphones are in (headphones in move the music to them, out pauses), the player detects headphones, and haptic feedback ticks on button presses (Customize > Haptics); [8.40](docs/validation/Y2-LINUX-1.0-BETA-8.40.md): Power Off with a charger plugged in opens the charging screen and charges, as on stock, instead of switching off without charging; [8.39](docs/validation/Y2-LINUX-1.0-BETA-8.39.md): Folders list folders then songs by file name and play in that order, Shuffle Albums, a Sort for playlists, and libraries of 120 000 songs stay quick (folders, Cover Flow, Playlists, first opening of the lists); [8.38](docs/validation/Y2-LINUX-1.0-BETA-8.38.md): sound after Pause → Play on Bluetooth headphones such as AirPods, a smooth progress wave that moves with the music on Now Playing and Home; [8.37](docs/validation/Y2-LINUX-1.0-BETA-8.37.md): a sleep timer from 5 minutes to 3 hours, a search that goes back one step at a time and finds playlists, with See All per section, headers that stay while only the list scrolls; [8.36](docs/validation/Y2-LINUX-1.0-BETA-8.36.md): one menu order everywhere, Customize gains Cover Flow for albums and audiobooks, Album Artists and a seeking wheel, albums opened from a genre show its songs, Add to Queue in Up Next, own covers for songs without an album (#43), genres split like artists (#40), Up Next keeps its place (#32), the *Couldn't Start* screen saves an error report; [8.35](docs/validation/Y2-LINUX-1.0-BETA-8.35.md): louder headphone levels (up to the chip's 1.73 V at High), even volume steps and a safe-volume warning; [8.34](docs/validation/Y2-LINUX-1.0-BETA-8.34.md): MTP no longer hangs when a computer connects (#61); [8.33](docs/validation/Y2-LINUX-1.0-BETA-8.33.md): search as one page that folds its keys into the results, your queue plays first and editing it no longer restarts the song, Up Next with history, Move and Select Songs, Play Next / Add to Queue for whole albums, artists, genres and folders; [8.31](docs/validation/Y2-LINUX-1.0-BETA-8.31.md): left/right balance in Settings → Sound; [8.30](docs/validation/Y2-LINUX-1.0-BETA-8.30.md): Bluetooth headphones follow the player's volume, Previous restarts the song, no audiobooks in music shuffle (#58), Songs plays in list order, no cut-off messages (#55), the GC9503V screen powers down in sleep (#42, #45); [8.29](docs/validation/Y2-LINUX-1.0-BETA-8.29.md): a player whose power chip lacks its temperature calibration charges again; [8.28](docs/validation/Y2-LINUX-1.0-BETA-8.28.md): Wi-Fi says when the password is wrong and saves a network only once it connects; [8.27](docs/validation/Y2-LINUX-1.0-BETA-8.27.md): SD cards with errors play read-only and can be repaired on the player, cards stay clean when taken out; [8.26](docs/validation/Y2-LINUX-1.0-BETA-8.26.md): no power-off loop on a charger after the battery ran down, Wi-Fi on at the first tap after sleeping with Wi-Fi off, more charging current from simple chargers, fuller error reports; [8.25](docs/validation/Y2-LINUX-1.0-BETA-8.25.md): the headphone DAC's crystal starts as on stock and gets more tries when it does not (#52, #54); [8.24](docs/validation/Y2-LINUX-1.0-BETA-8.24.md): the headphone output runs at 44.1 kHz like stock, so the DAC's PLL is never used (#52); [8.23](docs/validation/Y2-LINUX-1.0-BETA-8.23.md): a frozen update install restarts the player by itself and leaves a trail, the headphone DAC is powered as on stock and the output stays open across track changes (#52, #54); [8.22](docs/validation/Y2-LINUX-1.0-BETA-8.22.md): headphones on players with a slow DAC crystal run as on stock (#52, #54), set the date and time by hand (#53), no "Downloading Update…" forever after an interrupted download, music right after waking, Bluetooth after an interrupted codec switch, sleep after a harmless kernel warning, evidence from update boots; [8.21](docs/validation/Y2-LINUX-1.0-BETA-8.21.md): headphone audio on players whose DAC crystal is slow to start (#52, #54), the crystal run as stock runs it; [8.20](docs/validation/Y2-LINUX-1.0-BETA-8.20.md): first #52 attempt (15 µA bias, 5-s open wait); [8.19](docs/validation/Y2-LINUX-1.0-BETA-8.19.md): audiobooks with chapters, progress, speed and a sleep timer, long M4B books, sharper covers, Settings → Customize (wrap-around lists, screen-off buttons); [8.17](docs/validation/Y2-LINUX-1.0-BETA-8.17.md): headphones after a pause and Next (#51), SD cards Windows reads, Bluetooth disconnect, search and connect, SBC on weak links; [8.16](docs/validation/Y2-LINUX-1.0-BETA-8.16.md): large libraries — All Songs plays, rescans in seconds, tags read on several cores; [8.15](docs/validation/Y2-LINUX-1.0-BETA-8.15.md): Japanese, Chinese and Korean text, a Check for Updates that waits for Wi-Fi after waking, a codec choice that survives connecting; [8.14](docs/validation/Y2-LINUX-1.0-BETA-8.14.md): a new random order for every shuffle, a seek that starts small, Shuffle on genres, long titles on Home; [8.13](docs/validation/Y2-LINUX-1.0-BETA-8.13.md): songs listed in Strawberry and other libmtp apps over USB, a Wi-Fi connect fix; [8.12](docs/validation/Y2-LINUX-1.0-BETA-8.12.md): no crash loop from SD-card playlists (#49), no silence after EQ changes (#48), sleep after a refused attempt, fuller error reports; [8.11](docs/validation/Y2-LINUX-1.0-BETA-8.11.md): Internal Storage is set up on battery from 25 % and the screen says when a charger is needed; [8.10](docs/validation/Y2-LINUX-1.0-BETA-8.10.md): charging on players whose charger settings came from other software (#47), error reports over Wi-Fi (opt-in), report progress; [8.8](docs/validation/Y2-LINUX-1.0-BETA-8.8.md): error reports saved to Internal Storage or the SD card; [8.7](docs/validation/Y2-LINUX-1.0-BETA-8.7.md): GC9503V players identified from LK; [8.6](docs/validation/Y2-LINUX-1.0-BETA-8.6.md): audio review fixes, no loudness jumps, less CPU with a profile; [8.5](docs/validation/Y2-LINUX-1.0-BETA-8.5.md): headphone level, headphone profiles, DAC filter; [8.4](docs/validation/Y2-LINUX-1.0-BETA-8.4.md): the dark display after a restart; [8.3](docs/validation/Y2-LINUX-1.0-BETA-8.3.md): the update screens show the seconds left) |
+| Images built from | Y2Linux `263c67d7`, Y2Reborn `69d8e37` ([Beta 9.2.13 report](docs/validation/Y2-LINUX-1.0-BETA-9.2.13.md); every earlier release report is listed in the [documentation catalog](docs/DOCUMENTATION_CATALOG.md)) |
 
-## Getting started
-
-1. **[Install on the Y2](docs/INSTALL.md)**: download the release, flash it once with SP Flash
-   Tool, copy `system.img` from the Innioasis firmware package onto the player for Wi-Fi and
-   Bluetooth. Updates then come over Wi-Fi ([how they work](docs/RECOVERY-AND-UPDATES.md)).
-2. **[Build from source](docs/BUILDING.md)**: host setup, the build, the first-install package.
-
-## What works
-
-Observed on the maintainer's device (candidates up to 49; 49 was installed over Wi-Fi from its
-public release, and its Firmware-drive install was tested on the device):
-
-- **Over-the-air updates:** Settings → System → Software Update checks once a day on Wi-Fi (or on demand);
-  **Update Now** downloads the signed release (Download · Check · Install, with progress, speed
-  and time left; Cancel during the download) and restarts into a Y2 recovery image
-  that backs up, installs and verifies kernel, rescue and system, then restarts into the new
-  version (about a minute; the old version is restored on any failure). It makes room on its own
-  by removing old logs; music and settings are never touched. The release images include the Y2
-  recovery image this needs.
-- **Radio firmware from your own copy:** no image carries MediaTek's firmware; copy `system.img`
-  from the Innioasis package onto the player's *Firmware* drive once and it installs the five
-  radio files itself. Players that already run Y2Linux keep theirs across updates.
-- Software restart works (since 43).
-
-- Boots from internal eMMC: stock preloader and LK, then Linux 6.18 and Buildroot. No SD card needed.
-- Display with GPU (DRM + Lima), buttons, click wheel and the Reborn player UI.
-- **Skins:** Settings → Skin switches between Reborn's own look and 16 shipped
-  skins that restyle every screen (Classic, Nano Glass, Walkman, Terminal, Winamp, Paper,
-  Big Type, Cassette, Neon Night, Zune, Bunny Bow, five Mini colours). A status-bar clock
-  follows the time zone, found automatically over Wi-Fi or chosen under Settings → Display →
-  Time Zone; short messages (a computer connected, files copying, problems) appear in the
-  status bar. More can be added by copying a
-  skin folder into `Skins` on the player over MTP (an existing `Themes` folder still works). Authoring guide:
-  [Reborn skins](https://github.com/SchulzCode/Y2Reborn/blob/main/docs/skins.md).
-- Albums in **Cover Flow** (perspective covers with reflections, the cover flies into the
-  album page; the grid stays available in Settings → Display), and **Genres** in the main list
-  (genre → All Songs and its albums).
-- Album art from the album folder first (cover.jpg, folder.jpg, … and Windows Media Player
-  names), the embedded picture when the folder has none.
-- Wired headphone audio (CS43131 DAC), S16 stereo at 44.1 kHz as on stock; other rates (48, 96 kHz …) are converted.
-- Headphone level Low/Medium/High (Low is the stock level) and the DAC filter under Settings → Sound →
-  Output; headphone profiles that correct 47 common headphones and IEMs (AutoEq), more from an `EQ`
-  folder ([Headphone output](docs/HEADPHONE-OUTPUT.md)).
-- **Error reports** (Settings → System → Error Reports): the player's logs and technical details, with
-  personal data removed. Opt-in: sent over Wi-Fi when something goes wrong or with Send Report Now (Beta 8.10), or
-  saved to Internal Storage or the SD card to attach to a GitHub issue; progress on screen
-  ([Error reports](docs/ERROR-REPORTS.md)).
-- Bluetooth audio; the codec is chosen automatically (SBC, or AAC/aptX/LDAC when the
-  headphones support them and BlueALSA offers them). The output follows the headphones:
-  Bluetooth headphones take over from the jack when they connect, the jack when they leave.
-  AAC runs in the encoder's high-quality mode at the highest rate the headphones accept (AirPods:
-  256 kbit/s) and steps down by itself on a weak link.
-- Wi-Fi (2.4 GHz) and **internet radio** (Home → Radio): the radio-browser.info directory
-  (popular, by country, by genre, search), favorites and your own `.m3u`/`.pls` lists.
-- **Last.fm scrobbling** (new in Beta 7.7, confirmed on the maintainer's player; Beta 7.8 fixes Now Playing after a pause): Settings → Library → Last.fm →
-  scan a QR code with your phone and allow Y2Reborn. A song counts after half of it or 4 minutes
-  of real listening; plays are kept on the player while offline and sent when Wi-Fi is back;
-  Now Playing on your profile; an optional Rockbox-style `.scrobbler.log` works without an
-  account. The player never sees your password with the QR sign-in, keeps only Last.fm's session
-  key in its private storage, and talks to Last.fm over verified HTTPS only. How it works and why
-  it is safe: **[Last.fm scrobbling](docs/LASTFM.md)**.
-- **Audiobooks:** a Home entry of their own once the library holds a book (Audiobooks/Hörbücher
-  folders, `.m4b` files, genre Audiobook); the player remembers your place in every book, moves
-  by chapter (M4B/MP3 chapter marks or one file per chapter), plays each book at its own speed
-  (0.75–2×) and has a sleep timer. Books stay out of your music. How it works:
-  **[Audiobooks](docs/AUDIOBOOKS.md)**.
-- **Sound and playback:** a five-band equalizer with presets (Bass Boost, Vocal, Treble Boost),
-  Normalize Volume (ReplayGain), gapless playback, crossfade (up to 12 s), shuffle (songs or whole
-  albums) and repeat.
-- Search across artists, albums and songs with live results, and a full-screen keyboard (driven by
-  the buttons) for search, Wi-Fi passwords and the Last.fm password sign-in. Radio has station logos, Station Info and each
-  country's top 10 on top of an A–Z list.
-- Playlists (.m3u/.m3u8 from Internal Storage and the SD card, also from a computer) made and
-  changed on the player, with a Favorites playlist and a heart; pause and play continue at once.
-- USB: MTP (internal storage and SD card) with copy, move, rename and delete from Windows, macOS
-  (MTP apps) and Linux, about 30 MB/s to the player and 38 MB/s from it, and SSH/SFTP over USB
-  Ethernet for developers.
-- **Internal Storage** (5.4 GB) on every player ([how storage works](docs/STORAGE.md)): the stock
-  player's own storage is set up by itself at the first start; files that were on it are kept in *Old Player Files* (up to about
-  400 MB) or, for a larger old library, shown read-only as *Old Storage* until you choose
-  Settings → Library → Storage → Set Up Internal Storage.
-- microSD card for music (`/media/sd`): FAT32, exFAT or ext4. Each card is checked read-only
-  before use; a card that was only pulled out while in use is used again, a damaged one is left
-  untouched and Settings → Library → Storage says *Needs repair · Check it on a computer*.
-- Charging over USB (conservative 650 mA default ceiling) with the stock top-off: the battery
-  is charged until really full, shows 100 % then counts down 99, 98, …, and keeps its
-  percentage across a restart. An offline charging screen when the player is off.
-- Deep sleep when the screen times out: the SoC suspends and wakes every 30 min for
-  housekeeping, with the stock suspend settings (CPU at 0.85 V, USB PHY off, wheel controller
-  asleep). Sleep and USB state are written to `/data` so they survive a restart.
-- The display hardware is powered off with the screen, stock hardware clock gating is on,
-  and unused PLLs and clocks are switched off for sleep. The battery percentage uses the stock
-  fuel-gauge curve. A PC port charges at the stock 450 mA even when the PC is off or asleep.
-- In sleep the power-management chip is set to the stock suspend values (audio and unused
-  clocks off, references off) and restored on wake.
-- Waking with Power lights the screen in about half a second; Wi-Fi and Bluetooth come back
-  in the background.
-- A dark screen after the shutdown animation (no white or colour noise). The start-up colour
-  flash fix (the backlight is off while the display is handed over) is in, but not yet confirmed.
-
-## Known issues
-
-- **Battery life in sleep is not yet stock-like.** About 8.3–9.4 mA asleep (stock: about 1.3 mA,
-  ≈0.1 points/h); several stock-parity measures since then still await their overnight
-  measurement. The percentage is estimated from voltage; there is no current sensor.
-  Beta 8.1 finally powers the panel down at screen-off on players with the Sitronix ST7701S
-  panel ([#45](https://github.com/SchulzCode/Y2Linux/issues/45)), Beta 8.30 on GC9503V players
-  too (confirmed by a GC9503V owner: about 1.9 mA overnight instead of 30–37 mA,
-  [#42](https://github.com/SchulzCode/Y2Linux/issues/42)).
-- **Two panel types.** The Y2 ships with a GC9503V or an ST7701S panel; Y2Linux identifies it at
-  start (`/sys/firmware/y2_boot/metadata`, `/sys/module/panel/parameters/panel_kind`).
-- **Rarely a dark display after a restart.** Before Beta 8.4 a restart could leave a display clock
-  gate closed for the bootloader, and the screen stayed dark (an update then rolled itself back).
-  8.4 reopens it as the last step of every restart; this is not yet confirmed over many restarts.
-  If the panel ever stays dark, hold Power for 10 s and start again.
-- **USB after a wake from deep sleep** has worked on every wake since 16, but is not yet confirmed
-  over many wakes. Power off and on if USB stays silent.
-- **Bluetooth:** Beta 2 fixes the reconnect that gave up when the headphones were absent at a wake
-  and the transport race behind the radio-start timeouts; both await their device check. AAC is
-  negotiated with AirPods but not yet confirmed by listening. Beta 6.1 changes how Bluetooth pauses
-  (Beta 6 resumed silently on AirPods); the fix awaits its listening check. There is no
-  wired-headphone detection: the jack is used whenever no Bluetooth headphones are connected.
-- **Updates frozen at "Step 1 of 4".** Some players' installer stops at its first step
-  ([#56](https://github.com/SchulzCode/Y2Linux/issues/56)); the cause is not known yet. Since Beta
-  8.23 the player restarts by itself after two minutes without progress and finishes or undoes the
-  update; on older versions a forced restart is safe. A frozen install leaves a record for error reports.
-- **Headphones on some players (#52, #54).** A few players' DAC crystal starts slowly or stops when
-  skipping a lot. Beta 8.25 starts it with the chip powered as stock does and retries a failed start;
-  both affected players confirmed it fixed.
-- **Install:** the full path from stock has been run on the maintainer's player only. A kernel that
-  hangs before its rescue system runs can only be fixed with SP Flash Tool.
-- **Copying to the player over USB** became about three times faster in Beta 7.11 (receive DMA);
-  pulling the cable during a copy and sleep with it on are not yet tested on this path.
-- **Going back to stock** does not restore the player's old storage format: copy your music off
-  first; stock Android then has to format that storage. Not yet tested ([Storage](docs/STORAGE.md)).
-
-The full list, with evidence and next steps, is in the
-[current platform state](docs/CURRENT_PLATFORM_STATE.md) and the
-reports for 1.0 Beta [8.4](docs/validation/Y2-LINUX-1.0-BETA-8.4.md), [8.3](docs/validation/Y2-LINUX-1.0-BETA-8.3.md), [8.2](docs/validation/Y2-LINUX-1.0-BETA-8.2.md), [8.1](docs/validation/Y2-LINUX-1.0-BETA-8.1.md), [8.0](docs/validation/Y2-LINUX-1.0-BETA-8.0.md), [7.11](docs/validation/Y2-LINUX-1.0-BETA-7.11.md), [7.10](docs/validation/Y2-LINUX-1.0-BETA-7.10.md), [7.9](docs/validation/Y2-LINUX-1.0-BETA-7.9.md), [7.8](docs/validation/Y2-LINUX-1.0-BETA-7.8.md), [7.7](docs/validation/Y2-LINUX-1.0-BETA-7.7.md), [7.6](docs/validation/Y2-LINUX-1.0-BETA-7.6.md), [7.5](docs/validation/Y2-LINUX-1.0-BETA-7.5.md), [7.4](docs/validation/Y2-LINUX-1.0-BETA-7.4.md), [7.3](docs/validation/Y2-LINUX-1.0-BETA-7.3.md), [7.2](docs/validation/Y2-LINUX-1.0-BETA-7.2.md), [7.1](docs/validation/Y2-LINUX-1.0-BETA-7.1.md), [7](docs/validation/Y2-LINUX-1.0-BETA-7.md), [6.3](docs/validation/Y2-LINUX-1.0-BETA-6.3.md), [6.2](docs/validation/Y2-LINUX-1.0-BETA-6.2.md), [6.1](docs/validation/Y2-LINUX-1.0-BETA-6.1.md), [6](docs/validation/Y2-LINUX-1.0-BETA-6.md), [5.1](docs/validation/Y2-LINUX-1.0-BETA-5.1.md), [5](docs/validation/Y2-LINUX-1.0-BETA-5.md), [4.1](docs/validation/Y2-LINUX-1.0-BETA-4.1.md), [4](docs/validation/Y2-LINUX-1.0-BETA-4.md), [3](docs/validation/Y2-LINUX-1.0-BETA-3.md), [2](docs/validation/Y2-LINUX-1.0-BETA-2.md) and
-[1](docs/validation/Y2-LINUX-1.0-BETA-1.md),
-[49](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-49.md) (firmware-free images, flash package, codecs),
-[48](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-48.md) (download screen),
-[47](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-47.md) (DSI clock gating),
-[46](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-46.md) (update space, restart by default, first release),
-[44](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-44.md)/[45](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-45.md) (display read lag, installer screen),
-[43](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-43.md) (software restart fixed),
-[35](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-35.md)–[38](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-38.md) (over-the-air updates),
-[34](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-34.md) (shipped themes, battery display),
-[33](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-33.md) (themes),
-[32](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-32.md) (deep idle during playback),
-[31](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-31.md) (artwork and formats),
-[30](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-30.md) (storage and decode speed),
-[28](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-28.md)/[29](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-29.md) (stock battery percentage and top-off),
-[27](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-27.md) (stock panel, VGP2 and VSYS sleep),
-[26](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-26.md) (Bluetooth codecs),
-[25](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-25.md) (Cover Flow frame gate),
-[24](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-24.md) (frame pacing),
-[23](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-23.md) (Cover Flow and Genres),
-[21](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-21.md)/[22](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-22.md) (display power transitions),
-[19](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-19.md)/[20](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-20.md) (PMIC_WRAP and UART1 clocks),
-[18](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-18.md) (stock PMIC sleep settings),
-[17](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-17.md) (modem gate, faster wake),
-[16](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-16.md) (stock sleep parity),
-[15](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-15.md) (newest versions),
-[14](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-14.md) (persistent sleep diagnostics) and
-[13](docs/validation/Y2-PLATFORM-V1-POWER-FINAL-13.md) (stock suspend power parity).
-
-## Supported hardware
-
-One device has been tested: Innioasis Y2, board `eastaeon82_wet_kk`, MT6582,
-7.8 GB eMMC, shipped with Innioasis firmware **v3.2.0 FM (2026-08-13)**. The
-build and packaging tools check the stock firmware files by SHA-256. A Y2 with a
-different board, eMMC size or partition table is **not supported** until someone
-verifies it. Please report your device's details in an issue.
-
-## Repository layout
+- **[Build from source](docs/BUILDING.md)**: host setup, the build, the first-install package and releases.
+- **[Coding standard](docs/CODING-STANDARD.md)** for the platform and Reborn; `tools/development/platform-gate.sh`
+  must print `GATE OK` before every commit.
+- Documentation starts at [docs/README.md](docs/README.md).
 
 | Path | Contents |
 | --- | --- |
 | `kernel/` | Kernel configuration, device tree, platform drivers (`kernel/platform`, `kernel/usb`, `kernel/audio`) and the overlay patches applied to Linux 6.18 (`kernel/patches`) |
 | `buildroot/` | Buildroot external tree: defconfig, board overlays, local packages (Reborn, connectivity, MTP, updater) |
 | `initramfs/` | Boot-time rescue and handover to the internal root filesystem |
-| `tools/build/` | Locked, network-isolated kernel build environment (bubblewrap) |
-| `tools/production/` | Production build, packaging and validation, plus on-device helper sources |
 | `platform/` | `y2-platform`, the on-device platform service and CLI (Rust; [CONTRACT.md](platform/CONTRACT.md)) |
+| `tools/build/` | Locked, network-isolated kernel build environment (bubblewrap) |
+| `tools/production/` | Production build, packaging, validation and releases |
 | `tools/host/` | Tools for the owner's or a tester's computer (transfer, diagnostics, qualification, audio fixtures) |
 | `tools/connectivity/` | Wi-Fi/Bluetooth services and stock firmware provisioning |
 | `tests/` | Host and container test suites (`tools/production/tests.sh`) |
-| `docs/` | Documentation; start at [docs/README.md](docs/README.md) |
+| `docs/` | Documentation |
 
 ## Licence
 
-Each source file carries its own SPDX licence identifier; the kernel drivers and
-patches are GPL-2.0, and Y2Reborn is MIT. Each release carries the corresponding
-sources of the packages in its images (Buildroot legal-info and the Linux archive).
-The proprietary MediaTek radio firmware is **not** in this repository or in any
-image: each player takes it from its owner's copy of the Innioasis firmware package
-([INSTALL](docs/INSTALL.md#why-the-innioasis-package)). Bluetooth codecs in public
-images: SBC, AAC (fdk-aac-free) and LDAC.
+Each source file carries its own SPDX licence identifier; the kernel drivers and patches are GPL-2.0, and Y2Reborn
+is MIT. Each release carries the corresponding sources of the packages in its images (Buildroot legal-info and the
+Linux archive). The proprietary MediaTek radio firmware is **not** in this repository or in any image: each player
+takes it from its owner's copy of the Innioasis firmware package
+([why](docs/INSTALL.md#why-the-innioasis-package)).
 
-This project is not affiliated with Innioasis or MediaTek. Flashing replaces the
-stock system; you do it at your own risk.
+This project is not affiliated with Innioasis or MediaTek. Flashing replaces the stock system; you do it at your
+own risk.
