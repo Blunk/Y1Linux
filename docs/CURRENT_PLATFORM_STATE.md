@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.12, Baseline 203 — 2026-11-01 (latest, published)
+## Y2Linux 1.0 Beta 9.2.13, Baseline 204 — 2026-11-01 (latest, published)
+
+Release `1.0.0-beta.9.2.13`, tag `baseline-204`, Linux `263c67d7`, Reborn `69d8e37`, sequence 12900. Reborn only:
+a song picked in search plays alone (Reborn #79); long MP3/raw AAC files resume from kept seek points instead of
+reading from the start (Reborn #80, `native/seek_index.c`, memory only); letter fast scroll at 3 wheel steps again
+(Y2Linux #64; 9.2.2's 4 steps were out of reach); `peer_disconnected` logs BlueZ's disconnect reason. Details:
+[Beta 9.2.13 report](validation/Y2-LINUX-1.0-BETA-9.2.13.md).
+
+## Y2Linux 1.0 Beta 9.2.12, Baseline 203 — 2026-11-01 (published)
 
 Release `1.0.0-beta.9.2.12`, tag `baseline-203`, Linux `7dc369a6`, Reborn `4a052b3`, sequence 12800. Bluetooth off
 no longer waits for `y2-bt-reconnect`'s page of absent headphones (~20 s, then taps switched it on again): off skips
