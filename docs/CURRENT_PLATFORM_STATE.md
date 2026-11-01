@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.13, Baseline 204 — 2026-11-01 (latest, published)
+## Y2Linux 1.0 Beta 9.2.14, Baseline 205 — 2026-11-01 (latest, published)
+
+Release `1.0.0-beta.9.2.14`, tag `baseline-205`, Linux `6f391669`, Reborn `786eccb`, sequence 13000. Reborn only:
+the Bluetooth sink is kept between streams like the wired one (Reborn `3435238`, F61, report c0fe2638: quick station
+changes reopened BlueALSA's PCM twice per station, an AVDTP Start timed out and BlueZ ended the link). GitHub issue
+forms replace blank issues in both repositories. Installed on the developer's player from 9.2.13 (Acknowledged);
+six quick skips on AirPods Pro played in the kept sink and were heard. Details: [Beta 9.2.14 report](validation/Y2-LINUX-1.0-BETA-9.2.14.md).
+
+## Y2Linux 1.0 Beta 9.2.13, Baseline 204 — 2026-11-01 (published)
 
 Release `1.0.0-beta.9.2.13`, tag `baseline-204`, Linux `263c67d7`, Reborn `69d8e37`, sequence 12900. Reborn only:
 a song picked in search plays alone (Reborn #79); long MP3/raw AAC files resume from kept seek points instead of

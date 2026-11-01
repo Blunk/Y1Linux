@@ -1,6 +1,13 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-01, afternoon): BETA 9.2.13 (BASELINE 204) RELEASE.** Search song plays alone (Reborn #79),
+> **START HERE (2026-11-01, evening): BETA 9.2.14 (BASELINE 205) RELEASE.** Bluetooth sink kept between streams
+> (F61, report c0fe2638: quick radio station changes dropped the earbuds after an AVDTP Start timeout). Issue forms
+> replace blank issues (both repositories; labels performance/power/sound/wifi/update). Six quick skips on the owner's
+> AirPods Pro played in the kept sink and were heard. Owed: the reporter's confirmation (owner relays it), Y2Reborn
+> #85 (slow Settings with a large library, details asked). Next free label 206, sequence above 13000, next version
+> 9.2.15 ([Beta 9.2.14 report](../validation/Y2-LINUX-1.0-BETA-9.2.14.md)).
+>
+> Previous entry: **START HERE (2026-11-01, afternoon): BETA 9.2.13 (BASELINE 204) RELEASE.** Search song plays alone (Reborn #79),
 > long MP3/AAC resume from kept seek points (Reborn #80), letter scroll at 3 steps (#64), Bluetooth `peer_disconnected`
 > reasons. Owed on a player: resume time after sleep, letter-scroll feel. Open: #83 is now a hardware report (USB-C
 > heat, answered), Reborn #75. Next free label 205, sequence above 12900, next version 9.2.14
