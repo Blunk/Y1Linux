@@ -108,13 +108,26 @@
  "stdout": [],
  "tree": {
   "added": {
+   "/run/y2/bt-codec-ceiling": {
+    "content": {
+     "aac_max_bps": 192000,
+     "reason": "wifi_radio_on",
+     "sbc_bitpool_percent": 85
+    },
+    "mode": "0o600",
+    "type": "file"
+   },
    "/run/y2/coexistence.json": {
     "content": {
      "bluetooth_link": {
       "state": "Connected"
      },
      "boot_id": "boot-a",
-     "codec_bitrate_override": null,
+     "codec_bitrate_override": {
+      "aac_max_bps": 192000,
+      "reason": "wifi_radio_on",
+      "sbc_bitpool_percent": 85
+     },
      "cpu_pressure": "some avg10=0.00",
      "monotonic_s": "<volatile>",
      "provisional": true,
@@ -262,7 +275,11 @@
        "state": "Connected"
       },
       "boot_id": "boot-a",
-      "codec_bitrate_override": null,
+      "codec_bitrate_override": {
+       "aac_max_bps": 192000,
+       "reason": "wifi_radio_on",
+       "sbc_bitpool_percent": 85
+      },
       "cpu_pressure": "some avg10=0.00",
       "monotonic_s": "<volatile>",
       "provisional": true,

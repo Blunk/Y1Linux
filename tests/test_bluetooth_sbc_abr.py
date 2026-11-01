@@ -86,6 +86,48 @@ int main(void) {
 }
 ''')
 
+    def test_the_ceiling_keeps_off_the_top_level(self):
+        run_c(UNUSED_OK + header() + r'''
+#include <assert.h>
+#define P 640u
+int main(void) {
+ struct y2_sbc_abr a;
+ y2_sbc_abr_init(&a, 53, 2, 44100, true);
+ unsigned calm = (a.calm_needed + P - 1) / P;
+ /* Wi-Fi on: 53 -> 45 at once; congestion still steps further down. */
+ assert(y2_sbc_abr_ceiling(&a, true) == 45 && a.level == 1);
+ assert(y2_sbc_abr_ceiling(&a, true) == 0);
+ assert(y2_sbc_abr_update(&a, 2, false, 10000) == 35);
+ /* Quiet: back up to the ceiling, never to the top while it is on. */
+ for (unsigned i = 0; i < calm - 1; i++) assert(y2_sbc_abr_update(&a, 0, false, P) == 0);
+ assert(y2_sbc_abr_update(&a, 0, false, P) == 45);
+ for (unsigned i = 0; i < 3 * calm; i++) assert(y2_sbc_abr_update(&a, 0, false, P) == 0);
+ assert(a.level == 1);
+ /* Wi-Fi off after a quiet stretch: the top level at the next packet. */
+ assert(y2_sbc_abr_ceiling(&a, false) == 0);
+ assert(y2_sbc_abr_update(&a, 0, false, P) == 53 && a.level == 0);
+ /* Wi-Fi off right after congestion: back up only after ~10 s of quiet. */
+ assert(y2_sbc_abr_ceiling(&a, true) == 45);
+ for (int i = 0; i < 20; i++) y2_sbc_abr_update(&a, 0, false, P);
+ assert(y2_sbc_abr_update(&a, 2, false, P) == 35 && a.level == 2);
+ assert(y2_sbc_abr_ceiling(&a, false) == 0);
+ for (unsigned i = 0; i < calm - 1; i++) assert(y2_sbc_abr_update(&a, 0, false, P) == 0);
+ assert(y2_sbc_abr_update(&a, 0, false, P) == 45);
+ for (unsigned i = 0; i < calm - 1; i++) assert(y2_sbc_abr_update(&a, 0, false, P) == 0);
+ assert(y2_sbc_abr_update(&a, 0, false, P) == 53 && a.level == 0);
+ /* Not adapting (--sbc-abr off): the ceiling applies and lifts at once. */
+ y2_sbc_abr_init(&a, 53, 2, 44100, false);
+ assert(y2_sbc_abr_ceiling(&a, true) == 45 && y2_sbc_abr_update(&a, 9, true, P) == 0);
+ assert(y2_sbc_abr_ceiling(&a, false) == 53);
+ /* A single level (peer minimum = configured): nothing to cap. */
+ y2_sbc_abr_init(&a, 53, 53, 44100, true);
+ assert(y2_sbc_abr_ceiling(&a, true) == 0 && a.level == 0);
+ /* Two levels: the ceiling is the lower one. */
+ y2_sbc_abr_init(&a, 53, 46, 44100, true);
+ assert(y2_sbc_abr_ceiling(&a, true) == 46);
+}
+''')
+
     def test_encoder_uses_the_decisions_once_per_packet(self):
         patch = PATCH.read_text()
         sbc = patch.split('+++ b/src/a2dp-sbc.c\n', 1)[1].split('\n--- ', 1)[0]
@@ -96,6 +138,9 @@ int main(void) {
         self.assertEqual(added.count(
             'y2_sbc_abr_init(&abr, sbc.bitpool, configuration->min_bitpool, rate, config.sbc_abr)'), 2)
         self.assertIn('sbc.bitpool = (uint8_t)next;', added)
+        # The ceiling: first packet, then about once a second, also after a re-init.
+        self.assertEqual(added.count('ceiling_elapsed = rate;'), 2)
+        self.assertIn('y2_sbc_abr_ceiling(&abr, y2_codec_ceiling())', added)
         self.assertIn('errno == EAGAIN', added)
         main = patch.split('+++ b/src/main.c\n', 1)[1].split('\n--- ', 1)[0]
         self.assertIn('config.sbc_abr = true;', main)

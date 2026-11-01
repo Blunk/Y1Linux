@@ -70,10 +70,10 @@
     "pending_restart": true,
     "requested": {
      "aac_abr": true,
-     "aac_quality": "high",
+     "aac_quality": "standard",
      "experimental": false,
      "ldac_abr": true,
-     "ldac_quality": "standard",
+     "ldac_quality": "mobile",
      "sbc_abr": true,
      "sbc_quality": "high",
      "schema": 1
@@ -138,10 +138,10 @@
     "ldac_quality_index": 1,
     "preference": {
      "aac_abr": true,
-     "aac_quality": "high",
+     "aac_quality": "standard",
      "experimental": false,
      "ldac_abr": true,
-     "ldac_quality": "standard",
+     "ldac_quality": "mobile",
      "sbc_abr": true,
      "sbc_quality": "high",
      "schema": 1

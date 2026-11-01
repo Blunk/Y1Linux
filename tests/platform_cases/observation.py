@@ -233,8 +233,8 @@ def observation(pcm=None, devices=None, powered=True, adapters=1, bluealsa_manag
 CODEC_LIVE = {
     '/run/y2/bluealsa.pid': '777\n', '/proc/777/cmdline': '/usr/bin/bluealsad\0-p\0a2dp-source\0--sbc-quality=high\0',
     '/run/y2/codec-runtime.json': json.dumps({'boot_id': BOOT, 'arguments': ['-p', 'a2dp-source'], 'settings': {
-        'schema': 1, 'experimental': False, 'sbc_quality': 'high', 'sbc_abr': True, 'ldac_quality': 'standard',
-        'ldac_abr': True, 'aac_quality': 'high', 'aac_abr': True}}),
+        'schema': 1, 'experimental': False, 'sbc_quality': 'high', 'sbc_abr': True, 'ldac_quality': 'mobile',
+        'ldac_abr': True, 'aac_quality': 'standard', 'aac_abr': True}}),
     '/run/y2/bt-reconnect.json': fresh({'boot_id': BOOT, 'state': 'Connected'}, 'monotonic_us', us=True),
 }
 REBORN = ['/usr/bin/rebornctl', 'metrics', '--json']

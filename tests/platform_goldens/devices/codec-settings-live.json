@@ -8,10 +8,10 @@
   "apply_action": "restart_player",
   "effective": {
    "aac_abr": true,
-   "aac_quality": "high",
+   "aac_quality": "standard",
    "experimental": false,
    "ldac_abr": true,
-   "ldac_quality": "standard",
+   "ldac_quality": "mobile",
    "sbc_abr": true,
    "sbc_quality": "high",
    "schema": 1
@@ -20,10 +20,10 @@
   "pending_restart": false,
   "requested": {
    "aac_abr": true,
-   "aac_quality": "high",
+   "aac_quality": "standard",
    "experimental": false,
    "ldac_abr": true,
-   "ldac_quality": "standard",
+   "ldac_quality": "mobile",
    "sbc_abr": true,
    "sbc_quality": "high",
    "schema": 1

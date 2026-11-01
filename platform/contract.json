@@ -1210,6 +1210,7 @@
     "/run/y2/wifi-events.json",
     "/run/y2/wifi-power.json",
     "/run/y2/coexistence.json",
+    "/run/y2/bt-codec-ceiling",
     "/run/y2/bt-reconnect.json",
     "/etc/y2linux/bluetooth-codecs.json",
     "/data/bluetooth/codec-policy.json",
@@ -8825,7 +8826,7 @@
      "supported"
     ],
     "important_fields": {
-     "requested": "validated policy in key order schema(1), experimental, sbc_quality, sbc_abr, ldac_quality, ldac_abr, aac_quality, aac_abr (defaults high/true/standard/true/high/true; experimental default = inventory.private_integration_enabled is True)",
+     "requested": "validated policy in key order schema(1), experimental, sbc_quality, sbc_abr, ldac_quality, ldac_abr, aac_quality, aac_abr (defaults high/true/mobile/true/standard/true since Beta 9.2.16, Y2Reborn #87; experimental default = inventory.private_integration_enabled is True)",
      "effective": "codec-runtime.json settings when bluealsad pid live (argv[0] basename bluealsad and every recorded argument in cmdline) and same boot, else null",
      "effective_scope": "\"daemon_start_arguments\"",
      "pending_restart": "effective != requested",
@@ -9595,7 +9596,7 @@
      "status wifi reason (observe.wifi_state observe.py:486-506 + service.py:297-300)": "radio_off, supplicant_unavailable, <credential.error> (wrong_credentials), <wifi-failure.error within 120 s> or \"not_authenticated\", dhcp_timeout|dhcp_nak|lease_configuration_failed, no_address, no_default_route, dns_unavailable, authentication_timeout (Associating >30 s). Reborn wifi.rs:284-296 / client.rs:445 map only wrong_credentials|wrong_key|*password* to WrongPassword; handshake_failed deliberately maps to Other (F52). \"wrong_key\" is never emitted by the platform any more.",
      "journal rows (wifi-journal.jsonl)": "wifi_reselect {state,idle_s,tries,saved,in_range,scan_entries,temp_disabled,network_id,last_connected,ok:[bool,bool],events}, wifi_rescan {...,ok:bool,events}; events and network.json supplicant_events carry rejects {association|authentication <status_code>[ timeout]: count} (#83, no BSSID), wifi_restart {unseen_s,not_found,saved,scan_entries,blocked,gone,unblocked,events} (F60: Wi-Fi rfkill blocked until wlan0 went, then unblocked; >=4 NETWORK-NOT-FOUND over >=60 s while SCANNING/DISCONNECTED/INACTIVE and no saved network in the scan, at most every 600 s until CONNECTED), wifi_recovered {tries,seconds}, wifi_interface_renewed (connectivity daemon)",
      "/run/y2/dns.json": "{epoch, ok, address, bssid, probe_host, reason null|\"dns_unavailable\", schema, boot_id, monotonic_s}; discarded if epoch/bssid/ips/route changed during the probe",
-     "/run/y2/coexistence.json": "{schema, boot_id, monotonic_s, wifi_active, wifi_bytes_per_second, wifi_heavy_transfer (>=1 MiB/s), cpu_pressure (raw /proc/pressure/cpu), bluetooth_link (bt-reconnect.json), provisional true, codec_bitrate_override null}",
+     "/run/y2/coexistence.json": "{schema, boot_id, monotonic_s, wifi_active, wifi_bytes_per_second, wifi_heavy_transfer (>=1 MiB/s), cpu_pressure (raw /proc/pressure/cpu), bluetooth_link (bt-reconnect.json), provisional true, codec_bitrate_override null | {reason \"wifi_radio_on\", aac_max_bps 192000, sbc_bitpool_percent 85} while the Wi-Fi state is not Off}; /run/y2/bt-codec-ceiling (that object, 0600) exists exactly then, created/removed by each pass; BlueALSA (patches 0002/0003, y2-codec-ceiling.h) checks only its presence about once a second: CBR AAC <= 192 kbit/s, SBC off its top bit-pool (Y2Reborn #87)",
      "/run/y2/usb-transfer.json": "schema org.y2linux.usb-transfer/v1; state Unavailable(no_unique_udc)|Failed(responder_restart_budget|<error text>)|Starting(responder_restarting|waiting_for_descriptors|null)|Disconnected|Ready|Copying|Unavailable(null, mtp without views); keys boot_id, reason, mode, cable, functions, views, filesystem_owner \"linux\", block_export false, refresh_generation, active, error, restarts; written only when changed"
     },
     "failure_shapes": []

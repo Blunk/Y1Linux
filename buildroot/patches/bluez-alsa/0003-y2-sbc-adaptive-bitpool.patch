@@ -11,6 +11,12 @@ as sized for the configured bit-pool. EncoderStats (patch 0001) reports the
 live Bitpool, BitrateKbps, AbrEnabled and AbrAdjustments.
 Decisions: src/y2-sbc-abr.h.
 
+While the platform's ceiling is on (src/y2-codec-ceiling.h, patch 0002:
+Wi-Fi shares the radio) the top level is not used (53 -> 45): a higher
+level steps down at once; when it turns off the top level returns once
+the link has been quiet ~10 s, at once if it already was or without
+--sbc-abr.
+
 --- a/src/ba-config.h
 +++ b/src/ba-config.h
 @@ -160,6 +160,8 @@
@@ -73,15 +79,16 @@ Decisions: src/y2-sbc-abr.h.
  #include <sys/param.h>
  #include <sys/types.h>
  
-@@ -36,6 +38,7 @@
+@@ -36,6 +38,8 @@
  #include "shared/ffb.h"
  #include "shared/log.h"
  #include "shared/rt.h"
++#include "y2-codec-ceiling.h"
 +#include "y2-sbc-abr.h"
  
  static const struct a2dp_bit_mapping a2dp_sbc_channels[] = {
  	{ SBC_CHANNEL_MODE_MONO, .ch = { 1, a2dp_channel_map_mono } },
-@@ -150,7 +153,10 @@
+@@ -150,7 +154,13 @@
  	g_atomic_int_set(&t_pcm->encoder_active, 0);
  	g_atomic_int_set(&t_pcm->encoder_adjustments, 0);
  	g_atomic_int_set(&t_pcm->encoder_errors, 0);
@@ -90,19 +97,23 @@ Decisions: src/y2-sbc-abr.h.
 +	struct y2_sbc_abr abr;
 +	y2_sbc_abr_init(&abr, sbc.bitpool, configuration->min_bitpool, rate, config.sbc_abr);
 +	g_atomic_int_set(&t_pcm->encoder_abr, abr.enabled);
++	/* PCM frames since the ceiling was last looked at: the first packet looks
++	 * (y2-codec-ceiling.h), then about once a second. */
++	unsigned int ceiling_elapsed = rate;
  	g_atomic_int_set(&t_pcm->encoder_quality, config.sbc_quality);
  	g_atomic_int_set(&t_pcm->encoder_bitpool, sbc.bitpool);
  	g_atomic_int_set(&t_pcm->encoder_bitrate_kbps,
-@@ -210,6 +216,8 @@
+@@ -210,6 +220,9 @@
  				sbc_reinit_a2dp(&sbc, 0, configuration, sizeof(*configuration));
  				sbc.bitpool = sbc_a2dp_get_bitpool(configuration, config.sbc_quality);
  				sbc.endian = SBC_LE;
 +				y2_sbc_abr_init(&abr, sbc.bitpool, configuration->min_bitpool, rate, config.sbc_abr);
 +				g_atomic_int_set(&t_pcm->encoder_bitpool, sbc.bitpool);
++				ceiling_elapsed = rate;
  				continue;
  			}
  			error("PCM poll and read error: %s", strerror(errno));
-@@ -260,6 +268,12 @@
+@@ -260,6 +273,12 @@
  			rtp_state_new_frame(&rtp, rtp_header);
  			rtp_media_header->frame_count = sbc_frames;
  
@@ -115,14 +126,20 @@ Decisions: src/y2-sbc-abr.h.
  			ssize_t len = ffb_blen_out(&bt);
  			if ((len = io_bt_write(t_pcm, bt.data, len)) <= 0) {
  				if (len == -1)
-@@ -267,6 +281,20 @@
+@@ -267,6 +286,26 @@
  				goto fail;
  			}
  
 +			/* io_bt_write() leaves EAGAIN when it had to wait for room. A new
 +			 * bit-pool applies from the next encoded frame on. */
-+			const unsigned int next = y2_sbc_abr_update(&abr,
++			unsigned int next = y2_sbc_abr_update(&abr,
 +					(unsigned int)queued_bytes / t->mtu_write, errno == EAGAIN, (unsigned int)pcm_frames);
++			if ((ceiling_elapsed += (unsigned int)pcm_frames) >= rate) {
++				ceiling_elapsed = 0;
++				const unsigned int capped = y2_sbc_abr_ceiling(&abr, y2_codec_ceiling());
++				if (capped != 0)
++					next = capped;
++			}
 +			if (next != 0) {
 +				debug("SBC bit-pool: %u -> %u", sbc.bitpool, next);
 +				sbc.bitpool = (uint8_t)next;
@@ -138,7 +155,7 @@ Decisions: src/y2-sbc-abr.h.
  			if (!io.initiated) {
 --- /dev/null
 +++ b/src/y2-sbc-abr.h
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,111 @@
 +/*
 + * Y2Linux: adaptive bit-pool for SBC, the counterpart of y2-aac-abr.h.
 + *
@@ -146,8 +163,11 @@ Decisions: src/y2-sbc-abr.h.
 + * weak link, so a sink with a poor radio ran dry and stuttered while others
 + * coped. This steps the bit-pool down (100%, 85%, 66%: 53 -> 45 -> 35) while
 + * the socket queue backs up and back up after a quiet stretch, never below
-+ * the peer's negotiated minimum. libsbc applies a new bit-pool from the next
-+ * frame on. Pure decisions, no I/O: unit-tested.
++ * the peer's negotiated minimum. While the platform's ceiling is on
++ * (y2-codec-ceiling.h: Wi-Fi shares the radio) the top level is not used.
++ * libsbc applies a new bit-pool from the next frame on; packets stay sized
++ * for the configured bit-pool, which is never exceeded. Pure decisions, no
++ * I/O: unit-tested.
 + *
 + * This file is free software; you can redistribute it and/or modify it under
 + * the terms of the MIT license. See the COPYING file for details.
@@ -162,12 +182,17 @@ Decisions: src/y2-sbc-abr.h.
 +#define Y2_SBC_ABR_HOLD_MS 200
 +/* Time with an empty socket queue before stepping up. */
 +#define Y2_SBC_ABR_CALM_MS 10000
++/* Highest level while the platform's ceiling is on (85%: 53 -> 45). */
++#define Y2_SBC_CEILING_LEVEL 1
 +
 +struct y2_sbc_abr {
++	/* adapting to the link (asked and levels that differ) */
 +	bool enabled;
 +	unsigned int level;
 +	unsigned int levels;
 +	unsigned int bitpools[Y2_SBC_ABR_LEVELS];
++	/* the best level allowed now: 0, or the ceiling's while it is on */
++	unsigned int min_level;
 +	/* both counted in PCM frames, so packet size does not matter */
 +	unsigned int hold, calm_needed;
 +	unsigned int calm, since_change;
@@ -176,7 +201,7 @@ Decisions: src/y2-sbc-abr.h.
 +static inline void y2_sbc_abr_init(struct y2_sbc_abr *abr, unsigned int bitpool,
 +		unsigned int min_bitpool, unsigned int rate, bool enabled) {
 +	static const unsigned int percent[Y2_SBC_ABR_LEVELS] = { 100, 85, 66 };
-+	abr->level = abr->levels = abr->calm = abr->since_change = 0;
++	abr->level = abr->levels = abr->min_level = abr->calm = abr->since_change = 0;
 +	for (unsigned int i = 0; i < Y2_SBC_ABR_LEVELS; i++) {
 +		unsigned int value = (bitpool * percent[i] + 50) / 100;
 +		if (value < min_bitpool)
@@ -213,10 +238,29 @@ Decisions: src/y2-sbc-abr.h.
 +		abr->calm = 0;
 +	else if (abr->calm < abr->calm_needed)
 +		abr->calm += pcm_frames;
-+	if (abr->level > 0 && abr->calm >= abr->calm_needed) {
++	if (abr->level > abr->min_level && abr->calm >= abr->calm_needed) {
 +		abr->level--;
 +		abr->calm = 0;
 +		abr->since_change = 0;
++		return abr->bitpools[abr->level];
++	}
++	return 0;
++}
++
++/* The platform's ceiling turned on (`on`) or off. On, a level above the
++ * ceiling's steps down at once; off, the top level comes back once the link
++ * has been quiet for the usual stretch (at the next packet when it already
++ * was; at once when not adapting). Returns the new bit-pool when the level
++ * changes, otherwise 0. */
++static inline unsigned int y2_sbc_abr_ceiling(struct y2_sbc_abr *abr, bool on) {
++	const unsigned int ceiling = Y2_SBC_CEILING_LEVEL < abr->levels ? Y2_SBC_CEILING_LEVEL : abr->levels - 1;
++	const unsigned int min_level = on ? ceiling : 0;
++	if (min_level == abr->min_level)
++		return 0;
++	abr->min_level = min_level;
++	if (abr->level < min_level || (!abr->enabled && abr->level > min_level)) {
++		abr->level = min_level;
++		abr->calm = abr->since_change = 0;
 +		return abr->bitpools[abr->level];
 +	}
 +	return 0;

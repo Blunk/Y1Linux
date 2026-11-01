@@ -86,7 +86,7 @@ fn private_integration_enables_all_endpoints_without_qualification_claim() {
         },
     );
     assert_eq!(changed["pending_restart"], true);
-    assert_eq!(changed["effective"]["ldac_quality"], "standard");
+    assert_eq!(changed["effective"]["ldac_quality"], "mobile");
     assert_eq!(changed["effective"]["ldac_abr"], true);
     assert_eq!(changed["requested"]["ldac_abr"], false);
     let args = arguments(&fixture, true);
@@ -160,7 +160,7 @@ fn aac_settings_are_saved_and_reported() {
             value["requested"]["aac_quality"],
             value["requested"]["aac_abr"]
         ]),
-        json!(["high", true])
+        json!(["standard", true])
     );
     assert_eq!(
         value["supported"]["aac_quality"],
@@ -173,7 +173,7 @@ fn aac_settings_are_saved_and_reported() {
     let (_, value) = configure_with(
         &fixture,
         Changes {
-            aac_quality: Some("standard".into()),
+            aac_quality: Some("high".into()),
             aac_abr: Some(false),
             ..none()
         },
@@ -183,9 +183,9 @@ fn aac_settings_are_saved_and_reported() {
             value["requested"]["aac_quality"],
             value["requested"]["aac_abr"]
         ]),
-        json!(["standard", false])
+        json!(["high", false])
     );
-    assert_eq!(fixture.json(POLICY)["aac_quality"], "standard");
+    assert_eq!(fixture.json(POLICY)["aac_quality"], "high");
     let mut inventory = fixture.json(INVENTORY);
     inventory["codecs"]["AAC"]["compiled_locally"] = json!(false);
     fixture.put_json(INVENTORY, &inventory);

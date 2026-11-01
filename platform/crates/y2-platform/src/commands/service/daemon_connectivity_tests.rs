@@ -10,7 +10,7 @@ use crate::testing::Fixture;
 use y2p_core::clock;
 
 #[test]
-fn heavy_transfer_is_observed_without_a_codec_override() {
+fn heavy_transfer_is_observed() {
     let fixture = Fixture::new();
     fixture.mkdir("/run/y2");
     let mut observe = Coexistence::default();
@@ -22,7 +22,33 @@ fn heavy_transfer_is_observed_without_a_codec_override() {
         .insert("rx_bytes".into(), Some(3_000_000));
     let value = observe.observe(&fixture.root, &busy, 2.0).unwrap();
     assert_eq!(value["wifi_heavy_transfer"], true);
-    assert!(value["codec_bitrate_override"].is_null());
+}
+
+#[test]
+fn the_codec_ceiling_follows_the_wifi_radio() {
+    // Y2Reborn #87: AAC 320 kbit/s crackled with Wi-Fi on the shared antenna.
+    let fixture = Fixture::new();
+    fixture.mkdir("/run/y2");
+    let mut observe = Coexistence::default();
+    let wifi = |state: &str| -> Wifi { serde_json::from_value(json!({"state": state})).unwrap() };
+    for (now, state, on) in [
+        (1.0, "Off", false),
+        (2.0, "Scanning", true),
+        (3.0, "Online", true),
+        (4.0, "Off", false),
+        (5.0, "Starting", true),
+    ] {
+        let value = observe.observe(&fixture.root, &wifi(state), now).unwrap();
+        assert_eq!(fixture.exists(CODEC_CEILING), on, "{state}");
+        assert_eq!(value["codec_bitrate_override"].is_null(), !on, "{state}");
+    }
+    // A removed file comes back on the next pass.
+    std::fs::remove_file(fixture.root.path(CODEC_CEILING)).unwrap();
+    observe
+        .observe(&fixture.root, &wifi("Online"), 6.0)
+        .unwrap();
+    assert!(fixture.exists(CODEC_CEILING));
+    assert_eq!(fixture.json(CODEC_CEILING)["aac_max_bps"], json!(192_000));
 }
 
 /// The clock as the owner set it `ago` seconds of wall time earlier, `awake` of them awake, `asleep`

@@ -36,8 +36,8 @@ BEGIN = ['transfer', 'begin', '--name', 'Album/song.flac', '--bytes', '5', '--sh
 
 POLICY = '/data/bluetooth/codec-policy.json'
 INVENTORY = '/etc/y2linux/bluetooth-codecs.json'
-SETTINGS = {'schema': 1, 'experimental': False, 'sbc_quality': 'high', 'sbc_abr': True, 'ldac_quality': 'standard',
-            'ldac_abr': True, 'aac_quality': 'high', 'aac_abr': True}
+SETTINGS = {'schema': 1, 'experimental': False, 'sbc_quality': 'high', 'sbc_abr': True, 'ldac_quality': 'mobile',
+            'ldac_abr': True, 'aac_quality': 'standard', 'aac_abr': True}
 LIVE = {'/run/y2/bluealsa.pid': '4242\n', '/proc/4242/cmdline': '/usr/bin/bluealsad\0-p\0a2dp-source\0',
         '/run/y2/codec-runtime.json': json.dumps({'boot_id': 'boot-a', 'settings': SETTINGS,
                                                   'arguments': ['-p', 'a2dp-source']})}

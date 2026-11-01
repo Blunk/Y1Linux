@@ -17,9 +17,10 @@ pub const RECEIPT: &str = "/run/y2/codec-runtime.json";
 pub const SETTINGS_SCHEMA: &str = y2p_contract::schema::CODEC_SETTINGS;
 
 /// The owner's codec policy over the defaults. AAC "high": FDK afterburner and up to the peer's
-/// maximum rate where a frame still fits one packet (AirPods: 256 kbit/s); "standard" is BlueALSA's
-/// tested 220 kbit/s. Adaptive rate steps CBR AAC down while the link backs up, and the SBC bit-pool
-/// (53 -> 45 -> 35) the same way (BlueALSA patch 0003).
+/// maximum rate where a frame still fits one packet (AirPods 256, Sony WH-1000XM4 320 kbit/s);
+/// "standard" is BlueALSA's tested 220 kbit/s. Adaptive rate steps CBR AAC down while the link backs
+/// up, and the SBC bit-pool (53 -> 45 -> 35) the same way (BlueALSA patch 0003). While the Wi-Fi radio
+/// is on, the encoders also keep under a ceiling (`/run/y2/bt-codec-ceiling`, service daemon).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Policy {
     pub schema: i64,
@@ -46,9 +47,12 @@ impl Policy {
             experimental,
             sbc_quality: "high".into(),
             sbc_abr: true,
-            ldac_quality: "standard".into(),
+            // Stable before loud numbers (Y2Reborn #87: AAC 320 kbit/s and Wi-Fi on the shared
+            // antenna crackled and cut out): BlueALSA's tested AAC rate and LDAC's 330 kbit/s;
+            // "high" stays an owner choice.
+            ldac_quality: "mobile".into(),
             ldac_abr: true,
-            aac_quality: "high".into(),
+            aac_quality: "standard".into(),
             aac_abr: true,
         }
     }
