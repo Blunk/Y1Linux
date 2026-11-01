@@ -1,6 +1,12 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-01, evening): BETA 9.2.14 (BASELINE 205) RELEASE.** Bluetooth sink kept between streams
+> **START HERE (2026-11-01, night): BETA 9.2.15 (BASELINE 206) RELEASE.** Settings and Settings > Library no longer
+> recount the library every frame (Y2Reborn #85, contributor PR #86 merged as `97e46a8`; audit of the borrowed-library
+> pattern and a 72 000-song frame timing of every screen found no other case). Owed: #85 reporter's confirmation, the
+> F61 reporter's confirmation (9.2.14). Next free label 207, sequence above 13100, next version 9.2.16
+> ([Beta 9.2.15 report](../validation/Y2-LINUX-1.0-BETA-9.2.15.md)).
+>
+> Previous entry: **START HERE (2026-11-01, evening): BETA 9.2.14 (BASELINE 205) RELEASE.** Bluetooth sink kept between streams
 > (F61, report c0fe2638: quick radio station changes dropped the earbuds after an AVDTP Start timeout). Issue forms
 > replace blank issues (both repositories; labels performance/power/sound/wifi/update). Six quick skips on the owner's
 > AirPods Pro played in the kept sink and were heard. Owed: the reporter's confirmation (owner relays it), Y2Reborn

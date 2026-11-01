@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.14, Baseline 205 — 2026-11-01 (latest, published)
+## Y2Linux 1.0 Beta 9.2.15, Baseline 206 — 2026-11-01 (latest, published)
+
+Release `1.0.0-beta.9.2.15`, tag `baseline-206`, Linux `28c83e60`, Reborn `5745736`, sequence 13100. Reborn only:
+Settings and Settings > Library count the `tracks` they are given instead of the borrowed (empty) model list, so the
+song-count cache no longer recounts the library every frame (Y2Reborn #85, contributor PR #86 = `97e46a8`).
+Installed on the developer's player from 9.2.14 (Acknowledged). Details:
+[Beta 9.2.15 report](validation/Y2-LINUX-1.0-BETA-9.2.15.md).
+
+## Y2Linux 1.0 Beta 9.2.14, Baseline 205 — 2026-11-01 (published)
 
 Release `1.0.0-beta.9.2.14`, tag `baseline-205`, Linux `6f391669`, Reborn `786eccb`, sequence 13000. Reborn only:
 the Bluetooth sink is kept between streams like the wired one (Reborn `3435238`, F61, report c0fe2638: quick station
