@@ -1,6 +1,14 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-01, night): BETA 9.2.15 (BASELINE 206) RELEASE.** Settings and Settings > Library no longer
+> **START HERE (2026-11-02): BETA 9.2.16 (BASELINE 207) RELEASE.** Steadier Bluetooth for Y2Reborn #87 (F63 in
+> UserReports/REVIEWED.md): AAC standard / LDAC mobile defaults, a codec ceiling while the Wi-Fi radio is on
+> (`/run/y2/bt-codec-ceiling`, BlueALSA patches 0002/0003), Auto = AAC, aptX, SBC, and a codec choice refused during
+> playback re-asked at the next pause. NOT tried on a player (it was not connected): owed a device check (AAC rate
+> with Wi-Fi on/off in `y2-platform status bluetooth` encoder `bitrate_bps`, SBC bit-pool, no audible step) and the
+> #87 reporter's confirmation. Next free label 208, sequence above 13200, next version 9.2.17
+> ([Beta 9.2.16 report](../validation/Y2-LINUX-1.0-BETA-9.2.16.md)).
+>
+> Previous entry: **START HERE (2026-11-01, night): BETA 9.2.15 (BASELINE 206) RELEASE.** Settings and Settings > Library no longer
 > recount the library every frame (Y2Reborn #85, contributor PR #86 merged as `97e46a8`; audit of the borrowed-library
 > pattern and a 72 000-song frame timing of every screen found no other case). Owed: #85 reporter's confirmation, the
 > F61 reporter's confirmation (9.2.14). Next free label 207, sequence above 13100, next version 9.2.16

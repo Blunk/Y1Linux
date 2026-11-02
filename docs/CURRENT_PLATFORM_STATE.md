@@ -1,6 +1,16 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.2.15, Baseline 206 — 2026-11-01 (latest, published)
+## Y2Linux 1.0 Beta 9.2.16, Baseline 207 — 2026-11-02 (latest, published)
+
+Release `1.0.0-beta.9.2.16`, tag `baseline-207`, Linux `1b7df30e`, Reborn `8667100`, sequence 13200. Steadier
+Bluetooth (Y2Reborn #87, F63: XM4 crackled on AAC 320 kbit/s with Wi-Fi on the shared antenna, no host-side loss
+visible): codec defaults AAC standard (220 kbit/s) and LDAC mobile; `/run/y2/bt-codec-ceiling` while the Wi-Fi radio
+is on (service daemon) caps CBR AAC at 192 kbit/s and SBC below its top bit-pool in BlueALSA patches 0002/0003
+(`y2-codec-ceiling.h`); Reborn Auto ranks AAC, aptX (LDAC/aptX HD only when chosen; the Auto order noted for 26
+below no longer applies) and applies a codec choice refused during playback at the next pause. Not yet tried on a
+player. Details: [Beta 9.2.16 report](validation/Y2-LINUX-1.0-BETA-9.2.16.md).
+
+## Y2Linux 1.0 Beta 9.2.15, Baseline 206 — 2026-11-01 (published)
 
 Release `1.0.0-beta.9.2.15`, tag `baseline-206`, Linux `28c83e60`, Reborn `5745736`, sequence 13100. Reborn only:
 Settings and Settings > Library count the `tracks` they are given instead of the borrowed (empty) model list, so the

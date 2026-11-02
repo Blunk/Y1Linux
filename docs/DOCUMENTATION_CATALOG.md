@@ -13,7 +13,7 @@ document links, rather than relocating or deleting proof. See the
 [shared knowledge rules](KNOWLEDGE_BASE.md)
 and the other repository's catalog for product-wide context.
 
-Indexed pages: **341**. Explicit scope notices: **228**.
+Indexed pages: **342**. Explicit scope notices: **228**.
 
 ## Entry
 
@@ -359,6 +359,7 @@ Indexed pages: **341**. Explicit scope notices: **228**.
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
+| [Y2Linux 1.0 Beta 9.2.16 report](validation/Y2-LINUX-1.0-BETA-9.2.16.md) | Beta 9.2.16 (Baseline 207): steadier Bluetooth sound (Y2Reborn #87: lower default AAC/LDAC rates, a codec ceiling while Wi-Fi is on, Auto picks AAC first, a codec choice refused during playback is applied at the next pause) |
 | [Y2Linux 1.0 Beta 9.2.15 report](validation/Y2-LINUX-1.0-BETA-9.2.15.md) | Beta 9.2.15 (Baseline 206): Settings scrolls smoothly with a large library (Y2Reborn #85, contributor fix #86: the song count was recounted every frame) |
 | [Y2Linux 1.0 Beta 9.2.14 report](validation/Y2-LINUX-1.0-BETA-9.2.14.md) | Beta 9.2.14 (Baseline 205): Bluetooth stays connected on quick radio station changes (the Bluetooth output is kept between streams, error report c0fe2638, F61); issue forms instead of blank issues |
 | [Y2Linux 1.0 Beta 9.2.13 report](validation/Y2-LINUX-1.0-BETA-9.2.13.md) | Beta 9.2.13 (Baseline 204): one song from search (Y2Reborn #79), quick resume of long MP3/AAC files (Y2Reborn #80), letter scrolling you can reach (Y2Linux #64), Bluetooth disconnect reasons in error reports; written for players' owners |
