@@ -613,3 +613,11 @@ InProgress cancelled and retried, Ready with a generation, sleep); Reborn's clie
 | Reconnect where BlueALSA refused the configuration (`A2DP.InvalidChannels`) | connected without services, cancelled after `STUCK` 12 s, then Ready | `STUCK` 12 s (shorter would cut real slow set-ups) |
 | Pause with a 10 s keep-alive | one AVDTP Suspend in three unanswered ("No reply to Suspend request"), link dropped 3 s later | keep-alive raised to 900 s (build 210) |
 | Daemon CPU while settled | 0 ticks in 30 s | — |
+| Codec settings change with the headset connected (9.3.3 → 9.3.4) | 34 s (half set-up link) → 7–9 s (clean disconnect, restart, reconnect) | `HALF_CONNECTED` 8 s |
+| Wake with AirPods reconnecting on their own (9.3.4) | ≈15 s: BlueALSA refuses their AAC configuration (`A2DP.InvalidChannels`), cancelled after 8 s, the daemon's own page works | open: BlueALSA's AAC channel check against what AirPods send |
+
+**After the owner's second round (2026-11-03):** Bluetooth off and on is the owner's restart (no separate button);
+stream lease from Reborn; `ReloadCodecs` (no player restart for codec settings); Wi-Fi power save while streaming;
+learned start rates (patch 0005); `status` asks the daemon; #78 Connect Automatically in Reborn; six fake-BlueZ
+scenarios. Remaining from §8's list: the Wi-Fi association controller (P7), other headsets, an overnight.
+
