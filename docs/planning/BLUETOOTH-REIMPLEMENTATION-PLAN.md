@@ -600,3 +600,16 @@ kept previous package).
 **Tests:** `y2-radiod` unit tests (episodes, reasons, ladder, codec ranking and history, generations, owner files, core
 status, ctl words) and an end-to-end test against a fake BlueZ/BlueALSA on a private bus (power-on, adoption, a stuck
 InProgress cancelled and retried, Ready with a generation, sleep); Reborn's client tests; platform gate and host tests.
+
+### Measured on the owner's player (2026-11-03, builds 208/209, AirPods Pro, Wi-Fi on)
+
+| What | Measured | Constant it informs |
+|---|---|---|
+| Adapter power-on (warm, after boot) | 0.41 s (request → adapter on) | `POWER_ON_DEADLINE` 100 s is only for the first boot's calibration |
+| Bluetooth on → AirPods Ready | 5.6 s (3 s adoption, page → connected 2.2 s) | AirPods never came back on their own within the 3 s `ADOPTION`: for them the window is pure delay; kept at 3 s until other headsets are measured |
+| Wake (sleep helper's radio steps) → AirPods Ready | ≈6 s; Wi-Fi held, released when the headset was back (not by the 12 s limit) | `WAKE_HOLD` 12 s |
+| Bluetooth power-down at a sleep | 0.17 s, chip functions 0 | quiesce deadline 15 s |
+| bluealsad killed → Ready again | 7.7 s (BlueZ ends the link `local`, episode `Lost(Local)`, page after 2 s) | supervision spacing 5 s |
+| Reconnect where BlueALSA refused the configuration (`A2DP.InvalidChannels`) | connected without services, cancelled after `STUCK` 12 s, then Ready | `STUCK` 12 s (shorter would cut real slow set-ups) |
+| Pause with a 10 s keep-alive | one AVDTP Suspend in three unanswered ("No reply to Suspend request"), link dropped 3 s later | keep-alive raised to 900 s (build 210) |
+| Daemon CPU while settled | 0 ticks in 30 s | — |
