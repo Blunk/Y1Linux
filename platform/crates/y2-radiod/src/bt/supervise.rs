@@ -57,7 +57,7 @@ pub struct Supervise {
     journal: Journal,
     bluez: Daemon,
     bluealsa: Daemon,
-    /// Gave up on a daemon: the owner's "Restart Bluetooth" tries again.
+    /// Gave up on a daemon: Bluetooth off and on tries again.
     pub exhausted: Option<&'static str>,
 }
 
@@ -210,6 +210,10 @@ impl Supervise {
     }
 
     fn stop(&mut self, which: Which) {
+        // Below a fixture root nothing is started or stopped (the paths are the player's).
+        if !self.root.is_real() {
+            return;
+        }
         let daemon = self.daemon(which);
         let (pidfile, binary) = (daemon.pidfile, daemon.binary);
         daemon.pidfd = None;
@@ -229,6 +233,9 @@ impl Supervise {
 
     /// Recovery: BlueZ again (its init script stops it and waits for it to go).
     pub fn restart_bluez(&mut self) {
+        if !self.root.is_real() {
+            return;
+        }
         self.bluez.pidfd = None;
         self.bluez.next = Some(Instant::now() + SPACING);
         command::run(&self.root, &["/etc/init.d/S40bluetoothd", "restart"], 20.0);

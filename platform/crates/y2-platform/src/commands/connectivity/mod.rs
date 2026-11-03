@@ -13,6 +13,7 @@ pub mod direct;
 pub mod observe_wifi;
 pub mod published;
 pub mod radio_policy;
+pub mod radiod;
 #[cfg(test)]
 mod scenarios;
 #[cfg(test)]

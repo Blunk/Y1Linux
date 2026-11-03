@@ -66,10 +66,25 @@ const MATCHES: [&str; 6] = [
     ),
 ];
 
+/// Tests: the private bus a fake BlueZ serves (libdbus reads the system bus address only once per
+/// process, so each scenario names its own here).
+#[cfg(test)]
+pub static TEST_BUS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn system() -> Result<Channel, dbus::Error> {
+    #[cfg(test)]
+    if let Some(address) = TEST_BUS.lock().ok().and_then(|bus| bus.clone()) {
+        let mut channel = Channel::open_private(&address)?;
+        channel.register()?;
+        return Ok(channel);
+    }
+    Channel::get_private(BusType::System)
+}
+
 impl Bus {
     fn open() -> Result<Bus, String> {
-        let mut channel = Channel::get_private(BusType::System)
-            .map_err(|e| e.message().unwrap_or("system D-Bus unavailable").to_owned())?;
+        let mut channel =
+            system().map_err(|e| e.message().unwrap_or("system D-Bus unavailable").to_owned())?;
         channel.set_watch_enabled(true);
         let proxy = Proxy::new(
             "org.freedesktop.DBus",

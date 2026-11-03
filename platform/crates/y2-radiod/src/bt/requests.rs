@@ -29,11 +29,12 @@ impl Controller {
             Request::CodecPreference { preference } => self.preference(&preference),
             Request::Volume { address, volume } => self.volume(&address, volume),
             Request::AutoConnect { address, on } => self.auto_connect(&address, on),
-            Request::Stream { address, open } => {
-                self.stream = open.then_some(address);
+            Request::Stream { address, open } => self.stream(address, open),
+            Request::RestartBluetooth => self.restart(),
+            Request::ReloadCodecs => {
+                self.reload_codecs = true;
                 Reply::done()
             }
-            Request::RestartBluetooth => self.restart(),
             Request::Quiesce {
                 radio: Radio::Bluetooth,
             } => return self.quiesce(client),
@@ -59,9 +60,22 @@ impl Controller {
             self.desired.save_bluetooth(&self.root);
         }
         if on {
-            // The owner switched it on: whatever they disconnected may connect again.
+            // The owner switched it on: whatever they disconnected may connect again, and every
+            // recovery budget starts over. Off and on is also the owner's restart: when Bluetooth
+            // had failed (recovery spent, a daemon given up, BlueZ or the adapter gone), BlueALSA
+            // and BlueZ start again too.
             self.held.clear();
-            self.ladder.reset();
+            let failed = self.ladder.failed
+                || self.supervise.exhausted.is_some()
+                || self.world.bluez.is_none()
+                || self.world.adapter.is_none();
+            if failed {
+                self.restart();
+            } else {
+                self.ladder.reset();
+                self.supervise.reset();
+                self.failure = None;
+            }
         } else {
             self.asked = None;
             self.stop_discovery(false);
@@ -71,6 +85,25 @@ impl Controller {
             self.sleep = Sleep::Awake;
         }
         self.power.next = Instant::now();
+        Reply::done()
+    }
+
+    /// The player opens or closes its stream to a headset: no codec change while one is open. An open
+    /// while a codec change is still under way is refused (the headset is still being set up).
+    fn stream(&mut self, address: String, open: bool) -> Reply {
+        if open {
+            let selecting =
+                self.in_flight(|k| matches!(k, Kind::Select { address: a, .. } if *a == address));
+            if selecting {
+                return Reply::refused("codec_change_in_progress");
+            }
+            *self.streams.entry(address).or_insert(0) += 1;
+        } else if let Some(count) = self.streams.get_mut(&address) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.streams.remove(&address);
+            }
+        }
         Reply::done()
     }
 
@@ -275,7 +308,8 @@ impl Controller {
         Reply::done()
     }
 
-    /// The owner's "Restart Bluetooth": every budget starts over, BlueALSA and BlueZ start again.
+    /// The owner's restart (Bluetooth off and on after a failure, or `RestartBluetooth`): every
+    /// budget starts over, BlueALSA and BlueZ start again.
     fn restart(&mut self) -> Reply {
         self.ladder.reset();
         self.supervise.reset();
@@ -334,6 +368,7 @@ fn operation(request: &Request) -> &'static str {
         Request::Stream { open: true, .. } => "stream_open",
         Request::Stream { open: false, .. } => "stream_closed",
         Request::RestartBluetooth => "restart",
+        Request::ReloadCodecs => "reload_codecs",
         Request::WifiPower { .. } => "wifi_power",
         Request::WifiRestart => "wifi_restart",
         Request::Quiesce { .. } => "quiesce",

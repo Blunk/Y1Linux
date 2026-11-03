@@ -1,11 +1,9 @@
 //! The daemon's main thread: hands Bluetooth requests to the controller and keeps what both radios
 //! share — Wi-Fi's power, the wake order (a headset that was connected before the sleep comes back
 //! before Wi-Fi starts, so they do not fight over the one antenna), the codec ceiling while Wi-Fi
-//! is on, and the published state (subscribers, `/run/y2/radiod-state.json`, and the reconnect
-//! record the `status` command has always read).
+//! is on, and the published state (subscribers and `/run/y2/radiod-state.json`).
 // SPDX-License-Identifier: GPL-2.0-only
 use crate::{bt, desired::Desired, journal::Journal, server::Client, wifi};
-use serde::Serialize;
 use std::{
     sync::mpsc::{channel, Receiver, RecvTimeoutError},
     time::{Duration, Instant},
@@ -23,11 +21,8 @@ pub enum Event {
 
 /// How long Wi-Fi waits at a wake for the headset that was connected before the sleep.
 const WAKE_HOLD: Duration = Duration::from_secs(12);
-/// The reconnect record is fresh for 10 s (`status`): written at least this often.
-const HEARTBEAT: Duration = Duration::from_secs(5);
 const CEILING: &str = "/run/y2/bt-codec-ceiling";
 const STATE: &str = "/run/y2/radiod-state.json";
-const RECONNECT: &str = "/run/y2/bt-reconnect.json";
 
 struct Arbiter {
     root: Root,
@@ -42,7 +37,8 @@ struct Arbiter {
     asleep_with: Option<String>,
     subscribers: Vec<Client>,
     sequence: u64,
-    heartbeat: Instant,
+    /// A Bluetooth stream played at the last look (Wi-Fi's power save follows it).
+    streaming: bool,
 }
 
 /// `y2-radiod`: exit status 1 when another instance runs or the socket cannot be made.
@@ -76,7 +72,7 @@ pub fn serve(root: &Root) -> i32 {
         asleep_with: None,
         subscribers: Vec::new(),
         sequence: 0,
-        heartbeat: Instant::now(),
+        streaming: false,
     };
     arbiter.start();
     arbiter.run(received);
@@ -96,21 +92,17 @@ impl Arbiter {
 
     fn run(&mut self, events: Receiver<Event>) {
         loop {
-            let now = Instant::now();
-            let mut until = self.heartbeat + HEARTBEAT;
-            if let Some((_, at)) = &self.hold {
-                until = until.min(*at);
-            }
-            match events.recv_timeout(until.saturating_duration_since(now)) {
+            // Nothing to wake for but events, and the end of a wake's Wi-Fi hold.
+            let received = match &self.hold {
+                Some((_, at)) => events.recv_timeout(at.saturating_duration_since(Instant::now())),
+                None => events.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+            match received {
                 Ok(event) => self.event(event),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
             self.release_hold(Instant::now());
-            if Instant::now() >= self.heartbeat + HEARTBEAT {
-                self.heartbeat = Instant::now();
-                self.write_reconnect();
-            }
         }
     }
 
@@ -121,6 +113,7 @@ impl Arbiter {
             Event::Bluetooth(state) => {
                 self.bluetooth = *state;
                 self.publish();
+                self.follow_streaming();
             }
         }
     }
@@ -214,6 +207,37 @@ impl Arbiter {
         }
     }
 
+    /// Wi-Fi's power save follows Bluetooth streaming at once (the service daemon's policy pass
+    /// comes only every 30 s): the policy reads this daemon's state. Its own thread, never waited for.
+    fn follow_streaming(&mut self) {
+        let streaming = self
+            .bluetooth
+            .pcms
+            .iter()
+            .any(|pcm| pcm.running == Some(true));
+        if streaming == self.streaming {
+            return;
+        }
+        self.streaming = streaming;
+        if !self.wifi.on || !self.root.is_real() {
+            return;
+        }
+        let root = self.root.clone();
+        let _ = std::thread::Builder::new()
+            .name("radiod-wifi-power".into())
+            .spawn(move || {
+                y2p_core::command::run(
+                    &root,
+                    &["/usr/sbin/y2-platform", "wifi-power-policy"],
+                    10.0,
+                );
+            });
+        self.journal.event(
+            "wifi_power_follows",
+            serde_json::json!({"streaming": streaming}),
+        );
+    }
+
     fn apply_wifi(&mut self, on: bool) {
         wifi::set(&self.root, on);
         self.wifi.held = false;
@@ -247,46 +271,5 @@ impl Arbiter {
         let message = Message::State(Box::new(state.clone()));
         self.subscribers.retain(|client| client.send(&message));
         let _ = record::atomic_json(&self.root.path(STATE), &state, false, 0o644);
-        self.write_reconnect();
     }
-
-    /// `bt-reconnect.json` as `y2-bt-reconnect` wrote it (schema 1), for `status`.
-    fn write_reconnect(&mut self) {
-        let preferred = Desired::load(&self.root).preferred;
-        let device = self
-            .bluetooth
-            .devices
-            .iter()
-            .find(|d| Some(&d.address) == preferred.as_ref());
-        let state = match (&self.bluetooth, device) {
-            (b, _) if b.service == Service::Starting => "Unavailable",
-            (b, _) if !b.powered => "Off",
-            (_, Some(d)) if d.connected => "Connected",
-            (_, Some(d)) if d.link == Link::Connecting => "Connecting",
-            (_, Some(d)) if d.link == Link::Parked => "Exhausted",
-            (_, Some(d)) if !d.auto_connect => "Inhibited",
-            _ => "Waiting",
-        };
-        let row = Reconnect {
-            schema: 1,
-            boot_id: self.root.boot_id().unwrap_or_default(),
-            monotonic_us: (self.root.clock().monotonic() * 1e6) as i64,
-            state,
-            owner: "y2-radiod",
-            recovery: self.bluetooth.recovery.clone(),
-            last_error: self.bluetooth.failure.as_ref().map(|f| f.reason.clone()),
-        };
-        let _ = record::atomic_json(&self.root.path(RECONNECT), &row, false, 0o644);
-    }
-}
-
-#[derive(Serialize)]
-struct Reconnect {
-    schema: u32,
-    boot_id: String,
-    monotonic_us: i64,
-    state: &'static str,
-    owner: &'static str,
-    recovery: Option<String>,
-    last_error: Option<String>,
 }

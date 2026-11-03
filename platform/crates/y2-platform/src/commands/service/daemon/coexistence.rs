@@ -58,7 +58,10 @@ impl Coexistence {
         );
         value.insert(
             "bluetooth_link".into(),
-            Value::Object(root.json_object("/run/y2/bt-reconnect.json")),
+            match crate::commands::connectivity::radiod::written(root) {
+                Some(state) => json!({"state": state.bluetooth.reconnect_state()}),
+                None => Value::Object(Default::default()),
+            },
         );
         value.insert("provisional".into(), json!(true));
         value.insert("codec_bitrate_override".into(), codec_ceiling(root));

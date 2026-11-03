@@ -2,7 +2,7 @@
 //! toward what the owner wants: the adapter's power, a sleep's power-down, the headset to keep
 //! connected and every connected headset's stream. Stuck steps go to the recovery ladder.
 // SPDX-License-Identifier: GPL-2.0-only
-use super::{bus::Kind, ladder::Rung, links, world, Controller, Sleep};
+use super::{bus::Kind, codec, ladder::Rung, links, world, Controller, Sleep};
 use std::time::{Duration, Instant};
 use y2p_contract::radiod::{Ended, Reply};
 
@@ -55,6 +55,7 @@ impl Controller {
                 self.trigger_preferred(links::Trigger::PowerOn);
             }
         }
+        self.streams_stopped(old);
         let devices: Vec<world::Dev> = self.world.devices.values().cloned().collect();
         for dev in devices {
             let was = old.devices.get(&dev.address).is_some_and(|d| d.connected);
@@ -74,6 +75,63 @@ impl Controller {
             self.records.remove(&address);
             self.codec.forget(&address);
         }
+    }
+
+    /// A stream that ran and stopped (or whose headset went): learn where its rate settled.
+    fn streams_stopped(&mut self, old: &world::World) {
+        let stopped: Vec<world::PcmObs> = old
+            .pcms
+            .iter()
+            .filter(|pcm| pcm.running == Some(true))
+            .filter(|pcm| {
+                !self
+                    .world
+                    .pcms
+                    .iter()
+                    .any(|now| now.object == pcm.object && now.running == Some(true))
+            })
+            .cloned()
+            .collect();
+        for pcm in stopped {
+            let (Some(address), Some(codec)) = (
+                old.devices
+                    .values()
+                    .find(|d| d.path == pcm.device)
+                    .map(|d| d.address.clone()),
+                pcm.codec.clone(),
+            ) else {
+                continue;
+            };
+            let Some((settled, adjustments)) = self.encoder_stats(&pcm.object) else {
+                continue;
+            };
+            codec::learn(&self.root, &address, &codec, settled, adjustments);
+            self.journal.event(
+                "rate_learned",
+                serde_json::json!({"codec": codec, "settled": settled, "adjustments": adjustments}),
+            );
+        }
+    }
+
+    /// BlueALSA's EncoderStats (patch 0001): the level the adaptive rate ended at and how often it
+    /// changed; none when it did not adapt.
+    fn encoder_stats(&self, object: &str) -> Option<(u32, u32)> {
+        let (bus, owner) = (self.bus.as_ref()?, self.world.bluealsa.as_deref()?);
+        let stats: dbus::arg::PropMap = world::get(
+            &bus.channel,
+            owner,
+            object,
+            "org.bluealsa.PCM1",
+            "EncoderStats",
+        )
+        .ok()?;
+        let number = |key: &str| stats.get(key).and_then(|v| v.0.as_i64()).unwrap_or(0);
+        if number("AbrEnabled") == 0 {
+            return None;
+        }
+        let level = u32::try_from(number("QualityIndex")).ok()?;
+        let adjustments = u32::try_from(number("AbrAdjustments")).unwrap_or(0);
+        Some((level, adjustments))
     }
 
     fn connected(&mut self, dev: &world::Dev, now: Instant) {
@@ -106,9 +164,7 @@ impl Controller {
         record.pcm_missing_since = None;
         record.profile_asked = false;
         self.codec.forget(&dev.address);
-        if self.stream.as_deref() == Some(dev.address.as_str()) {
-            self.stream = None;
-        }
+        self.streams.remove(&dev.address);
         if self.target().as_deref() == Some(dev.address.as_str()) && self.world.powered() {
             self.trigger(&dev.address, links::Trigger::Lost(ended));
         }
@@ -150,6 +206,7 @@ impl Controller {
         }
         self.reconcile_power(now);
         self.reconcile_sleep(now);
+        self.reconcile_codec_reload();
         if !self.world.powered() || !matches!(self.sleep, Sleep::Awake) {
             return;
         }
@@ -220,6 +277,21 @@ impl Controller {
             }
             self.discovery_call(true);
         }
+    }
+
+    /// New codec settings: BlueALSA starts again with them when nothing plays (its restart ends the
+    /// link; the headphones come back as after any local end).
+    fn reconcile_codec_reload(&mut self) {
+        let playing =
+            !self.streams.is_empty() || self.world.pcms.iter().any(|pcm| pcm.running == Some(true));
+        if !self.reload_codecs || playing {
+            return;
+        }
+        self.reload_codecs = false;
+        self.journal
+            .event("codec_settings_reload", serde_json::json!({}));
+        self.supervise.restart_bluealsa();
+        self.dirty = true;
     }
 
     /// A sleep waits for the adapter to be off (or for its 15 s).
@@ -355,7 +427,7 @@ impl Controller {
         let Some(rung) = self.ladder.choose(wanted, now) else {
             self.fail(
                 "bluetooth_recovery_exhausted",
-                "Bluetooth stopped working. Restart Bluetooth in Settings.",
+                "Bluetooth stopped working. Turn Bluetooth off and on in Settings.",
                 address,
             );
             return None;

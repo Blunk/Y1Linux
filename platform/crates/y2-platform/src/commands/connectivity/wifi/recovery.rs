@@ -238,19 +238,10 @@ fn restart_radio(root: &Root) -> RadioRestart {
     }
 }
 
-/// `y2-radiod`'s Wi-Fi restart (`{"op":"wifi_restart"}` on its socket), when it answers.
+/// `y2-radiod`'s Wi-Fi restart, when it answers.
 fn ask_radio_daemon(root: &Root) -> Option<RadioRestart> {
-    use std::io::{BufRead, BufReader, Write};
-    let mut stream =
-        std::os::unix::net::UnixStream::connect(root.path("/run/y2/radiod.sock")).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(8))).ok()?;
-    stream.write_all(b"{\"op\":\"wifi_restart\"}\n").ok()?;
-    let mut answer = String::new();
-    BufReader::new(stream).read_line(&mut answer).ok()?;
-    let message: y2p_contract::radiod::Message = serde_json::from_str(&answer).ok()?;
-    let y2p_contract::radiod::Message::Reply(reply) = message else {
-        return None;
-    };
+    let request = y2p_contract::radiod::Request::WifiRestart;
+    let reply = crate::commands::connectivity::radiod::ask(root, &request, Duration::from_secs(8))?;
     Some(RadioRestart {
         blocked: reply.ok,
         gone: reply.ok,

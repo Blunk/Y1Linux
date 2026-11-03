@@ -36,7 +36,8 @@ Indexed pages: **342**. Explicit scope notices: **228**.
 | --- | --- |
 | [Platform API v1](architecture/platform-api-v1.md) | Source contract |
 | [Deep suspend — developer architecture](architecture/deep-suspend.md) | Source contract |
-| [Bluetooth platform v1 contract](architecture/platform-bluetooth-v1.md) | Source contract |
+| [Radio daemon (y2-radiod)](architecture/radio-daemon.md) | Architecture (current) |
+| [Bluetooth platform v1 contract](architecture/platform-bluetooth-v1.md) | Source contract (superseded by the radio daemon) |
 | [Owner reset and state export](architecture/platform-maintenance-v1.md) | Source contract |
 | [Network, clock and entropy contract v1](architecture/platform-network-time-v1.md) | Source contract |
 | [Platform power contract v1](architecture/platform-power-v1.md) | Source contract |
@@ -385,6 +386,7 @@ Indexed pages: **342**. Explicit scope notices: **228**.
 | [Platform Rust idiomatic plan](planning/PLATFORM-RUST-IDIOMATIC-PLAN.md) | From the port to idiomatic Rust: typed records instead of loose JSON (P0–P7, finishing Q1–Q5), owner decisions, test builds 180–185 |
 | [Platform Rust next-agent handoff](planning/PLATFORM-RUST-NEXT-AGENT-HANDOFF.md) | The remaining Rust-logic, refactor and duplication work for one agent: order, method, owner decisions, build/verify |
 | [Speaker and haptics plan](planning/SPEAKER-HAPTICS-PLAN.md) | Stock REA of the vibrator, AW87559 and CS43131 speaker route; plan and device checks |
+| [Bluetooth reimplementation plan](planning/BLUETOOTH-REIMPLEMENTATION-PLAN.md) | One radio daemon for Bluetooth and the shared core: evidence, design, phases, as built (Beta 9.3) |
 | [Y2Linux 1.0 Beta 8.39 report](validation/Y2-LINUX-1.0-BETA-8.39.md) | Beta 8.39 (Baseline 153): Folders by file name, Shuffle Albums, playlist Sort, a 120 000-song card measured and made fast |
 | [Y2Linux 1.0 Beta 8.38 report](validation/Y2-LINUX-1.0-BETA-8.38.md) | Beta 8.38 (Baseline 146): Bluetooth sound after Pause → Play (F43), a smooth wave that moves with the music |
 | [Y2Linux 1.0 Beta 8.37 report](validation/Y2-LINUX-1.0-BETA-8.37.md) | Beta 8.37 (Baseline 144): sleep timer lengths (#29), search Back/See All/playlists (#44), playlist focus, headers stay and only lists scroll |

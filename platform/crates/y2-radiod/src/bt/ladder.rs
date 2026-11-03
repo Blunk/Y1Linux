@@ -1,7 +1,7 @@
 //! Recovery in steps, cheapest first, each with a budget (three times in ten minutes): cancel a
 //! stuck page, switch the adapter off and on, restart BlueALSA, restart BlueZ. A step whose budget
 //! is spent gives way to the next; when the last one is spent Bluetooth shows Failed until the
-//! owner's "Restart Bluetooth", which starts every budget over.
+//! owner switches Bluetooth off and on, which starts every budget over.
 // SPDX-License-Identifier: GPL-2.0-only
 use std::{
     collections::VecDeque,

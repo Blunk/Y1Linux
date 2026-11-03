@@ -1,6 +1,7 @@
-//! The controller against a fake BlueZ and BlueALSA on a private bus (libdbus takes the "system" bus
-//! from DBUS_SYSTEM_BUS_ADDRESS): Bluetooth comes on, the preferred headset is paged after the
-//! adoption window, its stream becomes Ready with a generation, and a sleep takes the adapter down.
+//! The controller against a fake BlueZ and BlueALSA on a private bus (`bus::TEST_BUS`; the scenarios
+//! run one after another in one test). Each scenario is
+//! a field failure the old stack mishandled: a stuck page (F65, #92), headphones switched off, a
+//! remote end, the owner's own disconnect, a codec the headphones refuse, a stream that never came.
 use super::*;
 use crate::arbiter::Event;
 use dbus::{
@@ -20,18 +21,29 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use y2p_contract::radiod::{Link, Radio, Request};
+use y2p_contract::radiod::{Ended, Link, Radio, Request, Service};
 
 const ADAPTER: &str = "/org/bluez/hci0";
 const DEVICE: &str = "/org/bluez/hci0/dev_12_34_56_78_90_AB";
+const ADDRESS: &str = "12:34:56:78:90:AB";
 const PCM: &str = "/org/bluealsa/hci0/dev_12_34_56_78_90_AB/a2dpsrc/sink";
 
-#[derive(Default)]
+/// How the fake behaves.
+#[derive(Default, Clone)]
 struct Fake {
     powered: bool,
     connected: bool,
     connects: u32,
+    selects: Vec<String>,
+    codec: String,
+    /// The first ConnectProfile answers InProgress (a page racing the headset, F65).
     in_progress_first: bool,
+    /// Every ConnectProfile answers "Host is down" (headphones switched off).
+    host_down: bool,
+    /// The headphones offer AAC too, and refuse it when selected.
+    refuse_aac: bool,
+    /// BlueALSA shows no PCM for the connected headset.
+    no_pcm: bool,
 }
 
 fn variant<T: RefArg + 'static>(value: T) -> Variant<Box<dyn RefArg>> {
@@ -45,7 +57,7 @@ fn bluez_objects(fake: &Fake) -> Objects {
     adapter.insert("Powered".into(), variant(fake.powered));
     adapter.insert("Discovering".into(), variant(false));
     let mut device = PropMap::new();
-    device.insert("Address".into(), variant("12:34:56:78:90:AB".to_string()));
+    device.insert("Address".into(), variant(ADDRESS.to_string()));
     device.insert("Alias".into(), variant("Buds".to_string()));
     for key in ["Paired", "Bonded", "Trusted"] {
         device.insert(key.into(), variant(true));
@@ -71,17 +83,17 @@ fn bluez_objects(fake: &Fake) -> Objects {
 
 fn bluealsa_objects(fake: &Fake) -> Objects {
     let mut objects = Objects::new();
-    if fake.connected {
+    if fake.connected && !fake.no_pcm {
         let mut pcm = PropMap::new();
         pcm.insert("Device".into(), variant(DbusPath::from(DEVICE)));
         pcm.insert("Transport".into(), variant("A2DP-source".to_string()));
         pcm.insert("Mode".into(), variant("sink".to_string()));
-        pcm.insert("Codec".into(), variant("SBC".to_string()));
+        pcm.insert("Codec".into(), variant(fake.codec.clone()));
         pcm.insert("Format".into(), variant(0x8210u16));
         pcm.insert("Rate".into(), variant(44_100u32));
         pcm.insert("Channels".into(), variant(2u8));
         pcm.insert("Running".into(), variant(false));
-        pcm.insert("Sequence".into(), variant(u32::from(fake.connects as u8)));
+        pcm.insert("Sequence".into(), variant(fake.connects));
         objects.insert(
             DbusPath::from(PCM),
             HashMap::from([("org.bluealsa.PCM1".to_string(), pcm)]),
@@ -98,6 +110,20 @@ fn changed(path: &str, interface: &str) -> Message {
             PropMap::new(),
             vec!["Powered".to_string(), "Connected".into()],
         )
+}
+
+fn codecs(fake: &Fake) -> HashMap<String, PropMap> {
+    let stereo = || {
+        let mut p = PropMap::new();
+        p.insert("Channels".into(), variant(vec![1u8, 2u8]));
+        p.insert("Rates".into(), variant(vec![44_100u32, 48_000u32]));
+        p
+    };
+    let mut all = HashMap::from([("SBC".to_string(), stereo())]);
+    if fake.refuse_aac {
+        all.insert("AAC".into(), stereo());
+    }
+    all
 }
 
 /// Answer one method call as BlueZ or BlueALSA would.
@@ -125,6 +151,9 @@ fn answer(fake: &Mutex<Fake>, message: &Message, connection: &Connection) -> Mes
             if fake.in_progress_first && fake.connects == 1 {
                 return message.error(&"org.bluez.Error.InProgress".into(), c"In Progress");
             }
+            if fake.host_down {
+                return message.error(&"org.bluez.Error.Failed".into(), c"Host is down");
+            }
             fake.connected = true;
             let _ = connection.send(changed(DEVICE, "org.bluez.Device1"));
             message.method_return()
@@ -134,15 +163,50 @@ fn answer(fake: &Mutex<Fake>, message: &Message, connection: &Connection) -> Mes
             let _ = connection.send(changed(DEVICE, "org.bluez.Device1"));
             message.method_return()
         }
-        "Get" => message.return_with_args((variant(vec!["A2DP-source:SBC".to_string()]),)),
-        "GetCodecs" => {
-            let mut sbc = PropMap::new();
-            sbc.insert("Channels".into(), variant(vec![1u8, 2u8]));
-            sbc.insert("Rates".into(), variant(vec![44_100u32, 48_000u32]));
-            message.return_with_args((HashMap::from([("SBC".to_string(), sbc)]),))
+        "Get" => {
+            let mut runtime = vec!["A2DP-source:SBC".to_string()];
+            if fake.refuse_aac {
+                runtime.push("A2DP-source:AAC".into());
+            }
+            message.return_with_args((variant(runtime),))
+        }
+        "GetCodecs" => message.return_with_args((codecs(&fake),)),
+        "SelectCodec" => {
+            let codec: String = message.read1().expect("codec");
+            fake.selects.push(codec.clone());
+            if codec == "AAC" && fake.refuse_aac {
+                return message.error(
+                    &"org.freedesktop.DBus.Error.NotSupported".into(),
+                    c"Not supported",
+                );
+            }
+            fake.codec = codec;
+            message.method_return()
         }
         _ => message.method_return(),
     }
+}
+
+/// What a scenario can make the fake do on its own.
+enum Control {
+    /// The headphones end the link with this BlueZ reason.
+    Drop(&'static str),
+    /// The headphones connect by themselves.
+    Arrive,
+}
+
+fn act(fake: &Mutex<Fake>, control: Control, connection: &Connection) {
+    match control {
+        Control::Drop(reason) => {
+            fake.lock().expect("fake").connected = false;
+            let signal = Message::new_signal(DEVICE, "org.bluez.Device1", "Disconnected")
+                .expect("signal")
+                .append2(reason, "Connection terminated");
+            let _ = connection.send(signal);
+        }
+        Control::Arrive => fake.lock().expect("fake").connected = true,
+    }
+    let _ = connection.send(changed(DEVICE, "org.bluez.Device1"));
 }
 
 struct Bus {
@@ -173,8 +237,122 @@ fn private_bus() -> Option<Bus> {
     })
 }
 
+/// One scenario's world: a bus, the fake on it, the controller, its fixture root.
+struct Harness {
+    _bus: Bus,
+    fake: Arc<Mutex<Fake>>,
+    stop: Arc<AtomicBool>,
+    control: mpsc::Sender<Control>,
+    server: Option<std::thread::JoinHandle<()>>,
+    events: mpsc::Receiver<Event>,
+    handle: Handle,
+    dir: std::path::PathBuf,
+    started: Instant,
+}
+
+impl Harness {
+    fn start(name: &str, fake: Fake) -> Option<Harness> {
+        let bus = private_bus()?;
+        if let Ok(mut test_bus) = super::bus::TEST_BUS.lock() {
+            *test_bus = Some(bus.address.clone());
+        }
+        let fake = Arc::new(Mutex::new(Fake {
+            codec: "SBC".into(),
+            ..fake
+        }));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (control, controls) = mpsc::channel();
+        let (ready, served) = mpsc::channel();
+        let server = {
+            let (address, fake, stop) = (bus.address.clone(), fake.clone(), stop.clone());
+            std::thread::spawn(move || serve(address, fake, stop, ready, controls))
+        };
+        served.recv_timeout(Duration::from_secs(5)).ok()?;
+        let dir = std::env::temp_dir().join(format!("y2-radiod-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("data/bluetooth")).ok()?;
+        std::fs::create_dir_all(dir.join("etc/y2linux")).ok()?;
+        std::fs::write(dir.join("data/bluetooth/enabled"), "1\n").ok()?;
+        std::fs::write(dir.join("data/bluetooth/preferred-audio"), ADDRESS).ok()?;
+        let approved =
+            r#"{"compiled_locally":true,"distribution_approved":true,"platform_qualified":true}"#;
+        std::fs::write(
+            dir.join("etc/y2linux/bluetooth-codecs.json"),
+            format!(r#"{{"schema":1,"codecs":{{"SBC":{approved},"AAC":{approved}}}}}"#),
+        )
+        .ok()?;
+        let root = Root::new(&dir);
+        let (sender, events) = mpsc::channel();
+        let journal = crate::journal::Journal::new(&root);
+        let handle = spawn(&root, journal, sender, Desired::load(&root)).ok()?;
+        Some(Harness {
+            _bus: bus,
+            fake,
+            stop,
+            control,
+            server: Some(server),
+            events,
+            handle,
+            dir,
+            started: Instant::now(),
+        })
+    }
+
+    /// The first published state that satisfies `wanted`, within `within`.
+    fn until(&self, within: Duration, wanted: impl Fn(&Bluetooth) -> bool) -> Option<Bluetooth> {
+        let end = Instant::now() + within;
+        while Instant::now() < end {
+            match self
+                .events
+                .recv_timeout(end.saturating_duration_since(Instant::now()))
+            {
+                Ok(Event::Bluetooth(state)) if wanted(&state) => return Some(*state),
+                Ok(_) => {}
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    fn link(&self, within: Duration, link: Link) -> Option<Bluetooth> {
+        self.until(within, |s| s.devices.iter().any(|d| d.link == link))
+    }
+
+    /// Ask the controller and read its answer.
+    fn ask(&self, request: Request) -> String {
+        let (client, peer) = std::os::unix::net::UnixStream::pair().expect("pair");
+        self.handle
+            .send(request, crate::server::Client::for_tests(client));
+        let mut answer = String::new();
+        peer.set_read_timeout(Some(Duration::from_secs(16)))
+            .expect("timeout");
+        let _ = BufReader::new(peer).read_line(&mut answer);
+        answer
+    }
+
+    fn fake(&self) -> Fake {
+        self.fake.lock().expect("fake").clone()
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(server) = self.server.take() {
+            let _ = server.join();
+        }
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 /// Serve BlueZ and BlueALSA on the bus until `stop`.
-fn serve(address: String, fake: Arc<Mutex<Fake>>, stop: Arc<AtomicBool>, ready: mpsc::Sender<()>) {
+fn serve(
+    address: String,
+    fake: Arc<Mutex<Fake>>,
+    stop: Arc<AtomicBool>,
+    ready: mpsc::Sender<()>,
+    controls: mpsc::Receiver<Control>,
+) {
     let mut channel = Channel::open_private(&address).expect("bus");
     channel.register().expect("register");
     let connection = Connection::from(channel);
@@ -183,10 +361,11 @@ fn serve(address: String, fake: Arc<Mutex<Fake>>, stop: Arc<AtomicBool>, ready: 
             .request_name(name, false, true, false)
             .expect("name");
     }
+    let answering = fake.clone();
     connection.start_receive(
         MatchRule::new_method_call(),
         Box::new(move |message, connection| {
-            let reply = answer(&fake, &message, connection);
+            let reply = answer(&answering, &message, connection);
             let _ = connection.send(reply);
             true
         }),
@@ -194,25 +373,10 @@ fn serve(address: String, fake: Arc<Mutex<Fake>>, stop: Arc<AtomicBool>, ready: 
     let _ = ready.send(());
     while !stop.load(Ordering::Acquire) {
         let _ = connection.process(Duration::from_millis(50));
-    }
-}
-
-/// The newest published state that satisfies `wanted`, within `within`.
-fn until(
-    events: &mpsc::Receiver<Event>,
-    within: Duration,
-    wanted: impl Fn(&Bluetooth) -> bool,
-) -> Option<Bluetooth> {
-    let end = Instant::now() + within;
-    while Instant::now() < end {
-        match events.recv_timeout(end.saturating_duration_since(Instant::now())) {
-            Ok(Event::Bluetooth(state)) if wanted(&state) => return Some(*state),
-            Ok(Event::Request(_, client)) => client.reply(y2p_contract::radiod::Reply::done()),
-            Ok(_) => {}
-            Err(_) => return None,
+        while let Ok(control) = controls.try_recv() {
+            act(&fake, control, &connection);
         }
     }
-    None
 }
 
 /// This process's user + system CPU time in clock ticks (/proc/self/stat fields 14 and 15).
@@ -222,7 +386,6 @@ fn cpu_ticks() -> u64 {
         .rsplit_once(')')
         .map(|(_, rest)| rest.split_whitespace().collect())
         .unwrap_or_default();
-    // After the command name: field 3 is index 0, so utime (14) is 11 and stime (15) is 12.
     let tick = |index: usize| {
         fields
             .get(index)
@@ -232,87 +395,145 @@ fn cpu_ticks() -> u64 {
     tick(11) + tick(12)
 }
 
-fn fixture(name: &str) -> (Root, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!("y2-radiod-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("data/bluetooth")).expect("fixture");
-    std::fs::write(dir.join("data/bluetooth/enabled"), "1\n").expect("fixture");
-    std::fs::write(
-        dir.join("data/bluetooth/preferred-audio"),
-        "12:34:56:78:90:AB",
-    )
-    .expect("fixture");
-    (Root::new(&dir), dir)
-}
+const LONG: Duration = Duration::from_secs(40);
 
-#[test]
-fn bluetooth_comes_on_pages_the_headset_after_adoption_recovers_in_progress_and_sleeps() {
-    let Some(bus) = private_bus() else {
-        eprintln!("no dbus-daemon on this host: skipped");
+/// F65/#92: power on, the adoption window, a page meeting InProgress is cancelled and retried, the
+/// stream becomes Ready, the controller then idles, and a sleep takes the adapter down.
+fn power_on_adoption_in_progress_and_sleep() {
+    let Some(h) = Harness::start(
+        "inprogress",
+        Fake {
+            in_progress_first: true,
+            ..Fake::default()
+        },
+    ) else {
         return;
     };
-    std::env::set_var("DBUS_SYSTEM_BUS_ADDRESS", &bus.address);
-    let fake = Arc::new(Mutex::new(Fake {
-        in_progress_first: true,
-        ..Fake::default()
-    }));
-    let stop = Arc::new(AtomicBool::new(false));
-    let (ready, served) = mpsc::channel();
-    let server = {
-        let (address, fake, stop) = (bus.address.clone(), fake.clone(), stop.clone());
-        std::thread::spawn(move || serve(address, fake, stop, ready))
-    };
-    served
-        .recv_timeout(Duration::from_secs(5))
-        .expect("fake up");
-    let (root, dir) = fixture("e2e");
-    let (events, received) = mpsc::channel();
-    let started = Instant::now();
-    let handle = spawn(
-        &root,
-        crate::journal::Journal::new(&root),
-        events,
-        Desired::load(&root),
-    )
-    .expect("controller");
-    // Powered by the controller, then the headset paged; the first page meets InProgress and is
-    // cancelled after STUCK, the next one connects.
-    let ready = until(&received, Duration::from_secs(40), |s| {
-        s.devices.iter().any(|d| d.link == Link::Ready)
-    })
-    .expect("headset ready");
+    let ready = h.link(LONG, Link::Ready).expect("headset ready");
     assert!(ready.powered && ready.bluealsa);
     assert!(
-        started.elapsed() >= links::ADOPTION,
+        h.started.elapsed() >= links::ADOPTION,
         "no page before adoption"
     );
-    assert!(
-        fake.lock().expect("fake").connects >= 2,
-        "InProgress was retried"
-    );
+    assert!(h.fake().connects >= 2, "InProgress was retried");
     assert!(ready.pcms[0].generation > 0);
-    // Settled: the controller waits instead of spinning (its thread's CPU time over 2 s).
     let before = cpu_ticks();
     std::thread::sleep(Duration::from_secs(2));
     let spent = cpu_ticks() - before;
     assert!(spent < 20, "{spent} ticks of CPU in 2 s while idle");
-    // A sleep: the adapter goes down and the quiesce is answered.
-    let (client, peer) = std::os::unix::net::UnixStream::pair().expect("pair");
-    let client = crate::server::Client::for_tests(client);
-    handle.send(
-        Request::Quiesce {
-            radio: Radio::Bluetooth,
-        },
-        client,
-    );
-    let down = until(&received, Duration::from_secs(10), |s| !s.powered).expect("down");
-    assert_eq!(down.service, y2p_contract::radiod::Service::Quiesced);
-    let mut answer = String::new();
-    peer.set_read_timeout(Some(Duration::from_secs(5)))
-        .expect("timeout");
-    BufReader::new(peer).read_line(&mut answer).expect("answer");
+    let answer = h.ask(Request::Quiesce {
+        radio: Radio::Bluetooth,
+    });
     assert!(answer.contains("\"ok\":true"), "{answer}");
-    stop.store(true, Ordering::Release);
-    let _ = server.join();
-    let _ = std::fs::remove_dir_all(dir);
+    h.until(Duration::from_secs(5), |s| {
+        s.service == Service::Quiesced && !s.powered
+    })
+    .expect("down");
+}
+
+/// Headphones switched off: three tries, then parked (no paging forever); when they come on and
+/// connect by themselves they are Ready without a tap.
+fn switched_off_parks_then_returns_by_itself() {
+    let Some(h) = Harness::start(
+        "off",
+        Fake {
+            host_down: true,
+            ..Fake::default()
+        },
+    ) else {
+        return;
+    };
+    h.link(LONG, Link::Parked).expect("parked");
+    let tries = h.fake().connects;
+    assert_eq!(tries, 3, "three tries for a power-on");
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(h.fake().connects, tries, "no paging while parked");
+    let _ = h.control.send(Control::Arrive);
+    h.link(Duration::from_secs(10), Link::Ready)
+        .expect("back by itself");
+}
+
+/// A remote end gets one look; the owner's own disconnect gets none and says so.
+fn remote_end_one_look_and_owners_disconnect_none() {
+    let Some(h) = Harness::start("remote", Fake::default()) else {
+        return;
+    };
+    h.link(LONG, Link::Ready).expect("ready");
+    let tries = h.fake().connects;
+    let _ = h.control.send(Control::Drop("org.bluez.Reason.Remote"));
+    let ended = h
+        .until(Duration::from_secs(5), |s| {
+            s.devices.iter().any(|d| d.ended == Some(Ended::Remote))
+        })
+        .expect("remote end seen");
+    assert!(!ended.devices[0].connected);
+    h.link(Duration::from_secs(10), Link::Ready)
+        .expect("one look reconnected");
+    assert_eq!(h.fake().connects, tries + 1);
+    let answer = h.ask(Request::Disconnect {
+        address: ADDRESS.into(),
+    });
+    assert!(answer.contains("\"ok\":true"), "{answer}");
+    h.until(Duration::from_secs(5), |s| {
+        s.devices.iter().any(|d| d.ended == Some(Ended::User))
+    })
+    .expect("owner's end");
+    let tries = h.fake().connects;
+    std::thread::sleep(Duration::from_secs(6));
+    assert_eq!(
+        h.fake().connects,
+        tries,
+        "no reconnect after the owner's disconnect"
+    );
+}
+
+/// AAC chosen, the headphones refuse it: SBC stays, the stream is Ready, nothing blocks playback.
+fn refused_codec_falls_back_and_stays_playable() {
+    let Some(h) = Harness::start(
+        "codec",
+        Fake {
+            refuse_aac: true,
+            ..Fake::default()
+        },
+    ) else {
+        return;
+    };
+    let ready = h.link(LONG, Link::Ready).expect("ready");
+    assert_eq!(h.fake().selects, ["AAC"], "Auto tried AAC once");
+    assert_eq!(ready.pcms[0].codec.as_deref(), Some("SBC"));
+    let history =
+        std::fs::read_to_string(h.dir.join("data/bluetooth/codec-history.json")).expect("history");
+    assert!(history.contains("\"AAC\":1"), "{history}");
+}
+
+/// Connected and resolved, but BlueALSA shows no stream: A2DP is asked for, then BlueALSA restarts.
+fn missing_stream_asks_a2dp_then_restarts_bluealsa() {
+    let Some(h) = Harness::start(
+        "nopcm",
+        Fake {
+            no_pcm: true,
+            ..Fake::default()
+        },
+    ) else {
+        return;
+    };
+    h.link(LONG, Link::Settling).expect("settling");
+    let recovered = h
+        .until(LONG, |s| s.recovery.as_deref() == Some("bluealsa_restart"))
+        .expect("BlueALSA restarted");
+    assert!(recovered.devices[0].connected);
+    assert!(h.fake().connects >= 2, "A2DP asked for once more first");
+}
+
+#[test]
+fn field_failures_against_a_fake_bluez() {
+    if private_bus().is_none() {
+        eprintln!("no dbus-daemon on this host: skipped");
+        return;
+    }
+    power_on_adoption_in_progress_and_sleep();
+    switched_off_parks_then_returns_by_itself();
+    remote_end_one_look_and_owners_disconnect_none();
+    refused_codec_falls_back_and_stays_playable();
+    missing_stream_asks_a2dp_then_restarts_bluealsa();
 }

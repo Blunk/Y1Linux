@@ -238,9 +238,7 @@
   "added": {
    "/run/y2/coexistence.json": {
     "content": {
-     "bluetooth_link": {
-      "state": "Connected"
-     },
+     "bluetooth_link": {},
      "boot_id": "boot-a",
      "codec_bitrate_override": null,
      "cpu_pressure": "some avg10=0.00",
@@ -275,9 +273,7 @@
      "association_id": "00:11:22:33:44:55",
      "boot_id": "boot-a",
      "coexistence": {
-      "bluetooth_link": {
-       "state": "Connected"
-      },
+      "bluetooth_link": {},
       "boot_id": "boot-a",
       "codec_bitrate_override": null,
       "cpu_pressure": "some avg10=0.00",

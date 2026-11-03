@@ -268,9 +268,8 @@
    "preferred_codec": null,
    "reason": "controller_bluez_bluealsa_observed",
    "reconnect": {
-    "boot_id": "boot-a",
-    "monotonic_us": "<volatile>",
-    "state": "Connected"
+    "reason": "reconnect_record_stale_or_absent",
+    "state": "Unavailable"
    },
    "reconnect_owner": "y2-radiod",
    "remote_advertised": null,

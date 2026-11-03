@@ -44,15 +44,27 @@ pub enum Order {
 
 /// How the arbiter reaches the controller.
 pub struct Handle {
-    orders: Sender<Order>,
+    orders: Option<Sender<Order>>,
     waker: Waker,
 }
 
 impl Handle {
     pub fn send(&self, request: Request, client: Client) {
-        if self.orders.send(Order::Request(request, client)).is_ok() {
+        let sent = self
+            .orders
+            .as_ref()
+            .is_some_and(|orders| orders.send(Order::Request(request, client)).is_ok());
+        if sent {
             self.waker.wake();
         }
+    }
+}
+
+/// Without a handle the controller ends: its order queue closes and it is woken to see that.
+impl Drop for Handle {
+    fn drop(&mut self) {
+        self.orders = None;
+        self.waker.wake();
     }
 }
 
@@ -70,7 +82,10 @@ pub fn spawn(
     thread::Builder::new()
         .name("radiod-bluetooth".into())
         .spawn(move || controller.run())?;
-    Ok(Handle { orders, waker })
+    Ok(Handle {
+        orders: Some(orders),
+        waker,
+    })
 }
 
 /// Where a sleep is.
@@ -144,7 +159,10 @@ pub struct Controller {
     /// BlueZ's disconnect reasons by device path, until the observation sees the link gone.
     reasons: BTreeMap<String, Ended>,
     /// The device whose audio stream the player holds open.
-    stream: Option<String>,
+    /// The owner's codec settings changed: BlueALSA starts again once no stream is open.
+    reload_codecs: bool,
+    /// Streams the player holds open, per device (a probe and a sink may overlap).
+    streams: BTreeMap<String, u32>,
     sleep: Sleep,
     power: Power,
     discovery: Option<Discovery>,
@@ -188,7 +206,8 @@ impl Controller {
             asked: None,
             held: BTreeSet::new(),
             reasons: BTreeMap::new(),
-            stream: None,
+            streams: BTreeMap::new(),
+            reload_codecs: false,
             sleep: Sleep::Awake,
             power: Power {
                 in_flight: false,
@@ -212,6 +231,8 @@ impl Controller {
             "bluetooth_start",
             serde_json::json!({"wanted": self.desired.bluetooth}),
         );
+        // BlueALSA reads each headset's learned start level from /run (gone after a reboot).
+        codec::publish_starts(&self.root);
         // The first look sees the adapter come on: a power-on for the preferred headset.
         loop {
             let now = Instant::now();
