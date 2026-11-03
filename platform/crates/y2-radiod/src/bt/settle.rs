@@ -20,6 +20,10 @@ pub const PCM_WAIT: Duration = Duration::from_secs(8);
 const SELECT_DEADLINE: Duration = Duration::from_secs(8);
 const SELECT_BUDGET: Duration = Duration::from_secs(12);
 const SELECTIONS: u32 = 3;
+/// How long a stream may list codecs without the one it runs: BlueZ asks a headset that connected
+/// by itself for its codecs only after the stream is there (≈20 ms on AirPods Pro).
+const CAPABILITIES_WAIT: Duration = Duration::from_secs(3);
+const CAPABILITIES_RETRY: Duration = Duration::from_millis(250);
 
 /// One headset's codec decision for one stream generation and choice.
 pub struct Run {
@@ -33,6 +37,8 @@ pub struct Run {
     pub state: &'static str,
     pub reason: Option<String>,
     pub started: Instant,
+    /// "Learning": decide again then.
+    pub retry_at: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -47,7 +53,7 @@ pub struct Codecs {
 
 impl Codecs {
     pub fn next(&self) -> Option<Instant> {
-        None
+        self.runs.values().filter_map(|run| run.retry_at).min()
     }
 
     pub fn forget(&mut self, address: &str) {
@@ -59,7 +65,7 @@ impl Codecs {
     pub fn selecting(&self, address: &str) -> bool {
         self.runs
             .get(address)
-            .is_some_and(|run| matches!(run.state, "Selecting" | "Pending"))
+            .is_some_and(|run| matches!(run.state, "Selecting" | "Pending" | "Learning"))
     }
 
     /// The decision shown for this headset.
@@ -70,8 +76,8 @@ impl Codecs {
             generation: run.generation,
             preference: run.preference.clone(),
             eligibility: run.eligibility.clone(),
-            // "Pending" is this module's own step before a selection starts.
-            state: if run.state == "Pending" {
+            // "Pending" and "Learning" are this module's own steps before a selection starts.
+            state: if matches!(run.state, "Pending" | "Learning") {
                 "Selecting"
             } else {
                 run.state
@@ -93,11 +99,11 @@ impl Controller {
         record.pcm_missing_since = None;
         record.profile_asked = false;
         let preference = self.desired.policy.preference.clone();
-        let fresh = self
-            .codec
-            .runs
-            .get(address)
-            .is_none_or(|run| run.generation != pcm.generation || run.preference != preference);
+        let fresh = self.codec.runs.get(address).is_none_or(|run| {
+            run.generation != pcm.generation
+                || run.preference != preference
+                || run.retry_at.is_some_and(|at| now >= at)
+        });
         if fresh
             && !self.in_flight(|k| matches!(k, Kind::Select { address: a, .. } if a == address))
         {
@@ -162,6 +168,7 @@ impl Controller {
             state: "Settled",
             reason: None,
             started: now,
+            retry_at: None,
         };
         let (mutual, at_44k, runtime) = match self.capabilities(&pcm.object) {
             Ok(found) => found,
@@ -170,6 +177,25 @@ impl Controller {
                 return run;
             }
         };
+        if pcm
+            .codec
+            .as_deref()
+            .is_some_and(|c| !mutual.iter().any(|m| m == c))
+        {
+            let first = self
+                .codec
+                .runs
+                .get(address)
+                .filter(|r| r.generation == pcm.generation && r.state == "Learning")
+                .map_or(now, |r| r.started);
+            if now.duration_since(first) < CAPABILITIES_WAIT {
+                run.started = first;
+                run.state = "Learning";
+                run.reason = Some("capabilities_pending".into());
+                run.retry_at = Some(now + CAPABILITIES_RETRY);
+                return run;
+            }
+        }
         let inventory = codec::inventory(&self.root);
         let experimental = codec::experimental(&self.root, &inventory);
         run.eligibility = codec::eligibility(&inventory, &runtime, &mutual, experimental);

@@ -47,6 +47,8 @@ struct Fake {
     /// The headphones connected by themselves: BlueZ (5.87) looks up no services for a known
     /// headset that connects to us, so ServicesResolved stays false (wake, owner's player).
     arrived: bool,
+    /// This many GetCodecs calls list no codec (BlueZ has not asked the headset yet).
+    late_codecs: u32,
 }
 
 fn variant<T: RefArg + 'static>(value: T) -> Variant<Box<dyn RefArg>> {
@@ -176,6 +178,10 @@ fn answer(fake: &Mutex<Fake>, message: &Message, connection: &Connection) -> Mes
                 runtime.push("A2DP-source:AAC".into());
             }
             message.return_with_args((variant(runtime),))
+        }
+        "GetCodecs" if fake.late_codecs > 0 => {
+            fake.late_codecs -= 1;
+            message.return_with_args((HashMap::<String, PropMap>::new(),))
         }
         "GetCodecs" => message.return_with_args((codecs(&fake),)),
         "SelectCodec" => {
@@ -444,12 +450,14 @@ fn power_on_adoption_in_progress_and_sleep() {
 
 /// Headphones switched off: three tries, then parked (no paging forever); when they come on and
 /// connect by themselves they are Ready without a tap, and stay connected although BlueZ never
-/// resolves their services (9.3.5 wake: cancelled as half connected after 8 s).
+/// resolves their services (9.3.5 wake: cancelled as half connected after 8 s); their codecs, known
+/// only after the stream, are waited for (9.3.6: nothing mutually usable).
 fn switched_off_parks_then_returns_by_itself() {
     let Some(h) = Harness::start(
         "off",
         Fake {
             host_down: true,
+            late_codecs: 2,
             ..Fake::default()
         },
     ) else {
@@ -461,8 +469,12 @@ fn switched_off_parks_then_returns_by_itself() {
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(h.fake().connects, tries, "no paging while parked");
     let _ = h.control.send(Control::Arrive);
-    h.link(Duration::from_secs(10), Link::Ready)
+    let back = h
+        .link(Duration::from_secs(10), Link::Ready)
         .expect("back by itself");
+    let codec = back.codec.expect("codec decision");
+    assert!(codec.eligibility["SBC"].mutually_usable, "{codec:?}");
+    assert_eq!(codec.state, "Settled");
     std::thread::sleep(links::HALF_CONNECTED + Duration::from_secs(1));
     let after = h.fake();
     assert!(

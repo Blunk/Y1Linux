@@ -41,7 +41,8 @@ changes while one is open.
   minutes.
 - **Codecs** (`bt/codec.rs`, `bt/settle.rs`): the policy Reborn had (Auto: AAC, aptX, SBC; LDAC and aptX HD only
   when chosen; history of refusals). SelectCodec only when the negotiated codec differs, only while no stream is
-  open, at most three per connection; an unanswered one leaves the headset usable. New codec settings
+  open, at most three per connection; an unanswered one leaves the headset usable. A stream whose codec list lacks the
+  codec it runs waits up to 3 s for the list (BlueZ asks a headset that connected by itself only after the stream). New codec settings
   (`codec-settings`) restart BlueALSA once nothing plays (`ReloadCodecs`).
 - **Pairing agent** (`bt/agent.rs`): `DisplayYesNo`; the owner's yes/no, refused after 60 s; Pairable for 90 s.
 
