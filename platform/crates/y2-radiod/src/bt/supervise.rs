@@ -13,9 +13,12 @@ use std::{
 use y2p_core::{command, sys, Root};
 
 /// How long BlueALSA keeps a headset's stream started after the player closed it: a pause and Play
-/// within it reuse the stream instead of an AVDTP Suspend and Start, which slow headsets answer
-/// late and BlueZ then ends the link (F61, the 10-31 drop of #87).
-pub const KEEP_ALIVE_S: u32 = 10;
+/// within it reuse the stream instead of an AVDTP Suspend and Start. Headsets answer those late or
+/// not at all and BlueZ then ends the link (F61, the 10-31 drop of #87; owner's AirPods Pro on
+/// 2026-11-03: "No reply to Suspend request" and a dropped link after one pause in three). As long
+/// as a paused player stays awake with headphones (15 min), so no Suspend is sent while they stay
+/// connected; a sleep takes Bluetooth down without one.
+pub const KEEP_ALIVE_S: u32 = 900;
 const SPACING: Duration = Duration::from_secs(5);
 const WINDOW: Duration = Duration::from_secs(600);
 const BUDGET: usize = 5;

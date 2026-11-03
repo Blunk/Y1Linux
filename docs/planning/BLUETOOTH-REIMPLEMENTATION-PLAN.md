@@ -586,7 +586,7 @@ The owner asked for everything at once after reading §1–§7. What was built, 
 | Recovery ladder | cancel page → power cycle → BlueALSA restart → BlueZ restart, 3 each per 10 min, then Failed until "Restart Bluetooth" | `bt/ladder.rs`, `bt/reconcile.rs` |
 | Supervision | bluetoothd (its init script) and bluealsad restarted when they end (5 per 10 min) | `bt/supervise.rs` |
 | Codec at connect, never mid-stream | policy moved from Reborn unchanged; SelectCodec only when it differs, only while the stream is not running; no answer leaves the headset usable | `bt/codec.rs`, `bt/settle.rs` |
-| Hold on pause | `bluealsad --keep-alive=10` (pause and Play within 10 s: no AVDTP Suspend/Start) | `bt/supervise.rs` |
+| Hold on pause | `bluealsad --keep-alive=900`: no AVDTP Suspend while a paused player stays awake (AirPods Pro left one Suspend in three unanswered and dropped the link, device test 2026-11-03) | `bt/supervise.rs` |
 | Wake order | Wi-Fi waits up to 12 s for the headset connected before the sleep | `arbiter.rs` |
 | Wi-Fi power | `y2-radio`, Reborn's switch and the F60 restart go through the daemon (direct only when it does not run) | §7 |
 | Journal | `/data/system/platform/bluetooth-journal.jsonl`, `/run/y2/radiod-state.json`, both in error reports | `journal.rs` |

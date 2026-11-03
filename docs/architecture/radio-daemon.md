@@ -34,7 +34,9 @@ changes while one is open.
   ten minutes; then the service is Failed until the owner switches Bluetooth off and on (which restarts BlueALSA and
   BlueZ and starts every budget over).
 - **Supervision** (`bt/supervise.rs`): bluetoothd (its init script) and bluealsad (started here with the build's
-  codec arguments and `--keep-alive=10`) start again when they end, five times in ten minutes.
+  codec arguments and `--keep-alive=900`: no AVDTP Suspend while a paused player stays awake, since headsets
+  answer Suspends late or not at all and BlueZ then ends the link) start again when they end, five times in ten
+  minutes.
 - **Codecs** (`bt/codec.rs`, `bt/settle.rs`): the policy Reborn had (Auto: AAC, aptX, SBC; LDAC and aptX HD only
   when chosen; history of refusals). SelectCodec only when the negotiated codec differs, only while no stream is
   open, at most three per connection; an unanswered one leaves the headset usable. New codec settings
