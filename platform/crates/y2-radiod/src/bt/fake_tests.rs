@@ -525,6 +525,30 @@ fn missing_stream_asks_a2dp_then_restarts_bluealsa() {
     assert!(h.fake().connects >= 2, "A2DP asked for once more first");
 }
 
+/// New codec settings with a headset connected: its link ends cleanly, BlueALSA starts again, the
+/// headset is connected again at once (no half set-up link, 9.3.3 on the owner's player).
+fn codec_reload_reconnects_cleanly() {
+    let Some(h) = Harness::start("reload", Fake::default()) else {
+        return;
+    };
+    h.link(LONG, Link::Ready).expect("ready");
+    let tries = h.fake().connects;
+    let answer = h.ask(Request::ReloadCodecs);
+    assert!(answer.contains("\"ok\":true"), "{answer}");
+    h.until(Duration::from_secs(5), |s| {
+        s.devices.iter().any(|d| d.ended == Some(Ended::Local))
+    })
+    .expect("ended cleanly");
+    let started = Instant::now();
+    h.link(Duration::from_secs(10), Link::Ready).expect("back");
+    assert!(
+        started.elapsed() < Duration::from_secs(6),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(h.fake().connects, tries + 1);
+}
+
 #[test]
 fn field_failures_against_a_fake_bluez() {
     if private_bus().is_none() {
@@ -536,4 +560,5 @@ fn field_failures_against_a_fake_bluez() {
     remote_end_one_look_and_owners_disconnect_none();
     refused_codec_falls_back_and_stays_playable();
     missing_stream_asks_a2dp_then_restarts_bluealsa();
+    codec_reload_reconnects_cleanly();
 }

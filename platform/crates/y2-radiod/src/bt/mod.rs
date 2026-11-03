@@ -310,7 +310,7 @@ impl Controller {
         for record in self.records.values() {
             consider(record.episode.as_ref().map(|e| e.next));
             consider(record.connecting.map(|at| at + links::STUCK));
-            consider(record.connected_since.map(|at| at + links::STUCK));
+            consider(record.connected_since.map(|at| at + links::HALF_CONNECTED));
             consider(record.pcm_missing_since.map(|at| at + settle::PCM_WAIT));
         }
         consider(self.discovery.as_ref().map(|d| d.until));

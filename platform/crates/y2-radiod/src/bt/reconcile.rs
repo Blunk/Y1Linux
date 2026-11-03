@@ -207,7 +207,7 @@ impl Controller {
                 let half = dev.is_some_and(|d| d.connected && d.audio && !d.resolved)
                     && record
                         .connected_since
-                        .is_some_and(|at| now.duration_since(at) >= links::STUCK);
+                        .is_some_and(|at| now.duration_since(at) >= links::HALF_CONNECTED);
                 waiting || half
             })
             .map(|(address, _)| address.clone())
@@ -307,7 +307,28 @@ impl Controller {
         self.reload_codecs = false;
         self.journal
             .event("codec_settings_reload", serde_json::json!({}));
+        // A BlueALSA started under a connected headset has no stream for it, and the link then hung
+        // half set up for 30 s (owner's player, 9.3.3). End the links cleanly first, restart, and
+        // connect them again straight away (episode Lost(Local): 2 s for BlueALSA's endpoints).
+        let connected: Vec<String> = self
+            .world
+            .connected_audio()
+            .map(|d| d.address.clone())
+            .collect();
+        for address in &connected {
+            self.disconnect(address, Kind::Cancel(address.clone()));
+        }
         self.supervise.restart_bluealsa();
+        for address in connected {
+            self.reasons.insert(
+                self.world
+                    .devices
+                    .get(&address)
+                    .map(|d| d.path.clone())
+                    .unwrap_or_default(),
+                Ended::Local,
+            );
+        }
         self.dirty = true;
     }
 

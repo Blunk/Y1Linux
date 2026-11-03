@@ -30,8 +30,12 @@ const SPACING: [Duration; 3] = [
 /// A connect call BlueZ has not answered in this long is stuck (an absent headset answers "Host is
 /// down" after ≈ 5–20 s with the 5.12 s page timeout).
 pub const CONNECT_DEADLINE: Duration = Duration::from_secs(35);
-/// BlueZ said InProgress (or the device shows connected without its services) this long: cancel.
+/// BlueZ said InProgress this long: cancel.
 pub const STUCK: Duration = Duration::from_secs(12);
+/// Connected without its services this long: cancel and connect again. Services follow the link in
+/// 1–2 s on the owner's player; a headset that reconnects by itself after a lost link sometimes
+/// never gets them (AirPods Pro, BlueALSA refusing its configuration).
+pub const HALF_CONNECTED: Duration = Duration::from_secs(8);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Episode {
