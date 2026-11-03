@@ -12,7 +12,7 @@ use y2p_core::{
     Root,
 };
 
-/// When `/run/y2/bt-reconnect.json` was written (y2-bt-reconnect, every few seconds).
+/// When `/run/y2/bt-reconnect.json` was written (y2-radiod, at least every 5 s).
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct ReconnectStamp {
@@ -262,7 +262,7 @@ impl Section {
             requested_codec: None,
             actual_bitrate_bps: None,
             packet_loss: None,
-            reconnect_owner: "y2-bt-reconnect",
+            reconnect_owner: "y2-radiod",
             reconnect: root.json("/run/y2/bt-reconnect.json"),
             codec_inventory: inventory,
             codec_settings: settings,
