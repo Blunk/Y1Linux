@@ -1,5 +1,15 @@
 # Current Y2Linux platform state
 
+## Y2Linux 1.0 Beta 9.3.7, Baseline 215 — 2026-11-03 (latest, published)
+
+Release `1.0.0-beta.9.3.7`, tag `baseline-215`, Linux `153a88cd`, Reborn `8fc6f69`, sequence 14000 (test builds
+208–215 = 9.3–9.3.7; only 215 published). The radio daemon below, plus: BlueALSA patch 0006 (AirPods' own AAC
+configuration with A2DP 1.3 reserved channel bits accepted), a link counts as set up once BlueALSA has its stream
+(BlueZ 5.87 resolves no services for a headset that connects to us), the codec decision waits up to 3 s for the
+headset's codec list. On the developer's player: 19 wakes without a failed link, AirPods back by themselves in
+2.5–4.9 s. Open: a pause longer than ≈22 s ends in a supervision timeout (HCI 0x08) and a reconnect; no overnight on
+this build; only AirPods Pro tried. Details: [Beta 9.3.7 report](validation/Y2-LINUX-1.0-BETA-9.3.7.md).
+
 ## Y2Linux 1.0 Beta 9.3.4 test build 212 — 2026-11-03 (on the developer's player, not published)
 
 Release `1.0.0-beta.9.3.4`, label 212, sequence 13700 (test builds 208–212 = 9.3–9.3.4). Bluetooth rebuilt around one
