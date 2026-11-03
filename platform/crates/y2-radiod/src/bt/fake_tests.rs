@@ -215,6 +215,23 @@ fn until(
     None
 }
 
+/// This process's user + system CPU time in clock ticks (/proc/self/stat fields 14 and 15).
+fn cpu_ticks() -> u64 {
+    let stat = std::fs::read_to_string("/proc/self/stat").expect("stat");
+    let fields: Vec<&str> = stat
+        .rsplit_once(')')
+        .map(|(_, rest)| rest.split_whitespace().collect())
+        .unwrap_or_default();
+    // After the command name: field 3 is index 0, so utime (14) is 11 and stime (15) is 12.
+    let tick = |index: usize| {
+        fields
+            .get(index)
+            .and_then(|f| f.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    tick(11) + tick(12)
+}
+
 fn fixture(name: &str) -> (Root, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!("y2-radiod-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -274,6 +291,11 @@ fn bluetooth_comes_on_pages_the_headset_after_adoption_recovers_in_progress_and_
         "InProgress was retried"
     );
     assert!(ready.pcms[0].generation > 0);
+    // Settled: the controller waits instead of spinning (its thread's CPU time over 2 s).
+    let before = cpu_ticks();
+    std::thread::sleep(Duration::from_secs(2));
+    let spent = cpu_ticks() - before;
+    assert!(spent < 20, "{spent} ticks of CPU in 2 s while idle");
     // A sleep: the adapter goes down and the quiesce is answered.
     let (client, peer) = std::os::unix::net::UnixStream::pair().expect("pair");
     let client = crate::server::Client::for_tests(client);

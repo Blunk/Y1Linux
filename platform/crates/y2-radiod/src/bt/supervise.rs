@@ -144,8 +144,10 @@ impl Supervise {
         };
         let runs = pid > 1
             && sys::alive(i64::from(pid))
-            && fs::read_link(root.path(&format!("/proc/{pid}/exe")))
-                .is_ok_and(|exe| exe == root.path(daemon.binary));
+            && fs::read_link(root.path(&format!("/proc/{pid}/exe"))).is_ok_and(|exe| {
+                // Both resolved: a symlinked binary must not look like another program.
+                fs::canonicalize(root.path(daemon.binary)).is_ok_and(|binary| exe == binary)
+            });
         if runs && daemon.pidfd.as_ref().is_none_or(|(known, _)| *known != pid) {
             daemon.pidfd = sys::pidfd_open(pid).ok().map(|fd| (pid, fd));
         }

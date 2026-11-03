@@ -273,8 +273,11 @@ impl Controller {
         if self.dirty {
             return now;
         }
+        // Only what lies ahead: whatever was due has had its turn in this pass, and a past time that
+        // could not be acted on (a power retry time while the power is right, an episode while the
+        // adapter is off, a try while its page runs) must not turn the wait into a spin.
         let mut consider = |at: Option<Instant>| {
-            if let Some(at) = at {
+            if let Some(at) = at.filter(|at| *at > now) {
                 until = until.min(at);
             }
         };

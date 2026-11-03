@@ -40,7 +40,12 @@ impl Controller {
             Request::Restore {
                 radio: Radio::Bluetooth,
             } => {
-                self.sleep = Sleep::Awake;
+                // A wake before the power-down finished: whoever waits for it hears it ended.
+                if let Sleep::Going { clients, .. } = std::mem::take(&mut self.sleep) {
+                    for waiting in clients {
+                        waiting.reply(Reply::refused("woken_before_power_down"));
+                    }
+                }
                 Reply::done()
             }
             _ => Reply::refused("not_a_bluetooth_request"),
