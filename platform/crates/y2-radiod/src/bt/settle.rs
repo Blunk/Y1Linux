@@ -104,7 +104,7 @@ impl Controller {
             let run = self.decide(address, &pcm, &preference, now);
             self.codec.runs.insert(address.to_owned(), run);
         }
-        let open = self.streams.contains_key(address) || pcm.running == Some(true);
+        let open = self.streams.contains_key(address);
         let sent = self.codec.selections.get(address).copied().unwrap_or(0);
         let Some(run) = self.codec.runs.get_mut(address) else {
             return;

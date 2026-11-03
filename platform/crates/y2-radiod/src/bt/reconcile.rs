@@ -21,8 +21,9 @@ impl Controller {
             return;
         };
         match world::observe(&bus.channel, &mut self.generations) {
-            Ok(new) => {
+            Ok(mut new) => {
                 self.observe_misses = 0;
+                self.playing_only_with_a_lease(&mut new);
                 let old = std::mem::replace(&mut self.world, new);
                 self.transitions(&old, now);
             }
@@ -36,6 +37,22 @@ impl Controller {
                     self.observe_misses = 0;
                     self.recover(Rung::BluezRestart, None);
                 }
+            }
+        }
+    }
+
+    /// BlueALSA reports a stream Running for the whole keep-alive after the player closed it (900 s,
+    /// supervise.rs): only a stream the player holds open (its `Stream` lease) counts as playing, so
+    /// a pause allows codec changes, new codec settings, rate learning and Wi-Fi's power save at once.
+    fn playing_only_with_a_lease(&self, world: &mut world::World) {
+        let devices = world.devices.clone();
+        for pcm in world.pcms.iter_mut().filter(|p| p.running == Some(true)) {
+            let held = devices
+                .values()
+                .find(|d| d.path == pcm.device)
+                .is_some_and(|d| self.streams.contains_key(&d.address));
+            if !held {
+                pcm.running = Some(false);
             }
         }
     }
