@@ -204,7 +204,7 @@ impl Controller {
                         .connecting
                         .is_some_and(|at| now.duration_since(at) >= links::STUCK)
                     && !dev.is_some_and(|d| d.connected);
-                let half = dev.is_some_and(|d| d.connected && d.audio && !d.resolved)
+                let half = dev.is_some_and(|d| d.connected && d.audio && !self.world.set_up(d))
                     && record
                         .connected_since
                         .is_some_and(|at| now.duration_since(at) >= links::HALF_CONNECTED);
@@ -233,7 +233,7 @@ impl Controller {
             .world
             .devices
             .values()
-            .filter(|d| d.connected && d.resolved && d.audio)
+            .filter(|d| d.connected && d.audio && self.world.set_up(d))
             .map(|d| d.address.clone())
             .collect();
         for address in ready {

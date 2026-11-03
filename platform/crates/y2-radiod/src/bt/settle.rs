@@ -83,7 +83,7 @@ impl Codecs {
 }
 
 impl Controller {
-    /// Bring one connected, resolved audio device to Ready.
+    /// Bring one connected, set-up audio device to Ready.
     pub(super) fn settle(&mut self, address: &str, now: Instant) {
         let Some(pcm) = self.world.pcm_for(address).cloned() else {
             self.pcm_missing(address, now);

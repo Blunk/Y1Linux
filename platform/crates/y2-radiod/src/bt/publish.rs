@@ -87,8 +87,7 @@ impl Controller {
         }
         if dev.connected {
             let ready = !dev.audio
-                || (dev.resolved
-                    && self.world.pcm_for(&dev.address).is_some()
+                || (self.world.pcm_for(&dev.address).is_some()
                     && !self.codec.selecting(&dev.address));
             return if ready { Link::Ready } else { Link::Settling };
         }

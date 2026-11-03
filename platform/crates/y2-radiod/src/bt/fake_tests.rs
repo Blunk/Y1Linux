@@ -44,6 +44,9 @@ struct Fake {
     refuse_aac: bool,
     /// BlueALSA shows no PCM for the connected headset.
     no_pcm: bool,
+    /// The headphones connected by themselves: BlueZ (5.87) looks up no services for a known
+    /// headset that connects to us, so ServicesResolved stays false (wake, owner's player).
+    arrived: bool,
 }
 
 fn variant<T: RefArg + 'static>(value: T) -> Variant<Box<dyn RefArg>> {
@@ -64,7 +67,10 @@ fn bluez_objects(fake: &Fake) -> Objects {
     }
     device.insert("Blocked".into(), variant(false));
     device.insert("Connected".into(), variant(fake.connected));
-    device.insert("ServicesResolved".into(), variant(fake.connected));
+    device.insert(
+        "ServicesResolved".into(),
+        variant(fake.connected && !fake.arrived),
+    );
     device.insert(
         "UUIDs".into(),
         variant(vec![super::world::SINK.to_string()]),
@@ -155,6 +161,7 @@ fn answer(fake: &Mutex<Fake>, message: &Message, connection: &Connection) -> Mes
                 return message.error(&"org.bluez.Error.Failed".into(), c"Host is down");
             }
             fake.connected = true;
+            fake.arrived = false;
             let _ = connection.send(changed(DEVICE, "org.bluez.Device1"));
             message.method_return()
         }
@@ -204,7 +211,11 @@ fn act(fake: &Mutex<Fake>, control: Control, connection: &Connection) {
                 .append2(reason, "Connection terminated");
             let _ = connection.send(signal);
         }
-        Control::Arrive => fake.lock().expect("fake").connected = true,
+        Control::Arrive => {
+            let mut fake = fake.lock().expect("fake");
+            fake.connected = true;
+            fake.arrived = true;
+        }
     }
     let _ = connection.send(changed(DEVICE, "org.bluez.Device1"));
 }
@@ -432,7 +443,8 @@ fn power_on_adoption_in_progress_and_sleep() {
 }
 
 /// Headphones switched off: three tries, then parked (no paging forever); when they come on and
-/// connect by themselves they are Ready without a tap.
+/// connect by themselves they are Ready without a tap, and stay connected although BlueZ never
+/// resolves their services (9.3.5 wake: cancelled as half connected after 8 s).
 fn switched_off_parks_then_returns_by_itself() {
     let Some(h) = Harness::start(
         "off",
@@ -451,6 +463,13 @@ fn switched_off_parks_then_returns_by_itself() {
     let _ = h.control.send(Control::Arrive);
     h.link(Duration::from_secs(10), Link::Ready)
         .expect("back by itself");
+    std::thread::sleep(links::HALF_CONNECTED + Duration::from_secs(1));
+    let after = h.fake();
+    assert!(
+        after.connected,
+        "a stream without resolved services was cancelled"
+    );
+    assert_eq!(after.connects, tries, "no page for a headset that is back");
 }
 
 /// A remote end gets one look; the owner's own disconnect gets none and says so.

@@ -104,6 +104,12 @@ impl World {
         self.pcms.iter().find(|pcm| pcm.playback_for(&device.path))
     }
 
+    /// A2DP is set up: BlueZ resolved the services, or BlueALSA has the stream. BlueZ looks up no
+    /// services for a known headset that connects by itself, so its ServicesResolved stays false.
+    pub fn set_up(&self, dev: &Dev) -> bool {
+        dev.resolved || self.pcm_for(&dev.address).is_some()
+    }
+
     pub fn powered(&self) -> bool {
         self.adapter.as_ref().is_some_and(|a| a.powered)
     }

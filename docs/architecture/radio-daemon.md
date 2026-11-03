@@ -28,8 +28,10 @@ changes while one is open.
   tries (3 s, 8 s apart); the owner's tap: at once, three tries; a lost link (timeout, local, unknown): after 2 s,
   three tries; a remote end (switched off): one look after 4 s; the owner's disconnect or a sleep: none. A spent
   episode parks the headset until it connects by itself, a wake, Bluetooth on, or a tap.
-- **Stuck connects**: InProgress (or connected without services) for 12 s, or no answer within 35 s, is cancelled
-  (a Disconnect ends BlueZ's page); a second cancel in one episode switches the adapter off and on.
+- **Stuck connects**: InProgress for 12 s, connected without a stream for 8 s, or no answer within 35 s, is
+  cancelled (a Disconnect ends BlueZ's page); a second cancel in one episode switches the adapter off and on. A link
+  counts as set up when BlueZ resolved its services *or* BlueALSA has its stream: BlueZ looks up no services for a
+  known headset that connects by itself, so its `ServicesResolved` stays false for that whole connection.
 - **Recovery ladder** (`bt/ladder.rs`): cancel page → power cycle → BlueALSA restart → BlueZ restart, three each in
   ten minutes; then the service is Failed until the owner switches Bluetooth off and on (which restarts BlueALSA and
   BlueZ and starts every budget over).
