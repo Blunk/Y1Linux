@@ -41,7 +41,9 @@ changes while one is open.
 - **Supervision** (`bt/supervise.rs`): bluetoothd (its init script) and bluealsad (started here with the build's
   codec arguments and `--keep-alive=900`: no AVDTP Suspend while a paused player stays awake, since headsets
   answer Suspends late or not at all and BlueZ then ends the link) start again when they end, five times in ten
-  minutes.
+  minutes. A kept stream has gaps without packets (a pause, ~50 ms per track skip); BlueALSA patch 0007 moves the
+  RTP timestamp over such a gap, else it falls behind real time and AirPods drop the late packets (crackle, then
+  silence; 2026-11-04).
 - **Codecs** (`bt/codec.rs`, `bt/settle.rs`): the policy Reborn had (Auto: AAC, aptX, SBC; LDAC and aptX HD only
   when chosen; history of refusals). SelectCodec only when the negotiated codec differs, only while no stream is
   open, at most three per connection; an unanswered one leaves the headset usable. Auto keeps the AAC, aptX or SBC a
