@@ -39,6 +39,40 @@ Manifest and images: `evidence-private/2026-11-04-y1-backup/` (not published).
 | eMMC BOOT1/BOOT2: both `--parttype` reads returned the user area's first 2 MiB; the legacy DA's partition switch is unchecked | NOT ACQUIRED |
 | Any restore; an independent second copy | NOT PROVEN / owed |
 
+## ADB evidence boot — 2026-11-04
+
+With the owner's go-ahead, BOOTIMG on the player was replaced by an evidence image: the player's own boot
+image with only the ramdisk's `default.prop` (`ro.secure=0`, `ro.debuggable=1`, `ro.adb.secure=0`,
+USB `mass_storage,adb`) and an appended `init.rc` block (USB mode at boot completion; a root `dmesg` copy to
+`/data/local/tmp` at `post-fs-data`). Kernel and the rest of the header byte-identical; read back after the
+write, identical (sha256 `6011b72d…be4057`). The player boots normally with it; it is still installed.
+Restore: write `boot-stock-from-player.img` (`121bad1a…`) to BOOTIMG. Image, tool, runbook and captures:
+`evidence-private/2026-11-04-y1-adb-boot/` and `…-y1-adb-capture/`.
+
+`adbd` still runs as `shell` (uid 2000), so `dmesg` and `/proc/cmdline` are refused live; the early root copy
+starts at 0.36 s because the log buffer had already wrapped, so `mt_fixup`'s `[Phy Layout]` lines are lost.
+CONFIRMED on the owner's player:
+
+| Fact | Evidence |
+| --- | --- |
+| Command line `console=ttyMT0,921600n1 vmalloc=500M slub_max_order=0 lcm=0-st7701_hvga_dsi_vdo_boe fps=3643 … printk.disable_uart=1` | `mtkfb_probe` log line |
+| Panel **ST7701S** (the same as the owner's Y2) | `lcm=0-st7701_hvga_dsi_vdo_boe` |
+| Console **UART0** `mtk-uart.0` at `0x11005000` (UART1 at `0x11006000`); this corrects the offline reading of LK's default string | command line, `/proc/iomem` |
+| RAM: `0x80100000`–`0x9dffffff` and `0x9ea00000`–`0x9fbfffff` System RAM; `0x9e000000`–`0x9e9fffff` (10 MiB) held back, purpose UNKNOWN; `0x9fc00000`–`0x9fffffff` frame buffer (4 MiB, M4U LCDC_UI); `MemTotal` 494,388 kB | `/proc/iomem`, `/proc/meminfo`, M4U log |
+| I2C0 `0x58` `aw87559_pa`; I2C1 `0x51` `APT32F`, `0x60` `UPDATE`; leftovers `pn544`, `dummy_eeprom`, `dummy_cam_cal` registered | `/sys/bus/i2c/devices` |
+| I2C0 `0x11009000`, I2C1 `0x1100a000`, MSDC0 `0x11120000`, MSDC1 `0x11130000`, Mali `0x13010000` | `/proc/iomem` |
+| Wheel power: PMIC powerId 5 set to 3000 mV and enabled | `pmic_ldo_vol_sel` log |
+| No ALSA card (stock audio via `/dev/eac`); frame buffer 480×1080 virtual, 32 bpp | `/proc/asound`, `fb0` |
+| Inputs: `mtk-kpd` event0, `ACCDET` event1, `mtk-tpd` event2, `mtk-tpd-kpd` event3 | `/proc/bus/input/devices` |
+
+Buttons (owner pressed each once with `getevent -lt` running; the Y1 has no volume and no power buttons):
+
+| Control | Event |
+| --- | --- |
+| Wheel clockwise / counter-clockwise | event2 `KEY_LEFT` / `KEY_RIGHT`, press and release together per step |
+| Top, bottom, left, right | event2 `KEY_BACK`, `KEY_PLAYPAUSE`, `KEY_PREVIOUSSONG`, `KEY_NEXTSONG`, separate press and release |
+| **Centre** | event0 (`mtk-kpd`) `KEY_REPLY` (232): the MT6323 power-key input, reported with the handler's alternate code |
+
 ## Stock ROM 3.0.2
 
 Source: `y1-community/y1-stock-rom` release 3.0.2, `rom.zip`
@@ -93,8 +127,8 @@ GC9503V command, not an end marker.
 
 Boot loaders (same ROM): `lk.bin` is a 512-byte `LK` header plus 0x3d144 bytes loaded at **0x80020000**
 (63 stored pointers land on string starts there, 4 at the neighbouring candidates), ARM vectors, mostly
-Thumb-2 code. Its default command line is `console=tty0 console=ttyMT1,921600n1 root=/dev/ram`, so the
-stock console is UART1 at 921,600 baud (the Y2 console is UART0). Every DRAM entry of the preloader's
+Thumb-2 code. It contains the string `console=tty0 console=ttyMT1,921600n1 root=/dev/ram`, but the command
+line it actually passes uses `ttyMT0` (see the ADB evidence boot above). Every DRAM entry of the preloader's
 EMI table (from offset 0x16fac) is a single 512 MiB rank, so RAM is 0x80000000–0xa0000000 (INFERRED: the
 entry chosen at boot is not identified). Reservations (modem, frame buffer, connectivity) are made at boot
 by LK's tags and `mt_fixup`; LK's string references are built in code that linear disassembly does not
@@ -113,11 +147,9 @@ resolve, and a boot log (`[Phy Layout]` lines) would settle them directly.
 ## Unknown before any Y1 implementation
 
 - Pin modes and pulls of all other lines (set by the preloader's GPIO table, not by the kernel), the
-  panel reset routing, accdet, the UART1 pads.
-- The centre button's path, and whether the APT32F frame on the owner's player matches the 3.0.2 driver.
-- Panel fitted to the owner's player (both tables equal the Y2's, so either is covered).
-- The memory reservations LK and `mt_fixup` make at boot; the [Y2 RAM policy](initial-ram-map.md) does
-  not transfer.
+  panel reset routing, accdet, the UART0 pads.
+- What the 10 MiB at `0x9e000000` holds (modem or connectivity are the candidates); the
+  [Y2 RAM policy](initial-ram-map.md) does not transfer.
 - MT6323 configuration (regulator voltages, charger limits, battery table) of the Y1 board.
 - Type B wheel controller identity.
 - Recovery: a same-device user-area backup exists (above); no proven Y1 restore, no approved write procedure.
