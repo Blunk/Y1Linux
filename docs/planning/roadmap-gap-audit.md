@@ -1,5 +1,32 @@
 # Roadmap gap audit
 
+## Y1 (MT6572) port scope audit — 2026-11-04
+
+Standing boundary audit before a material hardware-scope change: the owner asked for a second board, the
+Innioasis Y1. Revision `e4b15159` (Beta 9.3.7 documentation), no Y1 artifact built or tested. Evidence: owner
+observation of a physical Y1 (stock 3.0.2, wheel works, no ADB) and offline analysis of the public 3.0.2
+`rom.zip` (sha256 `7ee9aa5b…f764b1`); details and sources in [Y1 hardware evidence](../knowledge/y1-hardware.md).
+Limits: no read from the owner's Y1, no boot-ROM session, string presence only, no disassembly yet.
+
+Coverage, with the Y2 as reference:
+
+| Area | State |
+| --- | --- |
+| SoC (MT6572: CPUs, clocks, pinctrl, pwrap, MMC, USB, I2C, display, GPU) | Untested driver availability in `mt6572-mainline`, not in our 6.18 tree; nothing of ours runs on an MT6572 |
+| Panel (GC9503V / ST7701S DSI) | Same stock driver pair as the Y2, which Y2Linux supports; Y1 tables and fitted panel UNKNOWN |
+| Wheel (APT32F) | Same controller name as the Y2; Y1 bus, address and lines UNKNOWN; Type B different and unidentified |
+| Amplifier (AW87559), PMIC (MT6323) | Same parts as the Y2; Y1 wiring and settings UNKNOWN |
+| Audio path | Planned work: MT6572 AFE plus MT6323 analog codec, no mainline driver; the Y2 CS43131 path does not apply |
+| Charger, suspend/SPM, Wi-Fi/BT/FM | Planned work; no mainline MT6572 support |
+| Boot handoff and memory | UNKNOWN for the Y1 (LK command line, reservations) |
+| Recovery | BLOCKED: no same-device backup, no proven Y1 restore |
+
+The next smallest blocker is a same-device read-only backup and LK/kernel handoff record, which needs a
+boot-ROM session and the owner's explicit authorization; offline disassembly of the 3.0.2 kernel and LK
+for GPIO/I2C tables can run first. No issue or epic exists for the Y1; a high-level bookmark is owed when
+the owner chooses to pursue it. Phase readiness: **BLOCKED** for any Y1 kernel, device tree or Buildroot
+board; documentation and offline analysis only. Hardware authorization remains separate.
+
 ## POWER-FINAL-06 INFRASYS power-down bring-up admission — 2026-10-09
 
 Standing milestone-boundary audit before materially changing hardware/memory scope, using real hardware
