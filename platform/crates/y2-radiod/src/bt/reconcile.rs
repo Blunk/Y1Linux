@@ -41,9 +41,10 @@ impl Controller {
         }
     }
 
-    /// BlueALSA reports a stream Running for the whole keep-alive after the player closed it (900 s,
-    /// supervise.rs): only a stream the player holds open (its `Stream` lease) counts as playing, so
-    /// a pause allows codec changes, new codec settings, rate learning and Wi-Fi's power save at once.
+    /// BlueALSA reports a stream Running until its keep-alive after the player closed it has passed
+    /// (`KEEP_ALIVE_S`, supervise.rs): only a stream the player holds open (its `Stream` lease) counts as
+    /// playing, so a pause allows codec changes, new codec settings, rate learning and Wi-Fi's power
+    /// save at once.
     fn playing_only_with_a_lease(&self, world: &mut world::World) {
         let devices = world.devices.clone();
         for pcm in world.pcms.iter_mut().filter(|p| p.running == Some(true)) {

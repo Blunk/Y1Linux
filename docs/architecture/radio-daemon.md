@@ -39,12 +39,15 @@ changes while one is open.
   ten minutes; then the service is Failed until the owner switches Bluetooth off and on (which restarts BlueALSA and
   BlueZ and starts every budget over).
 - **Supervision** (`bt/supervise.rs`): bluetoothd (its init script) and bluealsad (started here with the build's
-  codec arguments and `--keep-alive=900`: no AVDTP Suspend while a paused player stays awake, since headsets
-  answer Suspends late or not at all and BlueZ then ends the link) start again when they end, five times in ten
-  minutes. A kept stream has gaps without packets (a pause, ~50 ms per track skip): the sink plays them out of its
-  buffer and nothing paced at real time gives them back (AirPods: crackle after two skips, silence after three,
-  2026-11-04). BlueALSA patch 0008 sends up to 200 ms faster than real time after such a gap to refill it; patch
-  0007 moves the RTP timestamp over the gap for sinks that play by timestamp.
+  codec arguments and `--keep-alive=0`) start again when they end, five times in ten minutes. A pause ends the
+  stream (AVDTP Suspend at once, as a phone's pause does) and Play starts a new one; Reborn keeps the sink 2 s
+  between streams, so a track change never suspends. Builds 210–219 kept the stream started for 900 s after a
+  pause: a Suspend sent 10 s into an idle stream had gone unanswered one time in three. But headphones are never
+  left in a started stream without packets by a phone, and AirPods Pro went silent after every pause or resume gap
+  longer than their buffer inside such a stream (packets ran on at 47/s, btmon 2026-11-04; the same as F43 in
+  Beta 6) and stopped answering the baseband 2 s into a pause (supervision timeout 20 s later). BlueALSA patches
+  0007 (RTP timestamp over a gap) and 0008 (refill after a gap) stay, for skips with a kept sink; Reborn no longer
+  drops a Bluetooth sink's queued audio at a track change, so a skip has no packet gap at all.
 - **Codecs** (`bt/codec.rs`, `bt/settle.rs`): the policy Reborn had (Auto: AAC, aptX, SBC; LDAC and aptX HD only
   when chosen; history of refusals). SelectCodec only when the negotiated codec differs, only while no stream is
   open, at most three per connection; an unanswered one leaves the headset usable. Auto keeps the AAC, aptX or SBC a
