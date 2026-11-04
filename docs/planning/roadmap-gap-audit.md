@@ -1,5 +1,37 @@
 # Roadmap gap audit
 
+## Y1 first device tree and minimal boot test admission — 2026-11-04
+
+Boundary review before the first Y1 source work, on the evidence of the same day: offline 3.0.2 ROM
+analysis, the owner's read-only eMMC backup (user area read once, PRELOADER through SECCFG read twice and
+identical) and the ADB evidence boot ([Y1 hardware evidence](../knowledge/y1-hardware.md)). That evidence
+resolves the blockers the scope audit below named for a first boot: same-device backup, boot chain identity
+(the player's preloader, LK and BOOTIMG equal the public 3.0.2 images), console (UART0), RAM map and the
+LK-lit ST7701S panel. Mainline 6.18 already carries basic MT6572 support (`mt6572.dtsi`: CPUs, GIC, sysirq,
+timer, watchdog, UART; the `mediatek,mt6572` machine entry and SMP), so a first boot needs no SoC patch.
+
+Owner decision: start `innioasis-y1.dts` and a minimal boot test. Admitted: source work on a Y1 device tree
+limited to mainline-6.18 bindings, a first-boot kernel and initramfs built with the existing pipeline, and
+offline validation of the resulting BOOTIMG. The physical boot is the owner's separate act on a reviewed
+image, with the stock BOOTIMG restore prepared. Not admitted: any write other than BOOTIMG, PMIC, charger,
+regulator or clock programming, eMMC access from the test kernel, Buildroot board work. Phase: **source and
+offline only**; physical status NOT_RUN.
+
+Build environment (owner decision, same day): `prepare.py` could no longer fetch the locked inputs, because
+Alpine v3.24 had replaced 15 pinned package versions (404). `tools/build/inputs.lock.json` is re-pinned to
+the current v3.24 builds: `clang22` 22.1.3-r2 unchanged; `llvm22*` and its linker tools 22.1.3-r0 → r1 (same
+upstream release); python3 3.14.8 → 3.14.10, perl 5.42.2 → 5.42.3, libexpat, libcurl, c-ares, brotli,
+`musl-dev` 1.2.6-r2 → r3, plus `musl` 1.2.6-r3 pinned over the minirootfs's r2 (required by `musl-dev`). The
+connectivity lock and the minirootfs are unchanged; the reconstructed inventory matches the lock and the
+audited Linux 6.18.56 sources verify. This changes the Y2 build inputs too: a Y2 rebuild check is owed before
+the next Y2 release from this environment. `run.py` binds `../Y2Reborn` only when it exists.
+
+Physical result (same day): the owner wrote the first-boot BOOTIMG (read back identical) and booted it;
+the screen photo shows Linux 6.18.56 reaching the test PID1 with simplefb on LK's frame buffer and the
+watchdog adopted ([result](../knowledge/y1-hardware.md#first-boot-result--2026-11-04)). First boot: **PASS**
+for the bounded behaviour shown. The UART driver does not bind (missing `bus` clock in upstream
+`mt6572.dtsi`). Next boundary: owner decision on further Y1 bring-up (storage, input, display driver).
+
 ## Y1 (MT6572) port scope audit — 2026-11-04
 
 Standing boundary audit before a material hardware-scope change: the owner asked for a second board, the
