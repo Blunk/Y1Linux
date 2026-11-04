@@ -102,8 +102,11 @@ def main():
         '--tmpfs', '/tmp', '--ro-bind', str(PROJECT), '/project',
         '--ro-bind', str(PROJECT / '.cache/sources/linux-6.18'), '/src',
         '--bind', str(output), '/build', '--chdir', '/build',
-        '--ro-bind', str(REBORN), '/tmp/Y2Reborn',
     ]
+    # Reborn is needed only by the production builds; a kernel-only build (the Y1 first boot)
+    # also runs on a machine without the sibling checkout.
+    if REBORN.is_dir():
+        invocation += ['--ro-bind', str(REBORN), '/tmp/Y2Reborn']
     # A private parent mount permits adding Y2 sources without creating files
     # in the locked upstream tree or replacing another platform's directory.
     invocation += ['--tmpfs', '/src/drivers']
