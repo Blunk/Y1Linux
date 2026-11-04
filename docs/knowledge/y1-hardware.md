@@ -73,6 +73,48 @@ Buttons (owner pressed each once with `getevent -lt` running; the Y1 has no volu
 | Top, bottom, left, right | event2 `KEY_BACK`, `KEY_PLAYPAUSE`, `KEY_PREVIOUSSONG`, `KEY_NEXTSONG`, separate press and release |
 | **Centre** | event0 (`mtk-kpd`) `KEY_REPLY` (232): the MT6323 power-key input, reported with the handler's alternate code |
 
+## First-boot test design — 2026-11-04
+
+Admitted by the owner as source and offline work ([admission](../planning/roadmap-gap-audit.md#y1-first-device-tree-and-minimal-boot-test-admission--2026-11-04)).
+Build: `python3 tools/build/run.py --output out/<fresh> -- sh /project/tools/build/y1-first-boot.sh`.
+
+| Part | Choice | Why |
+| --- | --- | --- |
+| Device tree | `kernel/dts/innioasis-y1-first-boot.dts` on upstream v6.18 `mt6572.dtsi`: CPU0 (SMP off), MTK timer, watchdog, UART0 at 921,600, `simple-framebuffer` at `0x9fc00000` | Mainline 6.18 already describes these; no SoC patch |
+| Memory | `0x80000000`–`0x9dffffff` and `0x9ea00000`–`0x9fbfffff` | Stock System RAM plus the idle connsys MiB at the base (the kernel lives there with `AUTO_ZRELADDR`, as on the Y2); the unexplained 10 MiB and the frame buffer stay out |
+| Kernel | `kernel/config/y1-first-boot.config`: the Y2's booted first-boot config without its diagnostic, plus fbcon on `simplefb`, `MEDIATEK_WATCHDOG` and `WATCHDOG_HANDLE_BOOT_ENABLED` (allnoconfig turns that default off); Y2 options off, so the Y2 overlays stay inert | The screen is the only output the owner can see; `mtk_wdt` adopts a watchdog LK left running (15 s, `mt6572.dtsi`) and the core feeds it until PID1 takes over |
+| Userspace | `initramfs/y1-init.c` built into the kernel (`initramfs/y1-first-boot.list`); opens `/dev/watchdog` (starting it if LK left it stopped) and feeds it every heartbeat; prints a banner, the kernel version and `MemTotal`, a heartbeat every 5 s for 120 s, then reboots | Independent of where Y1's LK puts the ramdisk; a hang after PID1 starts ends in a watchdog reset; the reboot gives the owner a preloader window to restore BOOTIMG (no power button) |
+| Image | `tools/build/y1_first_boot.py`: zImage + DTB, an empty ramdisk, the shared `bootimage.pack()` (the Y1 stock header uses the Y2's load addresses), `bootimg.check()`, ≤ 6 MiB | Same reviewed format as the Y2 images |
+
+Assumptions the test exercises (INFERRED until it runs): LK places the kernel in the first 128 MiB of DRAM
+(true on the Y2's LK); LK's frame buffer is `0x9fc00000` and RGB565 (stock `mtkfb` took that address; the
+mainline MT6572 boards use RGB565 from LK), wrong colours or layout still show that the kernel runs; the
+watchdog LK leaves does not expire before `mtk_wdt` probes. Failure modes: no change on screen (kernel did
+not start or frame buffer elsewhere); a reboot loop (watchdog or panic, `panic=10`); a hang before `/init`
+runs with the watchdog stopped, which with no power button may last until the battery is flat. In every case
+the preloader still answers on the next start, so BOOTIMG can be restored with mtkclient.
+
+Build result (2026-11-04, `out/y1-first-boot-2`, two fresh builds byte-identical): BOOTIMG 1,187,840 bytes,
+sha256 `12861e2a2ad54afc92fb177c7fbfd259caea81c3dd0d47f7ce0d633b3e5dfb6d`; zImage+DTB `e91136a4…742fe`, DTB
+`50b8b4c1…abac05`, `/init` `2fdf0cc7…5485`. `_text` at `0xc0008000`; `simplefb`, `mtk8250` and `mtk_wdt` built
+in; no `CONFIG_Y2_*` set; the built-in archive holds `/dev/{console,tty0,watchdog}`, `/proc` and `/init`.
+
+## First-boot result — 2026-11-04
+
+The owner wrote the image to BOOTIMG (read back identical, `12861e2a…`) and booted it. **Linux 6.18 reached
+userspace on the Y1.** Evidence: the owner's photo of the screen (`evidence-private/2026-11-04-y1-first-boot/`,
+sha256 `e7cf5023…`), legible:
+
+| Line on screen | Establishes |
+| --- | --- |
+| `simple-framebuffer 9fc00000.framebuffer: … format=r5g6b5, mode=480x360x16, linelength=960`; `Console: switching to colour frame buffer device 60x45`; legible white text | LK hands over a lit RGB565 480×360 frame buffer at `0x9fc00000` (CONFIRMED); unsigned BOOTIMG accepted; LK placed the kernel where `AUTO_ZRELADDR` works |
+| `Memory: 502060K/509952K available` | The two RAM banks of the device tree work |
+| `mtk-wdt 10007000.watchdog: Watchdog enabled (timeout=15 sec, nowayout=0)` | Mainline `mtk_wdt` drives the MT6572 watchdog |
+| `Run /init as init process` at 0.077 s; `Y1 FIRST BOOT: Linux reached userspace…`, `watchdog: armed, fed every heartbeat`, `kernel: Linux version 6.18.56-y1-first-boot …`, `memory: MemTotal: 502772 kB`, `alive 5 s`, `alive 10 s` | PID1 runs, mounts proc, feeds the watchdog, sleeps and wakes on the MTK timer |
+| `mt6577-uart 11005000.serial: probe with driver mt6577-uart failed with error -2` | Upstream `mt6572.dtsi` names only the `baud` clock; 6.18 `8250_mtk` then also requires `bus` (`mtk8250_probe_of`), so the UART driver does not bind. No effect on this test; fix in the board file next |
+
+Not observed in the photo: the rest of the heartbeats and the reboot at 120 s.
+
 ## Stock ROM 3.0.2
 
 Source: `y1-community/y1-stock-rom` release 3.0.2, `rom.zip`
