@@ -11,9 +11,12 @@ packets: on the developer's AirPods Pro the lag added up per skip (-0.054,
 after a pause, measured from btmon RTP headers (2026-11-04). The audio itself
 kept flowing at 47 packets/s throughout.
 
-The sender now anchors frame 0 to the monotonic clock and, when real time is
-more than 40 ms ahead of the frames sent, moves the timestamp forward to real
-time (never back). Decoding (rtp_state_sync_stream) is unchanged.
+The sender now anchors frame 0 to the clock the encoders pace with
+(gettimestamp: CLOCK_MONOTONIC_RAW; the adjusted CLOCK_MONOTONIC drifted from
+it by ~1 ms/s after boot and moved the timestamp with no gap) and, when real
+time is more than 40 ms ahead of the frames sent, moves the timestamp forward to
+real time (never back). Decoding (rtp_state_sync_stream) is unchanged. Patch
+0008 refills the sink's buffer after such a gap.
 
 --- a/src/rtp.h
 +++ b/src/rtp.h
@@ -39,7 +42,7 @@ time (never back). Decoding (rtp_state_sync_stream) is unchanged.
  void rtp_state_init(
 --- a/src/rtp.c
 +++ b/src/rtp.c
-@@ -8,8 +8,10 @@
+@@ -8,10 +8,13 @@
  /* IWYU pragma: no_include "config.h" */
  
  #include <endian.h>
@@ -49,8 +52,11 @@ time (never back). Decoding (rtp_state_sync_stream) is unchanged.
 +#include <time.h>
  
  #include "shared/defs.h"
++#include "shared/rt.h"
  #include "shared/log.h"
-@@ -88,6 +90,50 @@
+ 
+ /**
+@@ -88,6 +91,52 @@
  	rtp->ts_rtp_clockrate = rtp_clockrate;
  	rtp->ts_offset = rand();
  
@@ -72,7 +78,9 @@ time (never back). Decoding (rtp_state_sync_stream) is unchanged.
 +static void y2_rtp_follow_real_time(struct rtp_state *rtp) {
 +
 +	struct timespec now;
-+	if (rtp->ts_pcm_samplerate == 0 || clock_gettime(CLOCK_MONOTONIC, &now) != 0)
++	/* The clock the encoders pace with (asrsync): an adjusted clock would
++	 * drift from it and move the timestamp with no gap at all. */
++	if (rtp->ts_pcm_samplerate == 0 || gettimestamp(&now) != 0)
 +		return;
 +
 +	if (!rtp->y2_anchored) {
@@ -101,7 +109,7 @@ time (never back). Decoding (rtp_state_sync_stream) is unchanged.
  }
  
  /**
-@@ -99,6 +145,8 @@
+@@ -99,6 +148,8 @@
  		struct rtp_state *rtp,
  		rtp_header_t *hdr) {
  
