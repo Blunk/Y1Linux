@@ -255,6 +255,7 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Hardware Final USB DMA observations](knowledge/usb-dma-observation.md) | Retained research / scoped evidence |
 | [Host-readable USB logging — minimal path and controller gate](knowledge/usb-logging.md) | Retained research / scoped evidence |
 | [Wi-Fi, Bluetooth and firmware evidence](knowledge/wifi-bluetooth.md) | Retained research / scoped evidence |
+| [Innioasis Y1 (MT6572) hardware evidence](knowledge/y1-hardware.md) | Retained research / scoped evidence |
 | [Y2 hardware evidence baseline](knowledge/y2-hardware.md) | Retained research / scoped evidence |
 | [Y2B-245 — Real screen result and sleep failure](knowledge/y2b245-hardware-result.md) | Retained research / scoped evidence |
 | [DEV-02 live platform qualification — 2026-09-10](knowledge/y2linux-dev02-live-qualification.md) | Retained research / scoped evidence |

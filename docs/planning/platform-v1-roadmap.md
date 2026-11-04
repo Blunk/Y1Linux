@@ -15,6 +15,7 @@ players update themselves over Wi-Fi (Settings → About & Updates → Update No
 | Sleep current | ≈7.8 mA vs stock 1.3 mA (archive 156) | Open |
 | Wired headphones | No jack detection yet | Open |
 | **Video playback** | Hardware decoder driver (H.264), software MPEG-4/VP8/VP9, Videos in Reborn ([what works](../VIDEO.md), [plan](VIDEO-PLAYBACK-PLAN.md), audit VIDEO, [register read-out](../knowledge/video-decoder.md)) | Owner test build 243 plays films on the owner's player (2026-11-12); sleep/wake, drain, MPEG-4 on the hardware and the owner's tour open; not a release |
+| Innioasis Y1 (MT6572) board | [Scope audit](roadmap-gap-audit.md#y1-mt6572-port-scope-audit--2026-11-04), [evidence](../knowledge/y1-hardware.md): same panel, wheel, amp and PMIC as the Y2; new SoC and audio path | Blocked: offline analysis only; backup and handoff evidence owed |
 | **Platform in Rust, no Python on the player** | [plan](PLATFORM-RUST-PORT-PLAN.md): phase 0 done (measurements, [contract inventory](../../platform/CONTRACT.md), differential harness); phase 1 dispatcher (audit PLATFORM-RUST phase 1) | Test build 166 owed; then phases 2–6 |
 
 The sections below are the history of how the platform got here (deep-sleep work, POWER-FINAL candidates); their "latest"
