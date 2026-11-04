@@ -62,7 +62,8 @@ by hand; they are CONFIRMED for this image and INFERRED for the owner's player.
 | Wheel controller | `i2c_register_board_info(1, {"APT32F", 0x51})` and `{"UPDATE", 0x60}` in `tpd_driver_init` 0xc0793024, after `hwPowerOn(5, 3000, "TP")`: index 5 is MT6323 **VGP1** in the 2013 MT6572 `mt_pm_ldo.h`, 3.0 V | `wheel@51` on **I2C0** (`kernel/dts/innioasis-y2.dts`) |
 | Wheel reset | **GPIO134**: `tpd_probe` 0xc05944b8 drives 1, 10 ms, 0, 10 ms, 1; `tpd_suspend` holds it low; `tpd_resume` 1, 10 ms, 0, 20 ms, 1 | GPIO56, active low |
 | Wheel data-ready | **GPIO136** mode 4, pull enabled, **EINT2**, `mt65xx_eint_registration(2, …, tpd_eint_interrupt_handler)` | EINT55 |
-| Wheel protocol | `touch_event_handler` 0xc03aaf20 reads registers 1–6 one by one and reports keys itself (`KEY_PLAYPAUSE` 0xa4, `KEY_NEXTSONG` 0xa3, `KEY_PREVIOUSSONG` 0xa5 among others); writes register 6 = 0x55 while a charger is present | Rotation only over I2C; the five zones are GPIO lines (`kernel/platform/apt32f-wheel.c`) |
+| Wheel protocol | `touch_event_handler` 0xc03aaf20 reads registers 1–6 one by one; a frame is valid when reg1 = 0x55. reg2 = 3: scroll, reg4 1–2 `KEY_LEFT`, 3–4 `KEY_RIGHT` (table 0xc05edd6c). reg2 = 1 press / 2 release: reg3 is a bitmask, bit0 `KEY_PLAYPAUSE`, bit1 `KEY_NEXTSONG`, bit2 `KEY_BACK`, bit3 `KEY_PREVIOUSSONG` (jump tables 0xc03ab144 / 0xc03ab284, values 1–9). Writes reg6 = 0x55 while a charger is present | Same frame (reg1 0x55, reg2 class, reg3 zone, reg4 scroll), but only class 3 is used; the five zones are GPIO lines (`kernel/platform/apt32f-wheel.c`) |
+| Other keys | `kpd_keymap` 0xc0812664: `[0]` `KEY_VOLUMEDOWN`, `[9]` `KEY_VOLUMEUP`; PMIC power key `KEY_POWER` (232 in call state). No `KEY_ENTER`/`KEY_OK`/`KEY_SELECT` report anywhere in the kernel: the centre button's path is UNKNOWN. nugget-y1 maps a different code set (wheel `KEY_UP`/`KEY_DOWN`, centre `KEY_ENTER`), so stock codes changed between builds | Keypad with the same two volume keys |
 | Amplifier | `aw87559_init` 0xc0793d04: `{"aw87559_pa", 0x58}` on **I2C0**; enable **GPIO143** high, 50 ms, then ID read (`aw87559_i2c_probe` 0xc0417b44); `aw87559_hw_init` writes the same 39-register table as `kernel/audio/aw87559.c` up to `0x01 = 0x30` | I2C1, enable GPIO8 |
 | GC9503V panel | `lcm_init` 0xc03aa070: reset 1, 10 ms, 0, 10 ms, 1, 120 ms, then 40 rows at 0xc080cee4 whose 36 commands equal `gc9503v_init_cmds`, plus sleep-out, 120 ms, display-on, 20 ms | Same |
 | ST7701S panel | `lcm_init` 0xc03aa354: reset 1, 20 ms, 0, 50 ms, 1, 150 ms, then 47 rows at 0xc080e564 whose 43 commands and delays equal `st7701s_init_cmds` | Same |
@@ -71,6 +72,15 @@ by hand; they are CONFIRMED for this image and INFERRED for the owner's player.
 
 LCM tables are length-delimited (`push_table(table, n)`): `0xffe` is a delay row, and `0xfd` is a real
 GC9503V command, not an end marker.
+
+Boot loaders (same ROM): `lk.bin` is a 512-byte `LK` header plus 0x3d144 bytes loaded at **0x80020000**
+(63 stored pointers land on string starts there, 4 at the neighbouring candidates), ARM vectors, mostly
+Thumb-2 code. Its default command line is `console=tty0 console=ttyMT1,921600n1 root=/dev/ram`, so the
+stock console is UART1 at 921,600 baud (the Y2 console is UART0). Every DRAM entry of the preloader's
+EMI table (from offset 0x16fac) is a single 512 MiB rank, so RAM is 0x80000000–0xa0000000 (INFERRED: the
+entry chosen at boot is not identified). Reservations (modem, frame buffer, connectivity) are made at boot
+by LK's tags and `mt_fixup`; LK's string references are built in code that linear disassembly does not
+resolve, and a boot log (`[Phy Layout]` lines) would settle them directly.
 
 ## External sources
 
@@ -85,11 +95,11 @@ GC9503V command, not an end marker.
 ## Unknown before any Y1 implementation
 
 - Pin modes and pulls of all other lines (set by the preloader's GPIO table, not by the kernel), the
-  panel reset routing, the key matrix, accdet, the UART used for a console.
-- The APT32F frame layout on the Y1: which registers carry rotation and which carry the five buttons.
+  panel reset routing, accdet, the UART1 pads.
+- The centre button's path, and whether the APT32F frame on the owner's player matches the 3.0.2 driver.
 - Panel fitted to the owner's player (both tables equal the Y2's, so either is covered).
-- LK memory tags and command line handed to the kernel (preloader EMI table and LK tag code not yet
-  analysed); the [Y2 RAM policy](initial-ram-map.md) does not transfer.
+- The memory reservations LK and `mt_fixup` make at boot; the [Y2 RAM policy](initial-ram-map.md) does
+  not transfer.
 - MT6323 configuration (regulator voltages, charger limits, battery table) of the Y1 board.
 - Type B wheel controller identity.
 - Recovery: no same-device backup, no proven Y1 restore, no approved Y1 download agent.
