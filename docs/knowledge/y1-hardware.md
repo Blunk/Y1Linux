@@ -21,6 +21,24 @@ artifact; a fact about the owner's player stays INFERRED until read on that play
 | **Type A** Y1: the `type-b-1.7.6` release exists for Y1s whose wheel stops working on firmware 2.0.0 or newer | INFERRED from the working wheel on 3.0.2 |
 | ADB off on stock | CONFIRMED by the owner (no ADB device); explained by the ramdisk below |
 
+## Read-only backup of the owner's player — 2026-11-04
+
+The owner ran mtkclient v2.1.4.1 (`5a863eec`) read commands only (`printgpt`, `rf`, `ro`); mtkclient connected
+through the preloader and loaded its bundled legacy DA (`MTK_AllInOne_DA_mt6590.bin`, `49a14137…`) into RAM.
+Manifest and images: `evidence-private/2026-11-04-y1-backup/` (not published).
+
+| Fact | Status |
+| --- | --- |
+| MT6572, hw code `0x6572`, subcode `0x8b00`; SBC, SLA and DAA off | CONFIRMED on the device |
+| DRAM `0x20000000` (512 MiB) | CONFIRMED (DA report) |
+| eMMC user area `0xe7000000` (3.61 GiB); boot1, boot2 and RPMB 2 MiB each | CONFIRMED |
+| Partition table equals the 3.0.2 scatter; `FAT` is `0x18bc0000` (scatter: 0) | CONFIRMED |
+| Dump offsets equal table offsets: the user area starts with an `EMMC_BOOT` header and the preloader at `0x800` (unlike the Y2's 20 MiB shift) | CONFIRMED |
+| Preloader, MBR, EBR1, LK, BOOTIMG and RECOVERY byte-identical to the public 3.0.2 ROM, so the kernel analysis applies to this player | CONFIRMED |
+| Whole user area read once (sha256 `796cdf27…3497ef`); `0x0`–`0x3120000` (through SECCFG, including NVRAM and PROTECT_F/S) read twice, identical | CONFIRMED |
+| eMMC BOOT1/BOOT2: both `--parttype` reads returned the user area's first 2 MiB; the legacy DA's partition switch is unchecked | NOT ACQUIRED |
+| Any restore; an independent second copy | NOT PROVEN / owed |
+
 ## Stock ROM 3.0.2
 
 Source: `y1-community/y1-stock-rom` release 3.0.2, `rom.zip`
@@ -102,4 +120,4 @@ resolve, and a boot log (`[Phy Layout]` lines) would settle them directly.
   not transfer.
 - MT6323 configuration (regulator voltages, charger limits, battery table) of the Y1 board.
 - Type B wheel controller identity.
-- Recovery: no same-device backup, no proven Y1 restore, no approved Y1 download agent.
+- Recovery: a same-device user-area backup exists (above); no proven Y1 restore, no approved write procedure.
