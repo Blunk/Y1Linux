@@ -49,6 +49,29 @@ That match does not approve any of them for a Y1 operation.
 String presence shows that a driver is built in, not that the owner's board uses it: the panel
 pair is ID-selected, the FAN5405 string can be dormant, and Type B Y1s have a different wheel.
 
+## Offline disassembly of the 3.0.2 kernel — 2026-11-04
+
+The gzip payload of `kernel` (Image sha256 `94eb0446…ae48b`) loads at `0xc0008000`; its kallsyms table
+(42,751 text symbols at file offset `0x5f4f30`, 16-byte aligned sections) was recovered and wrapped into an
+ELF for LLVM 22 `llvm-objdump`. Tools and outputs: `evidence-private/2026-11-04-y1-rom-3.0.2/tools` and
+`rea/`. Call arguments come from immediates and literal-pool loads in the block before each call, checked
+by hand; they are CONFIRMED for this image and INFERRED for the owner's player.
+
+| Part | Y1 3.0.2 stock kernel | Y2 (this repo) |
+| --- | --- | --- |
+| Wheel controller | `i2c_register_board_info(1, {"APT32F", 0x51})` and `{"UPDATE", 0x60}` in `tpd_driver_init` 0xc0793024, after `hwPowerOn(5, 3000, "TP")`: index 5 is MT6323 **VGP1** in the 2013 MT6572 `mt_pm_ldo.h`, 3.0 V | `wheel@51` on **I2C0** (`kernel/dts/innioasis-y2.dts`) |
+| Wheel reset | **GPIO134**: `tpd_probe` 0xc05944b8 drives 1, 10 ms, 0, 10 ms, 1; `tpd_suspend` holds it low; `tpd_resume` 1, 10 ms, 0, 20 ms, 1 | GPIO56, active low |
+| Wheel data-ready | **GPIO136** mode 4, pull enabled, **EINT2**, `mt65xx_eint_registration(2, …, tpd_eint_interrupt_handler)` | EINT55 |
+| Wheel protocol | `touch_event_handler` 0xc03aaf20 reads registers 1–6 one by one and reports keys itself (`KEY_PLAYPAUSE` 0xa4, `KEY_NEXTSONG` 0xa3, `KEY_PREVIOUSSONG` 0xa5 among others); writes register 6 = 0x55 while a charger is present | Rotation only over I2C; the five zones are GPIO lines (`kernel/platform/apt32f-wheel.c`) |
+| Amplifier | `aw87559_init` 0xc0793d04: `{"aw87559_pa", 0x58}` on **I2C0**; enable **GPIO143** high, 50 ms, then ID read (`aw87559_i2c_probe` 0xc0417b44); `aw87559_hw_init` writes the same 39-register table as `kernel/audio/aw87559.c` up to `0x01 = 0x30` | I2C1, enable GPIO8 |
+| GC9503V panel | `lcm_init` 0xc03aa070: reset 1, 10 ms, 0, 10 ms, 1, 120 ms, then 40 rows at 0xc080cee4 whose 36 commands equal `gc9503v_init_cmds`, plus sleep-out, 120 ms, display-on, 20 ms | Same |
+| ST7701S panel | `lcm_init` 0xc03aa354: reset 1, 20 ms, 0, 50 ms, 1, 150 ms, then 47 rows at 0xc080e564 whose 43 commands and delays equal `st7701s_init_cmds` | Same |
+| Leftovers | `pn544` (I2C0 0x28), `dummy_cam_cal` (I2C1 0x55), `dummy_eeprom` (I2C1 0x50) from the reference design | Not fitted (INFERRED) |
+| Memory | `mt_fixup` 0xc077ec10 builds the layout at boot from LK's memory tags (modem fixup, `DISP_GetVRamSizeBoot`); no fixed map in the kernel | Fixed D08 map ([RAM policy](initial-ram-map.md)) |
+
+LCM tables are length-delimited (`push_table(table, n)`): `0xffe` is a delay row, and `0xfd` is a real
+GC9503V command, not an end marker.
+
 ## External sources
 
 | Source | Identity | Use | Limits |
@@ -61,10 +84,12 @@ pair is ID-selected, the FAN5405 string can be dormant, and Type B Y1s have a di
 
 ## Unknown before any Y1 implementation
 
-- Y1 GPIO, EINT and I2C assignments (wheel bus/address, reset and data-ready lines; amplifier enable; panel reset).
-  They are compiled into the 3.4.5 binary; no device tree exists.
-- Panel fitted to the owner's player, and whether the Y1 command tables equal the Y2 tables.
-- LK memory map and command line handed to the kernel; the [Y2 RAM policy](initial-ram-map.md) does not transfer.
+- Pin modes and pulls of all other lines (set by the preloader's GPIO table, not by the kernel), the
+  panel reset routing, the key matrix, accdet, the UART used for a console.
+- The APT32F frame layout on the Y1: which registers carry rotation and which carry the five buttons.
+- Panel fitted to the owner's player (both tables equal the Y2's, so either is covered).
+- LK memory tags and command line handed to the kernel (preloader EMI table and LK tag code not yet
+  analysed); the [Y2 RAM policy](initial-ram-map.md) does not transfer.
 - MT6323 configuration (regulator voltages, charger limits, battery table) of the Y1 board.
 - Type B wheel controller identity.
 - Recovery: no same-device backup, no proven Y1 restore, no approved Y1 download agent.
