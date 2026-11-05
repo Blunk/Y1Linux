@@ -1,22 +1,23 @@
 #!/bin/sh
-# Innioasis Y1 test BOOTIMG, variant "first" or "second" (docs/knowledge/y1-hardware.md,
-# docs/planning/Y1-SECOND-BOOT-PLAN.md). Runs inside the locked build userspace:
+# Innioasis Y1 test BOOTIMG, variant "first", "second" or "third" (docs/knowledge/y1-hardware.md,
+# docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --output out/<fresh-dir> -- sh /project/tools/build/y1-boot.sh first
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
-#       -- sh /project/tools/build/y1-boot.sh second
+#       -- sh /project/tools/build/y1-boot.sh second   (or third)
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
-variant=${1:?variant: first or second}
+variant=${1:?variant: first, second or third}
 case $variant in
 first) defines= ;;
 second) defines=-DY1_SECOND_BOOT ;;
+third) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT" ;;
 *) echo "unknown variant $variant" >&2; exit 2 ;;
 esac
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }
 fragment=/project/kernel/config/y1-$variant-boot.config
 make -C /src O=/build/kernel KCONFIG_ALLCONFIG="$fragment" allnoconfig
 python3 /project/tools/build/check_config.py /build/kernel/.config "$fragment"
-# shellcheck disable=SC2086 # $defines is empty or one word
+# shellcheck disable=SC2086 # $defines is empty or compiler flags without spaces inside
 clang --target=arm-linux-gnueabi -mcpu=cortex-a7 -marm -mfloat-abi=soft $defines \
     -Os -fomit-frame-pointer -ffreestanding -fno-builtin -fno-stack-protector \
     -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-pie -nostdlib -static \

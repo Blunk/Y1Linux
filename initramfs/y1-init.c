@@ -101,6 +101,9 @@ static long arm_watchdog(void)
 #ifdef Y1_SECOND_BOOT
 #include "y1-second-boot.h"
 #endif
+#ifdef Y1_THIRD_BOOT
+#include "y1-third-boot.h"
+#endif
 
 static void observe(void)
 {
@@ -112,7 +115,9 @@ static void observe(void)
     } else {
         say("proc: mount failed\n");
     }
-#ifdef Y1_SECOND_BOOT
+#if defined(Y1_THIRD_BOOT)
+    third_boot(watchdog);
+#elif defined(Y1_SECOND_BOOT)
     second_boot(watchdog);
 #endif
     for (unsigned beat = 1; beat <= HEARTBEATS; ++beat) {
@@ -129,6 +134,9 @@ void diag_start(long *stack)
     if (is_selftest(stack)) {
 #ifdef Y1_SECOND_BOOT
         if (!sha256_selftest()) { say("Y1INIT SELFTEST SHA-256 FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+#endif
+#ifdef Y1_THIRD_BOOT
+        if (!third_boot_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
 #endif
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);

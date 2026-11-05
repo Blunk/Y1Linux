@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 third boot planning — 2026-11-05
+
+Boundary review on the second boot's physical PASS (2026-11-05). New hardware scope proposed, not admitted:
+USB device mode (MUSB + T-PHY, peripheral only), MT6323 VUSB 3.3 V, PMIC AUXADC sampling, a shell built into PID1
+over USB ([third boot plan](Y1-THIRD-BOOT-PLAN.md)). Evidence: the 3.0.2 disassembly of the USB, PHY and
+charging paths ([Y1 hardware](../knowledge/y1-hardware.md#offline-disassembly-usb-and-charging--2026-11-05)),
+mainline 6.18.56's USB glue and T-PHY byte-identical to the MT6572 fork's, one T-PHY calibration address
+mismatch avoided in the board tree. Charging stays out of scope. Owner approved all four items
+(2026-11-05). Result: **PASS** after two runs: USB enumerates at high speed once the PHY forces the session
+(overlay `0015`, the stock bits), the ACM shell answers, telemetry and the charger input work, storage stays
+read-only and matching. No storage write, no charger register written. Next boundary: charging.
+
 ## Y1 second boot admission — 2026-11-04
 
 Boundary review on the first boot's physical PASS (same day): mainline 6.18 runs on the Y1 with LK's frame

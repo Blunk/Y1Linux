@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first or second) from a fresh build directory;
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first, second or third) from a fresh build directory;
 never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -32,27 +32,43 @@ DTB_COMMON = [
     'format = "r5g6b5";',
     'stdout-path = "serial0:921600n8";',
 ]
-# Per variant: the additional properties, and how many optional devices may be enabled.
+SECOND = [
+    'clk_ignore_unused',
+    'compatible = "innioasis,apt32f-wheel";',
+    'reg = <0x51>;',
+    'compatible = "mediatek,mt6323";',
+    'compatible = "mediatek,mt6323-keys";',
+    'regulator-name = "vgp1";',
+    'regulator-min-microvolt = <0x2dc6c0>;',
+    'regulator-max-microvolt = <0x2dc6c0>;',
+    'max-frequency = <0x2faf080>;',
+]
+# Regulators a variant may describe: the PMIC's VGP1 (admission 2026-11-04), VUSB (2026-11-05) and the
+# two fixed card-rail descriptions, which switch nothing.
+CARD_RAILS = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";']
+# Per variant: the additional properties, how many optional devices may be enabled, and the regulators.
 VARIANTS = {
-    'first': {'expected': [], 'enabled': 1},  # UART0
+    'first': {'expected': [], 'enabled': 1, 'regulators': []},  # UART0
     'second': {  # UART0, I2C1, mmc0, mmc1 (docs/planning/Y1-SECOND-BOOT-PLAN.md)
-        'expected': [
-            'clk_ignore_unused',
-            'compatible = "innioasis,apt32f-wheel";',
-            'reg = <0x51>;',
-            'compatible = "mediatek,mt6323";',
-            'compatible = "mediatek,mt6323-keys";',
-            'regulator-name = "vgp1";',
-            'regulator-min-microvolt = <0x2dc6c0>;',
-            'regulator-max-microvolt = <0x2dc6c0>;',
-            'max-frequency = <0x2faf080>;',
-        ],
+        'expected': SECOND,
         'enabled': 4,
+        'regulators': CARD_RAILS + ['regulator-name = "vgp1";'],
+    },
+    'third': {  # the second's devices plus the USB controller and its PHY (docs/planning/Y1-THIRD-BOOT-PLAN.md)
+        'expected': SECOND + [
+            'dr_mode = "peripheral";',
+            'mediatek,eye-src = <0x04>;',
+            'innioasis,force-session-valid;',
+            'compatible = "mediatek,mt6323-auxadc";',
+            'innioasis,charger-input;',
+            'regulator-name = "vusb";',
+            'regulator-min-microvolt = <0x325aa0>;',
+            'regulator-max-microvolt = <0x325aa0>;',
+        ],
+        'enabled': 6,
+        'regulators': CARD_RAILS + ['regulator-name = "vgp1";', 'regulator-name = "vusb";'],
     },
 }
-# Regulators the second boot may describe: the PMIC's VGP1 (admission 2026-11-04) and the two fixed
-# card-rail descriptions, which switch nothing.
-REGULATOR_NAMES = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";', 'regulator-name = "vgp1";']
 
 
 def empty_ramdisk():
@@ -78,7 +94,7 @@ def check_dtb(root, dtb, variant):
     enabled = [line for line in source.splitlines() if 'status = "okay"' in line]
     require(len(enabled) == rules['enabled'], f'exactly {rules["enabled"]} enabled optional devices')
     regulators = [line.strip() for line in source.splitlines() if 'regulator-name' in line]
-    require(sorted(regulators) in ([], REGULATOR_NAMES), 'no regulator but VGP1 and the fixed card rails')
+    require(sorted(regulators) == sorted(rules['regulators']), 'exactly the admitted regulators')
     return source
 
 

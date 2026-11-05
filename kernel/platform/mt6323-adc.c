@@ -24,6 +24,7 @@ static int y2_adc_sample(struct y2_adc *a, unsigned channel, int *raw)
 	switch (channel) {
 	case 7: reg = 0x714; break; /* BATSNS, internal 4:1 divider */
 	case 6: reg = 0x716; break; /* ISENSE, internal 4:1 divider; voltage only */
+	case 4: reg = 0x718; break; /* VCDT, charger input via the board divider */
 	case 5: reg = 0x71a; break; /* BATON1 pin voltage; board NTC unvalidated */
 	case 3: reg = 0x71c; break; /* THR_SENSE1, PMIC die */
 	default: return -EINVAL;
@@ -55,7 +56,7 @@ static int y2_adc_read(struct iio_dev *indio, const struct iio_chan_spec *chan,
 	struct y2_adc *a = iio_priv(indio);
 	int ret, raw;
 	if (mask == IIO_CHAN_INFO_SCALE && chan->type == IIO_VOLTAGE) {
-		*val = chan->channel == 5 ? 1800 : 7200;
+		*val = chan->channel == 5 || chan->channel == 4 ? 1800 : 7200;
 		*val2 = 15; /* Nominal mV at named pin; inherited trim unchanged. */
 		return IIO_VAL_FRACTIONAL_LOG2;
 	}
@@ -91,6 +92,10 @@ static const struct iio_chan_spec y2_adc_channels[] = {
 	  .datasheet_name = "BATON1", .info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE) },
 	{ .type = IIO_VOLTAGE, .indexed = 1, .channel = 6,
 	  .datasheet_name = "ISENSE", .info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE) },
+	/* Only with innioasis,charger-input: the Y1's stock register 0x718 (upmu_get_rg_adc_out_vcdt);
+	 * nominal mV at the pin, the board divider (Y1 stock: x369/39) is the reader's. */
+	{ .type = IIO_VOLTAGE, .indexed = 1, .channel = 4,
+	  .datasheet_name = "VCDT", .info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE) },
 };
 static int y2_pmic_temp(struct thermal_zone_device *tz, int *temp)
 {
@@ -123,13 +128,15 @@ static int y2_adc_probe(struct platform_device *pdev)
 	a->calibrated = cal >= 0; a->nominal = cal > 0;
 	indio->name = "mt6323-auxadc"; indio->info = &y2_adc_info;
 	indio->modes = INDIO_DIRECT_MODE;
-	indio->channels = y2_adc_channels; indio->num_channels = ARRAY_SIZE(y2_adc_channels);
+	indio->channels = y2_adc_channels;
+	indio->num_channels = ARRAY_SIZE(y2_adc_channels) - !device_property_read_bool(dev, "innioasis,charger-input");
 	ret = devm_iio_device_register(dev, indio);
 	if (ret) return ret;
-	if (a->calibrated) {
+	/* Without THERMAL_OF (Y1 test kernels) the die temperature stays an IIO channel only. */
+	if (a->calibrated && IS_ENABLED(CONFIG_THERMAL_OF)) {
 		tz = devm_thermal_of_zone_register(dev, 0, a, &y2_pmic_thermal_ops);
 		if (IS_ERR(tz)) return dev_err_probe(dev, PTR_ERR(tz), "PMIC thermal zone\n");
-	} else dev_warn(dev, "no valid die calibration; temperature unavailable\n");
+	} else if (!a->calibrated) dev_warn(dev, "no valid die calibration; temperature unavailable\n");
 	if (a->nominal)
 		dev_warn(dev, "die calibration fuse clear (CID=%#x efuse=%#x,%#x): vendor nominal, read 10 C high\n",
 			 cid, fuse0, fuse1);
