@@ -74,6 +74,9 @@ static void prepare_root(void)
     if (!mount_step("tmpfs", "/mnt/upper", "tmpfs", MS_NOSUID | MS_NODEV, "size=32m,mode=0755")) return;
     call5(SYS_MKDIR, (long)"/mnt/upper/u", 0755, 0, 0, 0);
     call5(SYS_MKDIR, (long)"/mnt/upper/w", 0755, 0, 0, 0);
+#ifdef Y1_TENTH_BOOT
+    if (!install_y1_overrides()) return;
+#endif
     if (!mount_step("overlay", "/newroot", "overlay", 0,
                     "lowerdir=/mnt/image,upperdir=/mnt/upper/u,workdir=/mnt/upper/w"))
         return;

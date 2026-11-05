@@ -33,7 +33,12 @@ static void show_bars(long watchdog);
 #ifdef Y1_EIGHTH_BOOT
 static int eighth_command(const char *line, const char *argument, long watchdog);
 #endif
+#ifdef Y1_TENTH_BOOT
+static int install_y1_overrides(void);
+static void switch_to_y2(void);
+#endif
 #ifdef Y1_NINTH_BOOT
+static int root_ready; /* tentative; defined in y1-ninth-boot.h */
 static void prepare_root(void);
 static int root_shell_running(void);
 static int ninth_command(const char *line, const char *argument, long watchdog);
@@ -474,6 +479,9 @@ static void third_boot(long watchdog)
 #endif
 #ifdef Y1_NINTH_BOOT
     prepare_root();
+#endif
+#ifdef Y1_TENTH_BOOT
+    if (root_ready) switch_to_y2();
 #endif
     for (unsigned i = 0; i < INPUT_NODES; ++i) {
         path[16] = (char)('0' + i);
