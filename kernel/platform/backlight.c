@@ -3,19 +3,26 @@
  * mt6323-backlight.c (53fb57bb99c9) and upstream leds-mt6323.
  * Fixed inherited current/clock/mode, linear PWM only. Zero disables sinks.
  * Maximum never exceeds the lowest inherited duty; no guessed current ceiling.
+ * innioasis,isink-mask selects the sinks (default all four, the Y2; the Y1 lights its
+ * panel from ISINK0 and ISINK1, docs/planning/Y1-BACKLIGHT-PLAN.md).
  */
 #include <linux/backlight.h>
 #include "system-idle.h"
 #include <linux/mfd/mt6397/core.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/property.h>
 #include <linux/regmap.h>
 static bool screen_dark;
+#if IS_ENABLED(CONFIG_Y2_POWER) /* read by the Y2 idle and suspend code only */
 bool y2_backlight_dark(void) { return READ_ONCE(screen_dark); }
+#endif
 struct y2_bl {
 	struct regmap *map;
 	struct mutex lock;
 	unsigned ceiling;
+	unsigned mask;  /* enable bits in 0x356, one per ISINK */
+	unsigned first; /* lowest selected ISINK, reported by get_brightness */
 };
 static int y2_bl_update(struct backlight_device *bl)
 {
@@ -38,16 +45,18 @@ static int y2_bl_update(struct backlight_device *bl)
 			goto out;
 	}
 	/* Dark during a multi-register transaction; no partially updated bright frame. */
-	ret = regmap_update_bits(b->map, 0x356, 15, 0);
+	ret = regmap_update_bits(b->map, 0x356, b->mask, 0);
 	if (ret)
 		goto out;
 	if (level) {
 		for (i = 0; i < 4; i++) {
+			if (!(b->mask & BIT(i)))
+				continue;
 			ret = regmap_update_bits(b->map, 0x330 + 8 * i, 0x1f00, (level - 1) << 8);
 			if (ret)
 				goto rollback;
 		}
-		ret = regmap_update_bits(b->map, 0x356, 15, 15);
+		ret = regmap_update_bits(b->map, 0x356, b->mask, b->mask);
 		if (ret)
 			goto rollback;
 	}
@@ -55,9 +64,9 @@ static int y2_bl_update(struct backlight_device *bl)
 rollback:
 	/* Keep dark on a failed restore. Never report a failed PMIC write as success. */
 	for (i = 0; i < 4; i++)
-		if (regmap_write(b->map, 0x330 + 8 * i, old[i]))
+		if ((b->mask & BIT(i)) && regmap_write(b->map, 0x330 + 8 * i, old[i]))
 			goto out;
-	if (regmap_update_bits(b->map, 0x356, 15, en & 15))
+	if (regmap_update_bits(b->map, 0x356, b->mask, en & b->mask))
 		dev_err(&bl->dev, "backlight restore failed; remain dark\n");
 out:
 	if (!ret) WRITE_ONCE(screen_dark, !level);
@@ -71,11 +80,11 @@ static int y2_bl_read(struct backlight_device *bl)
     int ret;
     mutex_lock(&b->lock);
     ret = regmap_read(b->map, 0x356, &en);
-    if (!ret) ret = regmap_read(b->map, 0x330, &pwm);
-    if (!ret) ret = regmap_read(b->map, 0x334, &current_step);
+    if (!ret) ret = regmap_read(b->map, 0x330 + 8 * b->first, &pwm);
+    if (!ret) ret = regmap_read(b->map, 0x334 + 8 * b->first, &current_step);
     if (!ret) {
         dev_info_ratelimited(&bl->dev, "Y2SCAN backlight enable=%04x pwm=%04x current=%04x\n", en,pwm,current_step);
-        ret = (en & 15) ? ((pwm >> 8) & 31) + 1 : 0;
+        ret = (en & b->mask) ? ((pwm >> 8) & 31) + 1 : 0;
     }
     mutex_unlock(&b->lock);
     return ret;
@@ -101,12 +110,20 @@ static int y2_bl_probe(struct platform_device *pdev)
 	b->map = chip->regmap;
 	mutex_init(&b->lock);
 	b->ceiling = 32;
+	b->mask = 15;
+	device_property_read_u32(dev, "innioasis,isink-mask", &b->mask);
+	if (!b->mask || b->mask & ~15U)
+		return dev_err_probe(dev, -EINVAL, "ISINK mask %#x\n", b->mask);
+	b->first = __ffs(b->mask);
 	ret = regmap_read(b->map, 0x356, &en);
 	if (ret)
 		return ret;
-	if ((en & 15) != 15)
-		return dev_err_probe(dev, -ENODEV, "not four inherited active ISINKs\n");
+	if ((en & b->mask) != b->mask)
+		return dev_err_probe(dev, -ENODEV, "selected ISINKs %#x not all inherited active (%#x)\n",
+				     b->mask, en & 15);
 	for (i = 0; i < 4; i++) {
+		if (!(b->mask & BIT(i)))
+			continue;
 		ret = regmap_read(b->map, 0x330 + 8 * i, &v);
 		if (ret)
 			return ret;
@@ -116,7 +133,7 @@ static int y2_bl_probe(struct platform_device *pdev)
 		ret = regmap_read(b->map, 0x334 + 8 * i, &v);
 		if (ret)
 			return ret;
-		if (!i)
+		if (i == b->first)
 			step = v & 0x7000;
 		if ((v & 0x7000) != step)
 			return dev_err_probe(dev, -ENODEV, "unequal inherited currents\n");
@@ -127,8 +144,8 @@ static int y2_bl_probe(struct platform_device *pdev)
 	if (IS_ERR(bl))
 		return PTR_ERR(bl);
 	platform_set_drvdata(pdev, bl);
-	dev_info(dev, "four ISINK PWM; max duty=%u/32 inherited current step=%u unchanged\n",
-		 b->ceiling, step >> 12);
+	dev_info(dev, "ISINK mask %#x PWM; max duty=%u/32 inherited current step=%u unchanged\n",
+		 b->mask, b->ceiling, step >> 12);
 	return 0; /* No startup write or implicit maximum-current request. */
 }
 /* POWER-FINAL-20: power-off/reboot never leaves a lit panel while the display
@@ -139,7 +156,7 @@ static void y2_bl_shutdown(struct platform_device *pdev)
 	struct y2_bl *b = bl ? bl_get_data(bl) : NULL;
 	if (!b) return;
 	mutex_lock(&b->lock);
-	if (regmap_update_bits(b->map, 0x356, 15, 0))
+	if (regmap_update_bits(b->map, 0x356, b->mask, 0))
 		dev_err(&pdev->dev, "shutdown: backlight sinks still on\n");
 	else WRITE_ONCE(screen_dark, true);
 	mutex_unlock(&b->lock);

@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to seventh) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to eighth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -94,6 +94,11 @@ VARIANTS['seventh'] = dict(VARIANTS['sixth'], enabled=VARIANTS['sixth']['enabled
                                'compatible = "mediatek,mt6572-disp-rdma";',
                                'compatible = "mediatek,mt6572-disp-mutex";',
                            ], forbidden=['simple-framebuffer', 'iommus = '])
+# Backlight (docs/planning/Y1-BACKLIGHT-PLAN.md): the seventh tree plus ISINK0/1.
+VARIANTS['eighth'] = dict(VARIANTS['seventh'], expected=VARIANTS['seventh']['expected'] + [
+    'compatible = "innioasis,y2-backlight";',
+    'innioasis,isink-mask = <0x03>;',
+])
 
 
 def empty_ramdisk():

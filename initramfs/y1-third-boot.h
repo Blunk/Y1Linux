@@ -30,6 +30,9 @@ static int sixth_command(const char *line, const char *argument, long watchdog);
 static int seventh_command(const char *line, const char *argument, long watchdog);
 static void show_bars(long watchdog);
 #endif
+#ifdef Y1_EIGHTH_BOOT
+static int eighth_command(const char *line, const char *argument, long watchdog);
+#endif
 
 static void sleep_ms(unsigned ms)
 {
@@ -270,6 +273,9 @@ static void shell_help(void)
 #ifdef Y1_SEVENTH_BOOT
               "  bars         colour bars on the DRM frame buffer for 10 s\n"
 #endif
+#ifdef Y1_EIGHTH_BOOT
+              "  bl [N]       backlight brightness 0..32 (the only command that writes)\n"
+#endif
               "  reboot       restart the player\n");
 }
 
@@ -390,6 +396,9 @@ static void shell_line(char *line, long watchdog)
 #endif
 #ifdef Y1_SEVENTH_BOOT
     else if (seventh_command(line, argument, watchdog)) {}
+#endif
+#ifdef Y1_EIGHTH_BOOT
+    else if (eighth_command(line, argument, watchdog)) {}
 #endif
     else usb_say("unknown command; type help\n");
     usb_say("y1# ");

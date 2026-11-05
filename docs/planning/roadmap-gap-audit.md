@@ -1,5 +1,14 @@
 # Roadmap gap audit
 
+## Y1 backlight planning — 2026-11-05
+
+Boundary review for backlight control ([plan](Y1-BACKLIGHT-PLAN.md)): the first Linux write to the Y1's
+LED current sinks. Evidence: stock drives `lcd-backlight` from MT6323 ISINK0+1 (PMIC mode); LK leaves both
+on at duty 31, step 4; the Y2's qualified driver changes only duty and enables and never exceeds the
+inherited duty. Bounds: ISINK0/1 duty and enables only, the wrapper's write policy extended to the ISINK
+block, one shell write command. Owner-approved; result **PASS**: 32 levels and off, registers read back
+after each step, only duty and enable bits changed, no flicker (owner).
+
 ## Y1 display planning — 2026-11-05
 
 Boundary review for the display driver ([plan](Y1-DISPLAY-PLAN.md)). Evidence: the Y1's recorded panel facts
