@@ -1,6 +1,6 @@
 --- a/drivers/mfd/mt6397-core.c
 +++ b/drivers/mfd/mt6397-core.c
-@@ -125,6 +125,19 @@
+@@ -125,6 +125,22 @@
  
  static const struct mfd_cell mt6323_devs[] = {
  	{
@@ -16,6 +16,9 @@
 +	}, {
 +		.name = "y2-backlight",
 +		.of_compatible = "innioasis,y2-backlight",
++	}, {
++		.name = "y1-mt6323-codec",
++		.of_compatible = "innioasis,y1-mt6323-codec",
 +	}, {
  		.name = "mt6323-rtc",
  		.num_resources = ARRAY_SIZE(mt6323_rtc_resources),
