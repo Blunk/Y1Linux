@@ -1,0 +1,18 @@
+#!/bin/sh
+# Innioasis Y1: dropbear without Y2DATA (docs/planning/Y1-NETWORK-PLAN.md). The Y2's paths are kept:
+# /etc/dropbear -> /data/ssh/host-keys and /root/.ssh -> /data/ssh/authorized_keys.d, which live in the
+# RAM overlay until milestone B. -R creates the host keys at the first connection; -s and -g refuse
+# password logins, so root logs in only with the Y1 key.
+PIDFILE=/run/dropbear.pid
+case "$1" in
+	start)
+		printf 'Starting dropbear: '
+		start-stop-daemon --start --background --make-pidfile --pidfile "$PIDFILE" \
+			--exec /usr/sbin/dropbear -- -F -R -s -g -p 22 && echo OK || echo FAIL
+		;;
+	stop)
+		printf 'Stopping dropbear: '
+		start-stop-daemon --stop --pidfile "$PIDFILE" --exec /usr/sbin/dropbear && echo OK || echo FAIL
+		rm -f "$PIDFILE"
+		;;
+esac

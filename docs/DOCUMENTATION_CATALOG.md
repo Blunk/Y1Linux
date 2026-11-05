@@ -367,6 +367,7 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Y1 backlight plan](planning/Y1-BACKLIGHT-PLAN.md) | Brightness and screen-off on MT6323 ISINK0/1 with the shared Y2 driver, never above LK's duty; write policy; admission |
 | [Y1 root filesystem plan](planning/Y1-ROOTFS-PLAN.md) | The Y2's Buildroot userspace from the microSD: read-only image file first (RAM overlay), own ext4 partition later; kernel features; admission |
 | [Y1 system plan](planning/Y1-SYSTEM-PLAN.md) | The Y2's init and services on the Y1: per-service review, a Y1-safe set, milestone A (init, nothing written), later data, networking, power, player |
+| [Y1 network plan](planning/Y1-NETWORK-PLAN.md) | Milestone C: Ethernet over USB (g_cdc), IPv4 at the Y2's 10.42.0.1, key-only SSH with dropbear; admission |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
