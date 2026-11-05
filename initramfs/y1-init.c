@@ -104,6 +104,12 @@ static long arm_watchdog(void)
 #ifdef Y1_THIRD_BOOT
 #include "y1-third-boot.h"
 #endif
+#ifdef Y1_FOURTH_BOOT
+#include "y1-fourth-boot.h"
+#endif
+#ifdef Y1_FIFTH_BOOT
+#include "y1-fifth-boot.h"
+#endif
 
 static void observe(void)
 {
@@ -137,6 +143,9 @@ void diag_start(long *stack)
 #endif
 #ifdef Y1_THIRD_BOOT
         if (!third_boot_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+#endif
+#ifdef Y1_FOURTH_BOOT
+        if (!fourth_boot_selftest()) { say("Y1INIT SELFTEST PACK TEMPERATURE FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
 #endif
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);
