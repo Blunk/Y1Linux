@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fifteenth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to nineteenth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -124,6 +124,29 @@ VARIANTS['fourteenth'] = dict(VARIANTS['thirteenth'], enabled=VARIANTS['thirteen
 # Power-off (docs/planning/Y1-POWER-PLAN.md, stage D1): the MT6323 power controller.
 VARIANTS['fifteenth'] = dict(VARIANTS['fourteenth'], expected=VARIANTS['fourteenth']['expected'] + [
     'compatible = "mediatek,mt6323-pwrc";',
+])
+
+# Power management core (docs/planning/Y1-REBORN-PLAN.md, stage R1a): the fifteenth tree unchanged.
+VARIANTS['sixteenth'] = VARIANTS['fifteenth']
+
+# The GPU (docs/planning/Y1-REBORN-PLAN.md, stage R1b): MFG domain only, Lima on WHPLL.
+VARIANTS['seventeenth'] = dict(VARIANTS['sixteenth'], expected=VARIANTS['sixteenth']['expected'] + [
+    'compatible = "mediatek,mt6572-power-controller";',
+    'compatible = "arm,mali-400";',
+    'assigned-clock-parents = <',
+])
+
+# Reborn's first UI (docs/planning/Y1-REBORN-PLAN.md, stage R2): the wheel zones and the centre as Reborn's
+# navigation buttons.
+VARIANTS['eighteenth'] = dict(VARIANTS['seventeenth'], expected=VARIANTS['seventeenth']['expected'] + [
+    'innioasis,zone-input-name = "Y2 navigation buttons";',
+    'label = "Y2 navigation buttons";',
+])
+
+# Sound in Reborn (docs/planning/Y1-REBORN-PLAN.md, stage R3): the card and headphone pin under Reborn's names.
+VARIANTS['nineteenth'] = dict(VARIANTS['eighteenth'], expected=VARIANTS['eighteenth']['expected'] + [
+    'simple-audio-card,name = "Y2Audio";',
+    'simple-audio-card,pin-switches = "Headphone", "Speaker";',
 ])
 
 

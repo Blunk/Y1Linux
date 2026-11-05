@@ -19,7 +19,10 @@
  * bitmask of zones; stock 3.0.2 checks only reg1. A "linux,keycodes" property
  * (one code per reg3 bit) turns this on; without it the driver is the Y2 one.
  * A "vdd" supply (Y1: MT6323 VGP1) is switched on and followed by the stock
- * reset pulse before the first read.
+ * reset pulse before the first read. With "innioasis,zone-input-name" the zones
+ * report on a second input device of that name (Y1 with Reborn, which takes
+ * select, back and play/pause only from "Y2 navigation buttons":
+ * docs/planning/Y1-REBORN-PLAN.md); without it they share the wheel's device.
  */
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
@@ -41,6 +44,7 @@
 struct apt32f_wheel {
 	struct i2c_client *client;
 	struct input_dev *input;
+	struct input_dev *zone_input; /* Y1: the zones' own device; NULL = the wheel's */
 	struct gpio_desc *reset; /* Y2 GPIO56, Y1 GPIO134; active low; NULL = no reset owner */
 	u32 zone_keys[APT32F_ZONES]; /* Y1 zones in the frame; all 0 on the Y2 */
 	bool zones;
@@ -74,12 +78,13 @@ static void apt32f_scroll(struct apt32f_wheel *w, u8 code)
 /* Y1: each set reg3 bit is a zone going down (class 1) or up (class 2). */
 static void apt32f_zones(struct apt32f_wheel *w, u8 bits, int value)
 {
+	struct input_dev *input = w->zone_input ? w->zone_input : w->input;
 	unsigned int zone;
 
 	for (zone = 0; zone < APT32F_ZONES; zone++)
 		if ((bits & BIT(zone)) && w->zone_keys[zone])
-			input_report_key(w->input, w->zone_keys[zone], value);
-	input_sync(w->input);
+			input_report_key(input, w->zone_keys[zone], value);
+	input_sync(input);
 }
 
 static irqreturn_t apt32f_irq(int irq, void *dev_id)
@@ -218,6 +223,7 @@ static int apt32f_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct apt32f_wheel *w;
+	const char *zone_name;
 	int i, ret;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
@@ -251,13 +257,27 @@ static int apt32f_probe(struct i2c_client *client)
 	for (i = 0; i < ARRAY_SIZE(apt32f_scroll_keys); i++)
 		if (apt32f_scroll_keys[i])
 			input_set_capability(w->input, EV_KEY, apt32f_scroll_keys[i]);
+	if (w->zones && !device_property_read_string(dev, "innioasis,zone-input-name", &zone_name)) {
+		w->zone_input = devm_input_allocate_device(dev);
+		if (!w->zone_input)
+			return -ENOMEM;
+		w->zone_input->name = zone_name;
+		w->zone_input->id.bustype = BUS_I2C;
+		w->zone_input->dev.parent = dev;
+	}
 	for (i = 0; w->zones && i < APT32F_ZONES; i++)
 		if (w->zone_keys[i])
-			input_set_capability(w->input, EV_KEY, w->zone_keys[i]);
+			input_set_capability(w->zone_input ? w->zone_input : w->input, EV_KEY,
+					     w->zone_keys[i]);
 
 	ret = input_register_device(w->input);
 	if (ret)
 		return ret;
+	if (w->zone_input) {
+		ret = input_register_device(w->zone_input);
+		if (ret)
+			return ret;
+	}
 
 	ret = devm_request_threaded_irq(dev, client->irq, NULL, apt32f_irq, IRQF_ONESHOT,
 					"apt32f-wheel", w);

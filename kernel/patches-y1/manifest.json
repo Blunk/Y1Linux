@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -180,6 +180,24 @@
       "base_sha256": "7ce333b601878e3a2a9aa60c2b3d0f9509b7aff49738ce9bffab168af1d402da",
       "result_sha256": "889d78ead6dfa6bd538174d8beabe5b831324ef2586500713cd1a2798bf63884",
       "patch": "0030-mt6323-poweroff-atomic.patch"
+    },
+    {
+      "path": "drivers/pmdomain/mediatek/mtk-pm-domains.c",
+      "base_sha256": "5c3bc0d05499bf624ba0dc9f602f81e4f72592719fb5312d38d02efc8b53a04c",
+      "result_sha256": "c394819f1369f6786c2447c273d10de7e20ce399c8303e2c340fe55d9964b060",
+      "patch": "0031-mt6572-pm-domains.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/lima/lima_drv.c",
+      "base_sha256": "f690bd317e00ca5c4b87935598ffa473136cf544e50984f47c98fcfe36f8fe46",
+      "result_sha256": "642a879b7e109229856c2c8d2f8888c59680e7aedd7047e9491aeeb507f385e1",
+      "patch": "0032-lima-initial-runtime-idle.patch"
+    },
+    {
+      "path": "drivers/input/keyboard/mtk-pmic-keys.c",
+      "base_sha256": "4a085e49f16e12cc6c00f7b74b7c1e7e18735b45eccd26f0b24e076d9f940d1e",
+      "result_sha256": "81db233c781d2a39369ce96adc6c3450f0a6777f354f3920d25268aecbd35b40",
+      "patch": "0033-mtk-pmic-keys-label.patch"
     }
   ],
   "added": [
@@ -246,7 +264,7 @@
     {
       "path": "drivers/input/misc/apt32f-wheel.c",
       "source": "kernel/platform/apt32f-wheel.c",
-      "sha256": "fc36befb3992273de25a8247d1b46b5853d84bf1aecb74e0ca0c58eaa62aa7e4"
+      "sha256": "e07e24c2d8089cd0553c4b518384433a27f2f023bda4770a4083f3aa1bcf4d88"
     },
     {
       "path": "drivers/iio/adc/innioasis-mt6323-adc.c",
@@ -356,7 +374,7 @@
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",
       "source": "kernel/y1/mt6323-codec.c",
-      "sha256": "c8827ba7f09c0e517c6f62353a431757cea11d05ca99c8ab48bb99bf13c3a363"
+      "sha256": "9744baa55fee7a0f683008de377c25f007243db9762195d7a303d9380f5bc7fa"
     },
     {
       "path": "drivers/soc/mediatek/pmic-audio-policy.h",
@@ -367,6 +385,11 @@
       "path": "sound/soc/mediatek/aw87559.c",
       "source": "kernel/audio/aw87559.c",
       "sha256": "f0f382d84ef0e9f68d215538d92cd535154bffb5fa5bbbf71dc89833c989096b"
+    },
+    {
+      "path": "drivers/pmdomain/mediatek/mt6572-pm-domains.h",
+      "source": "kernel/y1/mt6572-pm-domains.h",
+      "sha256": "1c986c9db3cde92a91b9420038d0202648df52e703cf7d365d55b1591fdf4379"
     }
   ]
 }

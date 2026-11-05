@@ -16,6 +16,9 @@ struct override {
 static const char *const override_dirs[] = {
     "/mnt/upper/u/etc", "/mnt/upper/u/etc/init.d", "/mnt/upper/u/etc/default", "/mnt/upper/u/usr",
     "/mnt/upper/u/usr/libexec",
+#ifdef Y1_NINETEENTH_BOOT
+    "/mnt/upper/u/etc/y2linux",
+#endif
 };
 
 #ifdef Y1_ELEVENTH_BOOT
@@ -39,6 +42,14 @@ static const struct override overrides[] = {
 #ifdef Y1_ELEVENTH_BOOT
     { "/etc/init.d/S50y1-dropbear", 0755 },
     { "/data/ssh/authorized_keys.d/authorized_keys", 0600 },
+#endif
+#ifdef Y1_EIGHTEENTH_BOOT
+    /* Reborn's first UI (docs/planning/Y1-REBORN-PLAN.md, stage R2). */
+    { "/etc/init.d/S90y1-reborn", 0755 },
+#endif
+#ifdef Y1_NINETEENTH_BOOT
+    /* Reborn's audio profile for the Y1 card (stage R3). */
+    { "/etc/y2linux/audio-enabled.json", 0644 },
 #endif
 };
 
