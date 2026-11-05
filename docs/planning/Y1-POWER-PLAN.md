@@ -1,6 +1,6 @@
 # Y1 power (system milestone D)
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05), both owner-approved); D2–D3 not admitted. The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); D3 not admitted. The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -184,3 +184,48 @@ SSH host keys are new at every boot (RAM, as planned until milestone B), so each
   cable is removed, so the player did not charge on that boot. The next boot charged normally (450 mA
   source, no fault). D0's "Not charging" on the fourteenth boot is likely the same. Open: which register was
   refused (the driver reports only the error code).
+
+## 13. D2 build — 2026-11-05
+
+Owner-approved ("make the power daemon D2"); the percentage choice is the plan's recommendation (rescaled,
+like the Y2's own profile, which also ends at 4.175 V = 100 %).
+
+- **Profile** (`initramfs/y1-power/etc/y2linux/battery-profile.json`, provisional): stock battery id 0, DOD → SOC,
+  rescaled so 4.175 V (stock 87.3 %) is 100 %: 23 rows from 3.417 V = 0 % (checked against the daemon's
+  `ascending_table` rules: 2–128 rows, strictly ascending voltage and SOC, 0 and 100 at the ends);
+  `design_capacity_uah` 1048000 (Q_MAX 1200 mAh × 0.873); no resistance table (stock's `r_profile` not extracted);
+  the Y2's filter, rest and offset values.
+- **Policy** (`power-policy.json`, provisional): the Y2's values; the 3.4 V floor is also stock's Y1 power-off
+  voltage.
+- **Audit of the daemon's shutdown on the Y1** (`coordinator/steps.rs`): every step records its result and
+  continues. `watchdog_powers_off` fails (no `innioasis,rgu`: "powers_off_unavailable") and `/dev/watchdog` is
+  armed: a stalled shutdown ends in a **restart**, not off. `long_press_reset` is absent (step fails, harmless).
+  `S90reborn stop` (the Y2's) finds no supervisor; the daemon then kills `reborn` by identity. The radio stops
+  find no Y1 radio (rfkill and `18070000.connectivity` absent; `bluetoothctl` without D-Bus). The daemon assumes
+  the Y2's 31 s watchdog; the Y1's is 15 s (the fork's `timeout-sec`): the shutdown's duration is measured
+  before deciding whether that matters.
+- **Scripts:** `S03y1-data` creates Reborn's RAM `/data` before `S04y2-power` (its journals live there);
+  `S90y1-reborn` keeps a `data` action and stops restarting Reborn once `/run/y2/shutdown.json` exists. PID1
+  installs the three new files under `Y1_TWENTIETH_BOOT`; the service list gains `S03y1-data S04y2-power`.
+- Kernel unchanged (the nineteenth's config and tree, new names). Build `out/y1-twentieth-boot-1`, BOOTIMG sha256
+  `335369e9a0ad18600319e128fc8fb2ddd31b98738b27f327672800a7a49c9449` (`0x33a800` bytes).
+
+## 14. D2 run — 2026-11-05
+
+`evidence-private/2026-11-05-y1-power-d2/`. Twentieth boot (build 1): the daemon runs under `platform-supervise`;
+`/run/y2/power.json`: 94 %, charging, `voltage_estimate`, provisional, 976 mAh of 1048 mAh; the owner sees the
+percentage and the charging mark in Reborn. Reborn's Settings have no Restart or Power Off in this version (they
+are on the "service" page that the Y2 opens with its power key, absent on the Y1), so the shutdown tests used
+`/sbin/reboot` (the daemon's client), USB attached:
+
+- **Restart 1:** intent pending at once; no acknowledgement, so the 10 s grace ran out; the 13 steps then ran in
+  about 0.2 s (watchdog armed; failed harmlessly: the two Y2 boot-journal steps, `long_press_reset` absent;
+  `watchdog_powers_off` not attempted for a restart); the player came back into Reborn by itself. The owner saw
+  Reborn's shutdown screen. **The shutdown is far inside the Y1's 15 s watchdog; no timeout change needed.**
+- **Restart 2**, Reborn's log recorded too: Reborn presented its shutdown transition (75 frames) and its
+  acknowledgement was refused, `ack_client_identity_changed`: the daemon accepts it only from the pid in
+  `/run/reborn/process.pid`, which the Y2's `reborn-supervise` writes and `S90y1-reborn` did not. Fix: the Y1 loop
+  starts Reborn in the background, writes its pid there, waits and removes it.
+- **Restart 3** (the fix installed live): acknowledgement `Ready` 3.1 s after the request; the steps followed at
+  once. Rebuild `out/y1-twentieth-boot-2`, BOOTIMG sha256
+  `e2621cf1199142292da82b9edf12cab68b288916700a66a3279c06c270d13236` (`0x33a800` bytes).

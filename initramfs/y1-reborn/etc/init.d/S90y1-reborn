@@ -4,7 +4,8 @@
 # only an ext4 /data with schema 1), so nothing survives a reboot. The SSH files already in the RAM
 # overlay's /data are copied in first. The screen timeout is seeded as 0: the Y1 has no Power key to wake a
 # dark screen; the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
-# no report, no power-off.
+# no report, no power-off. With the power daemon (docs/planning/Y1-POWER-PLAN.md, D2) /data must exist before
+# it starts, so S03y1-data runs "data" early; a requested shutdown (/run/y2/shutdown.json) ends the restarts.
 RAM=/run/y1-ram
 PIDFILE=/run/y1-reborn.pid
 
@@ -34,8 +35,17 @@ supervise() {
 	n=0
 	while [ "$n" -lt 5 ]; do
 		read -r began _ < /proc/uptime
-		(umask 077; exec /usr/bin/reborn) 2> "/run/y1-reborn-$n.log"
-		echo "y1-reborn: exit $? (attempt $n)" > /dev/kmsg
+		# The power daemon accepts a shutdown acknowledgement only from the pid in
+		# /run/reborn/process.pid (as the Y2's reborn-supervise writes it).
+		(umask 077; exec /usr/bin/reborn) 2> "/run/y1-reborn-$n.log" &
+		child=$!
+		mkdir -p -m 0700 /run/reborn
+		echo "$child" > /run/reborn/process.pid
+		wait "$child"
+		status=$?
+		rm -f /run/reborn/process.pid
+		echo "y1-reborn: exit $status (attempt $n)" > /dev/kmsg
+		[ ! -e /run/y2/shutdown.json ] || return 0
 		read -r ended _ < /proc/uptime
 		if [ $(( ${ended%.*} - ${began%.*} )) -ge 60 ]; then n=0; else n=$((n + 1)); fi
 		sleep 2
@@ -44,6 +54,9 @@ supervise() {
 }
 
 case "$1" in
+	data)
+		data_ready || make_data
+		;;
 	start)
 		printf 'Starting Reborn: '
 		if ! data_ready && ! make_data; then
