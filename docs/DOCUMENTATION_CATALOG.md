@@ -370,6 +370,7 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Y1 network plan](planning/Y1-NETWORK-PLAN.md) | Milestone C: Ethernet over USB (g_cdc), IPv4 at the Y2's 10.42.0.1, key-only SSH with dropbear; admission |
 | [Y1 SMP plan](planning/Y1-SMP-PLAN.md) | The MT6572's second core: mainline's boot-ROM key path; LK already powers CPU1 (read on the device); admission |
 | [Y1 audio plan](planning/Y1-AUDIO-PLAN.md) | ALSA playback: MT6572 AFE (from the Y2's), a new MT6323 codec, the AW87559; stock sequences from the HAL; staged admission |
+| [Y1 power plan](planning/Y1-POWER-PLAN.md) | Milestone D: power-off, the Y2 power daemon with a Y1 battery profile, CPU scaling at fixed VPROC; stock facts; staged admission |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
