@@ -129,6 +129,44 @@ Five runs of the second boot ([plan](../planning/Y1-SECOND-BOOT-PLAN.md) §9–1
 | `key 28 ENTER (centre)` from `mtk-pmic-keys` | Centre button = MT6323 power key, PMIC interrupt EINT16 level-high (CONFIRMED) |
 | No charging under the test kernels | Charging needs a charger/battery driver; not yet attempted |
 
+## Third-boot result — 2026-11-05
+
+Two runs of the third boot ([plan](../planning/Y1-THIRD-BOOT-PLAN.md) §10–11, evidence in
+`evidence-private/2026-11-05-y1-third-boot/`):
+
+| Observation | Establishes |
+| --- | --- |
+| Mainline MUSB glue + T-PHY, peripheral mode, PIO: `not attached` until the PHY forces the session (overlay `0015`, stock `usb_phy_recover` bits), then `configured`; the PC enumerates a high-speed `0525:a4a7` ACM gadget | USB device mode works on 6.18; the MT6572 PHY does not sense VBUS on this board (CONFIRMED) |
+| MT6323 VUSB 3.3 V on; T-PHY slew-rate calibration skipped (`eye-src` 4) | Enough for high-speed enumeration (CONFIRMED) |
+| AUXADC (`0x714` BATSNS, `0x716` ISENSE, `0x718` VCDT, `0x71a` BATON1, `0x71c` die): battery 3.69–3.80 V, ISENSE = battery (no current), VCDT pin ×369/39 = 113 mV unplugged / 5222 mV plugged, BATON1 553 mV, die 31–34 °C | Telemetry channels and the charger-input divider (CONFIRMED); BATON/NTC meaning still unvalidated |
+| `vgp1: Bringing 2800000uV into 3000000-3000000uV` | LK leaves VGP1 at 2.8 V; stock kernel and Linux use 3.0 V |
+| MT6323 chip ID `0x2023`, die-temperature fuses valid | Calibrated PMIC temperature available |
+| Full kernel log over the USB shell (`run2-dmesg.txt`) | Logs no longer need photos |
+
+## Offline disassembly: USB and charging — 2026-11-05
+
+From the 3.0.2 kernel (`evidence-private/2026-11-04-y1-rom-3.0.2/rea`), read-only. CONFIRMED means seen in
+the code, not on the device. Delays decoded from `__const_udelay` constants (HZ 100).
+
+| Fact | Evidence | Status |
+| --- | --- | --- |
+| MUSB at `0x11100000`, IRQ 52 (SPI 20), `IRQF_TRIGGER_LOW`; DMA interrupt mask `0xff0000ff` at +0x200 | `musb_probe` c0792298, `musb_platform_init` c07937f8 | CONFIRMED (physical address INFERRED from the static map) |
+| FIFO table: EP1–4 bulk 512 double, EP5–6 interrupt (TX 64/RX 512), EP7 bulk 512, EP8 ISO 512 double | table c07aa00c | CONFIRMED values, field meaning INFERRED |
+| USB2 PHY at `0x11110800`; every PHY routine skips when `0x6b & 0x5c == 0x5c` (PHY in UART mode) | `usb_phy_poweron` c03a7820, `usb_phy_recover` c03a7ab4, `usb_phy_savecurrent` c03a7980 | CONFIRMED |
+| Slew-rate calibration with the frequency meter at `0x11110f00`; on timeout writes 4 (`0x15 = 0x40`) | `hs_slew_rate_cal` c03a75ec | CONFIRMED |
+| Efuse trims in recover: devinfo[18] bit 14 clears `RG_USB20_INTR_EN`; devinfo[7] bits 8–10 set `VRT_VREF_SEL` | `usb_phy_recover` | CONFIRMED |
+| Clocks: `enable_clock(52, "PERI_USB")` = CG_CTRL1 bit 13; `enable_pll(2, "USB_PLL")` = UNIVPLL | `usb_enable_clock` c03a750c, `musb_platform_enable` | CONFIRMED |
+| VUSB: `hwPowerOn(1, 3300, "VUSB_LDO")` at USB init; no normal-path power-down | `musb_platform_init` | CONFIRMED |
+| `mt_usb_disconnect` power-cycles VGP1 (wheel supply): off, 5 ms, on at 3.0 V | `mt_usb_disconnect` | CONFIRMED |
+| Charger present = PMIC `0x0000` bit 5, then `mt_usb_is_device` | `upmu_get_rgs_chrdet` | CONFIRMED |
+| Charger type: MT6323 BC1.1 sequence on PMIC `0x24`/`0x26`; SDP, CDP, non-standard, DCP, Apple 2.1/1/0.5 A | `charging_get_charger_type` c03ece90 | CONFIRMED |
+| Charging current: SDP/CDP 500 mA, non-standard/DCP 1000 mA, Apple 800/650/500 mA, unknown 70 mA | `select_charging_curret` | CONFIRMED |
+| CV 4.325 V; pre-charge ends at 3.4 V; VBAT_OV_VTH 2, BATON and ULC detection on, charger watchdog on | `pchr_turn_on_charging` c037c420, `charging_hw_init` | CONFIRMED |
+| AUXADC: BATSNS ch7 ×4, ISENSE ch6 ×4, charger input ch4 ×369/39, BATON1 ch5; 1.8 V, 15 bit | battery meter | CONFIRMED |
+| Battery temperature: constant 25 °C (`force_get_tbat`); unused NTC math assumes 16.9 kΩ pull-up to 1.8 V, 27 kΩ pull-down | `force_get_tbat`, `BattVoltToTemp` | CONFIRMED |
+| Fuel gauge SOC_BY_SW_FG; Q_MAX and R_I_SENSE in runtime custom data, not in the image | `battery_meter_initial` | UNRESOLVED |
+| No external charger IC: no fan5405/bq24 code, no charger I2C device; MT6323 internal PCHR | symbols, `i2c_register_board_info` callers | CONFIRMED |
+
 ## Stock ROM 3.0.2
 
 Source: `y1-community/y1-stock-rom` release 3.0.2, `rom.zip`

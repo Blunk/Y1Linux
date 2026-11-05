@@ -361,6 +361,7 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Ideas that won't be built, and why](NOT-PLANNED.md) | User guide: requests declined so far with the reason and the issue, linked from the issue forms |
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
 | [Y1 second boot plan](planning/Y1-SECOND-BOOT-PLAN.md) | MT6572 base drivers from the mainline fork, read-only eMMC/SD, wheel and centre button; tooling, safety and admission items |
+| [Y1 third boot plan](planning/Y1-THIRD-BOOT-PLAN.md) | USB serial shell (MUSB + T-PHY, peripheral only), VUSB, read-only battery telemetry; charging evidence; admission items |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |

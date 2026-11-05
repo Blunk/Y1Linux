@@ -297,7 +297,7 @@ static void show_event(const struct input_event32 *e)
     say(e->value ? " down\n" : " up\n");
 }
 
-static void show_keys(long watchdog)
+__attribute__((unused)) static void show_keys(long watchdog)
 {
     char path[] = "/dev/input/event0";
     long fds[INPUT_NODES];
@@ -317,7 +317,7 @@ static void show_keys(long watchdog)
     }
 }
 
-static void second_boot(long watchdog)
+__attribute__((unused)) static void second_boot(long watchdog)
 {
     if (call5(SYS_MOUNT, (long)"devtmpfs", (long)"/dev", (long)"devtmpfs", MS_SILENT, 0) != 0)
         say("devtmpfs: mount failed\n");

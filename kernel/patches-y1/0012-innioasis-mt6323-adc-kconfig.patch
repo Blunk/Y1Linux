@@ -1,0 +1,17 @@
+--- a/drivers/iio/adc/Kconfig
++++ b/drivers/iio/adc/Kconfig
+@@ -1141,6 +1141,14 @@
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called "mt6370-adc".
+ 
++config INNIOASIS_MT6323_AUXADC
++	tristate "Innioasis MT6323 PMIC AUXADC"
++	depends on MFD_MT6397
++	help
++	  Say Y here for the MT6323 PMIC's analogue converter on the Innioasis
++	  Y1 and Y2 music players: battery and current-sense voltages, the
++	  BATON pin, the charger input (Y1) and the PMIC die temperature.
++
+ config MEDIATEK_MT6577_AUXADC
+ 	tristate "MediaTek AUXADC driver"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
