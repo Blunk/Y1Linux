@@ -1,0 +1,16 @@
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -112,6 +112,13 @@
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called atc260x-onkey.
+ 
++config INPUT_INNIOASIS_APT32F
++	tristate "Innioasis APT32F click wheel"
++	depends on I2C && OF
++	help
++	  Say Y here for the APT32F touch-wheel controller of the Innioasis Y1
++	  and Y2 music players (rotation, and on the Y1 the four wheel buttons).
++
+ config INPUT_ATMEL_CAPTOUCH
+ 	tristate "Atmel Capacitive Touch Button Driver"
+ 	depends on OF
