@@ -8,7 +8,17 @@
  #include <linux/clk.h>
  #include <linux/interrupt.h>
  #include <linux/io.h>
-@@ -569,6 +570,96 @@
+@@ -13,6 +14,9 @@
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
+ #include <linux/reset.h>
++#include "policy.h" /* Y1: the Y2 PMIC write policy for the MT6323 charger block */
++
++#define Y2_PMIC_CHARGER_LAST	0x046
+ 
+ #define PWRAP_POLL_DELAY_US	10
+ #define PWRAP_POLL_TIMEOUT_US	10000
+@@ -569,6 +573,96 @@
  	[PWRAP_ADC_RDATA_ADDR2] =	0x154,
  };
  
@@ -105,7 +115,7 @@
  static const int mt6765_regs[] = {
  	[PWRAP_MUX_SEL] =		0x0,
  	[PWRAP_WRAP_EN] =		0x4,
-@@ -1314,6 +1405,7 @@
+@@ -1314,6 +1408,7 @@
  
  enum pwrap_type {
  	PWRAP_MT2701,
@@ -113,7 +123,38 @@
  	PWRAP_MT6765,
  	PWRAP_MT6779,
  	PWRAP_MT6795,
-@@ -1733,6 +1825,11 @@
+@@ -1370,6 +1465,9 @@
+ 
+ 	struct reset_control *rstc_bridge;
+ 	void __iomem *bridge_base;
++	/* innioasis,pmic-charger-policy (Y1): MT6323 charger block writes only within the Y2's
++	 * reviewed fields and values (policy.h), docs/planning/Y1-CHARGING-PLAN.md. */
++	bool charger_policy;
+ };
+ 
+ struct pmic_wrapper_type {
+@@ -1582,6 +1680,20 @@
+ 
+ static int pwrap_regmap_write(void *context, u32 adr, u32 wdata)
+ {
++	struct pmic_wrapper *wrp = context;
++	u32 old, mask;
++	int ret;
++
++	if (wrp->charger_policy && adr <= Y2_PMIC_CHARGER_LAST) {
++		mask = y2_pmic_write_mask(adr);
++		if (!mask || !y2_pmic_value_allowed(adr, wdata))
++			return -EPERM;
++		ret = pwrap_read(wrp, adr, &old);
++		if (ret)
++			return ret;
++		if ((old ^ wdata) & ~mask)
++			return -EPERM;
++	}
+ 	return pwrap_write(context, adr, wdata);
+ }
+ 
+@@ -1733,6 +1845,11 @@
  static int pwrap_common_init_reg_clock(struct pmic_wrapper *wrp)
  {
  	switch (wrp->master->type) {
@@ -125,7 +166,7 @@
  	case PWRAP_MT6795:
  		if (wrp->slave->type == PMIC_MT6331) {
  			const u32 *dew_regs = wrp->slave->dew_regs;
-@@ -1839,6 +1936,7 @@
+@@ -1839,6 +1956,7 @@
  		pwrap_writel(wrp, 1, PWRAP_CIPHER_START);
  		break;
  	case PWRAP_MT2701:
@@ -133,7 +174,7 @@
  	case PWRAP_MT6765:
  	case PWRAP_MT6779:
  	case PWRAP_MT6795:
-@@ -2061,6 +2159,10 @@
+@@ -2061,6 +2179,10 @@
  		reset_control_reset(wrp->rstc_bridge);
  
  	switch (wrp->master->type) {
@@ -144,7 +185,7 @@
  	case PWRAP_MT6795:
  		fallthrough;
  	case PWRAP_MT8173:
-@@ -2277,6 +2379,19 @@
+@@ -2277,6 +2399,19 @@
  	.init_soc_specific = pwrap_mt2701_init_soc_specific,
  };
  
@@ -164,7 +205,7 @@
  static const struct pmic_wrapper_type pwrap_mt6765 = {
  	.regs = mt6765_regs,
  	.type = PWRAP_MT6765,
-@@ -2446,6 +2561,7 @@
+@@ -2446,6 +2581,7 @@
  
  static const struct of_device_id of_pwrap_match_tbl[] = {
  	{ .compatible = "mediatek,mt2701-pwrap", .data = &pwrap_mt2701 },
@@ -172,3 +213,11 @@
  	{ .compatible = "mediatek,mt6765-pwrap", .data = &pwrap_mt6765 },
  	{ .compatible = "mediatek,mt6779-pwrap", .data = &pwrap_mt6779 },
  	{ .compatible = "mediatek,mt6795-pwrap", .data = &pwrap_mt6795 },
+@@ -2487,6 +2623,7 @@
+ 	platform_set_drvdata(pdev, wrp);
+ 
+ 	wrp->master = of_device_get_match_data(&pdev->dev);
++	wrp->charger_policy = of_property_read_bool(np, "innioasis,pmic-charger-policy");
+ 	wrp->slave = of_slave_id->data;
+ 	wrp->dev = &pdev->dev;
+ 

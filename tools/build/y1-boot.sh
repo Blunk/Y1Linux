@@ -1,16 +1,18 @@
 #!/bin/sh
-# Innioasis Y1 test BOOTIMG, variant "first", "second" or "third" (docs/knowledge/y1-hardware.md,
-# docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md). Runs inside the locked build userspace:
+# Innioasis Y1 test BOOTIMG, variant "first" to "fifth" (docs/knowledge/y1-hardware.md,
+# docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --output out/<fresh-dir> -- sh /project/tools/build/y1-boot.sh first
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
-#       -- sh /project/tools/build/y1-boot.sh second   (or third)
+#       -- sh /project/tools/build/y1-boot.sh second   (or third, fourth, fifth)
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
-variant=${1:?variant: first, second or third}
+variant=${1:?variant: first, second, third, fourth or fifth}
 case $variant in
 first) defines= ;;
 second) defines=-DY1_SECOND_BOOT ;;
 third) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT" ;;
+fourth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT" ;;
+fifth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT" ;;
 *) echo "unknown variant $variant" >&2; exit 2 ;;
 esac
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }
