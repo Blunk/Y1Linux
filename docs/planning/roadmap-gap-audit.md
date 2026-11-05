@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 player UI planning (milestone E) — 2026-11-05
+
+Owner's choice: Reborn before the power daemon and Y2DATA ([plan](Y1-REBORN-PLAN.md)). Evidence: the Reborn
+binaries are already on the Y1's rootfs and the display matches (480x360, KMS `mediatek`), but Reborn renders only
+through EGL/GLES on Lima and the Y1 kernel has no GPU driver; its start chain needs `/data` (Y2DATA), the power
+daemon and D-Bus; its input and audio names are the Y2's. Staged: a review of the Reborn source (not on this
+machine), the GPU (the MT6572's Mali-400, MFG power domain, first Linux SPM writes), then a RAM-only first UI;
+persistence and the power daemon later. Admitted and run the same day: R0 (source review), R1a (`CONFIG_PM`,
+regression PASS), R1b (GPU: MFG domain, WHPLL 500.5 MHz, Lima Mali-400 MP1, PASS), R2 (RAM-only first UI; the
+wheel zones and the centre as Reborn's navigation buttons; Reborn renders through Lima, PASS), R3 (sound:
+`Master` with dB, card `Y2Audio`, headphones only, gain step 0, PASS).
+
 ## Y1 power planning (milestone D) — 2026-11-05
 
 Boundary review for system milestone D ([plan](Y1-POWER-PLAN.md)), owner's request after the audio PASS.

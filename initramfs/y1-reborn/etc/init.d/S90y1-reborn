@@ -1,0 +1,67 @@
+#!/bin/sh
+# Innioasis Y1: Reborn's first UI (docs/planning/Y1-REBORN-PLAN.md, stage R2), in place of the Y2's
+# S90reborn, boot-gate and reborn-supervise. /data is a 64 MiB ext4 image on its own tmpfs (Reborn accepts
+# only an ext4 /data with schema 1), so nothing survives a reboot. The SSH files already in the RAM
+# overlay's /data are copied in first. The screen timeout is seeded as 0: the Y1 has no Power key to wake a
+# dark screen; the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
+# no report, no power-off.
+RAM=/run/y1-ram
+PIDFILE=/run/y1-reborn.pid
+
+data_ready() {
+	grep -q '^[^ ]* /data ext4 ' /proc/mounts && [ "$(cat /data/.y2data-schema 2>/dev/null)" = 1 ]
+}
+
+make_data() {
+	mkdir -p -m 0700 "$RAM" /run/y1-ram-mnt &&
+	mount -t tmpfs -o size=80m,mode=0700 y1ram "$RAM" &&
+	dd if=/dev/zero of="$RAM/data.img" bs=1M count=64 2>/dev/null &&
+	mkfs.ext4 -q -L Y1RAMDATA "$RAM/data.img" &&
+	mount -o loop "$RAM/data.img" /run/y1-ram-mnt &&
+	cp -a /data/. /run/y1-ram-mnt/ &&
+	umount /run/y1-ram-mnt &&
+	mount -o loop "$RAM/data.img" /data &&
+	echo 1 > /data/.y2data-schema &&
+	mkdir -p -m 0700 /data/music /data/reborn/state /data/reborn/logs &&
+	/usr/bin/reborn --default-settings |
+		sed -e 's/"screen_timeout_seconds": *[0-9]*/"screen_timeout_seconds": 0/' \
+		    -e 's/"speaker": *true/"speaker": false/' \
+		> /data/reborn/state/session.json &&
+	grep -q '"screen_timeout_seconds": *0' /data/reborn/state/session.json
+}
+
+supervise() {
+	n=0
+	while [ "$n" -lt 5 ]; do
+		read -r began _ < /proc/uptime
+		(umask 077; exec /usr/bin/reborn) 2> "/run/y1-reborn-$n.log"
+		echo "y1-reborn: exit $? (attempt $n)" > /dev/kmsg
+		read -r ended _ < /proc/uptime
+		if [ $(( ${ended%.*} - ${began%.*} )) -ge 60 ]; then n=0; else n=$((n + 1)); fi
+		sleep 2
+	done
+	echo "y1-reborn: stopped after 5 quick exits" > /dev/kmsg
+}
+
+case "$1" in
+	start)
+		printf 'Starting Reborn: '
+		if ! data_ready && ! make_data; then
+			echo "FAIL (data)"
+			exit 1
+		fi
+		# Reborn switches only the pin it plays to (the Y1 has no jack device, so always Headphone);
+		# the speaker pin defaults on and is switched off here (stage R3).
+		amixer -q -c Y2Audio sset Speaker off 2>/dev/null
+		supervise &
+		echo $! > "$PIDFILE"
+		echo OK
+		;;
+	stop)
+		printf 'Stopping Reborn: '
+		[ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null
+		killall reborn 2>/dev/null
+		rm -f "$PIDFILE"
+		echo OK
+		;;
+esac
