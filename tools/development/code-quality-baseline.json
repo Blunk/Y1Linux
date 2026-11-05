@@ -49,7 +49,7 @@
   "Y2Reborn/crates/reborn-core/src/lib.rs": 2376,
   "Y2Reborn/crates/reborn-library/src/lib.rs": 2215,
   "Y2Reborn/crates/reborn-platform/src/client.rs": 1558,
-  "Y2Reborn/crates/reborn-ui/src/pages.rs": 1862
+  "Y2Reborn/crates/reborn-ui/src/pages.rs": 1866
  },
  "long_functions": {
   "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs::event": 152,
