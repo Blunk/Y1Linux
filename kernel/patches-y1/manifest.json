@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md.",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -174,6 +174,12 @@
       "base_sha256": "5a4c58e2b6ff638bfe69aba785dee981a003ee1e5a894a5636e055d647b8c9ec",
       "result_sha256": "f09c64cb4a9f4ac4f45cddda994dbdabd290ef1baea18b07f55e4766710701af",
       "patch": "0029-innioasis-y1-audio-makefile.patch"
+    },
+    {
+      "path": "drivers/power/reset/mt6323-poweroff.c",
+      "base_sha256": "7ce333b601878e3a2a9aa60c2b3d0f9509b7aff49738ce9bffab168af1d402da",
+      "result_sha256": "889d78ead6dfa6bd538174d8beabe5b831324ef2586500713cd1a2798bf63884",
+      "patch": "0030-mt6323-poweroff-atomic.patch"
     }
   ],
   "added": [
