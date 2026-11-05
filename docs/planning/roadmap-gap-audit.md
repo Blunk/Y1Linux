@@ -1,5 +1,15 @@
 # Roadmap gap audit
 
+## Y1 power planning (milestone D) — 2026-11-05
+
+Boundary review for system milestone D ([plan](Y1-POWER-PLAN.md)), owner's request after the audio PASS.
+Evidence: the Y1 has no power-off handler (a `poweroff` halts with the PMIC on), no battery percentage, no
+low-battery shutdown and no CPU scaling; the centre button is the only power key. Stock 3.0.2 powers off
+through the RTC BBPU (with a write-interface unlock mainline does not do), gauges on a 4.35 V cell's OCV table
+(id 0 likely, unresolved) and scales 598/806/1001 MHz at a fixed 1150 mV. Mainline `cpufreq-dt` would offer
+unverified 1.2–1.4 GHz rates. Staged: a read-only baseline, power-off, the Y2's power daemon with a Y1
+profile, then CPU scaling without voltage changes. Not admitted.
+
 ## Y1 audio planning — 2026-11-05
 
 Owner's choice: audio before data and power ([plan](Y1-AUDIO-PLAN.md)). Evidence: no MT6572 AFE, MT6323 codec
