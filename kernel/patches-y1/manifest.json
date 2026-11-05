@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md.",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md.",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -28,7 +28,7 @@
     {
       "path": "drivers/soc/mediatek/mtk-pmic-wrap.c",
       "base_sha256": "80173dd03ba85c5f900d27d35a2b6d0bd60bb5cf4bd801295e9953a0e4eaec12",
-      "result_sha256": "08dfb679d11b453fae8461493d822444ce255b893b6b6d91df15e4f60f41dcfa",
+      "result_sha256": "8df257db1c93b01cf45cafb24aa2dc8d079b8262ed6cdf1a989b979a2f8d59bc",
       "patch": "0005-mt6572-pmic-wrap.patch"
     },
     {
@@ -82,7 +82,7 @@
     {
       "path": "drivers/mfd/mt6397-core.c",
       "base_sha256": "4c9b1a942df7ade97f0bb4cd7af65a8f7a9487df96b278eedc125f1eda6e3209",
-      "result_sha256": "eaba955f6a9310921c71a125637cc7b77c1c6da2c10b1a4c643a20205c2b6c04",
+      "result_sha256": "b75026aa53d6616645483460b652795da535f8406b28cc431d1a16605fef32eb",
       "patch": "0014-mt6323-auxadc-charger-cells.patch"
     },
     {
@@ -162,6 +162,18 @@
       "base_sha256": "14fa6f984e645f3c50eb1c49dca1e36bf365492331078b4e436eb19203b09f37",
       "result_sha256": "1aa749137c40099fb2be98671b0d4e298b655d8a3471ef6f4477801517993a72",
       "patch": "0027-innioasis-mt6323-backlight-makefile.patch"
+    },
+    {
+      "path": "sound/soc/mediatek/Kconfig",
+      "base_sha256": "0bb03979e1b171cccf16fb727332cc24413794442e571c31a73745acd542ad70",
+      "result_sha256": "ebb3a80ddfa419c48972e43d3fa2d3fbf8a18811556c1ffdac5390f536f0a701",
+      "patch": "0028-innioasis-y1-audio-kconfig.patch"
+    },
+    {
+      "path": "sound/soc/mediatek/Makefile",
+      "base_sha256": "5a4c58e2b6ff638bfe69aba785dee981a003ee1e5a894a5636e055d647b8c9ec",
+      "result_sha256": "721af2bb281b27d144226f5d5f98484fb5546baf3e8794f5975d7db9873db58a",
+      "patch": "0029-innioasis-y1-audio-makefile.patch"
     }
   ],
   "added": [
@@ -329,6 +341,21 @@
       "path": "drivers/video/backlight/system-idle.h",
       "source": "kernel/platform/system-idle.h",
       "sha256": "09ab5a7750b89f8cf35d185153f929d59159b8eabb589dc30f322694d4c8a767"
+    },
+    {
+      "path": "sound/soc/mediatek/y1-mt6572-afe.c",
+      "source": "kernel/y1/mt6572-afe.c",
+      "sha256": "452d444fb249f717e790a37df1027cbda48c42fd9e5b624b0b87c85bd5a071af"
+    },
+    {
+      "path": "sound/soc/mediatek/y1-mt6323-codec.c",
+      "source": "kernel/y1/mt6323-codec.c",
+      "sha256": "1e92b70c8897af587b5b88eccb61ac18083dfd7fdf1ceeab0b7a51e9220ece45"
+    },
+    {
+      "path": "drivers/soc/mediatek/pmic-audio-policy.h",
+      "source": "kernel/y1/pmic-audio-policy.h",
+      "sha256": "d57c9b782374a1f96c360562d6faa3fb140101f598b86933c9ef0775fb738387"
     }
   ]
 }

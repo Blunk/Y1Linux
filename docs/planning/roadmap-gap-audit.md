@@ -1,5 +1,16 @@
 # Roadmap gap audit
 
+## Y1 audio planning — 2026-11-05
+
+Owner's choice: audio before data and power ([plan](Y1-AUDIO-PLAN.md)). Evidence: no MT6572 AFE, MT6323 codec
+or AW87559 driver in mainline or the fork; the Y2's AFE and AW87559 drivers are largely reusable, but the Y2
+uses an external DAC where the Y1 uses the MT6323's codec; the stock kernel is a pass-through and the
+sequences are in the closed HAL, which the backup holds. Staged: offline HAL analysis, a read-only register
+baseline, headphones, then the speaker. Stage A read the idle state (the AFE clock gated after LK, so not read);
+stage B (owner-approved): **PASS** in one run, a quiet 440 Hz tone on both headphone channels at three gain steps,
+the stock register sequence verified during playback, the PMIC wrapper admitting only the 12 audio registers'
+stock values. Small start/stop pops remain. Stage C (speaker) is the next admission.
+
 ## Y1 second CPU core planning — 2026-11-05
 
 Owner request: use both MT6572 cores ([plan](Y1-SMP-PLAN.md)). Evidence: mainline's `mtk_mt6572_boot` (boot-ROM

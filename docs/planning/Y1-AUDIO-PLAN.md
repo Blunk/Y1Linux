@@ -1,0 +1,163 @@
+# Y1 audio: ALSA playback through the MT6572 AFE and the MT6323 codec
+
+Status: **stage B PASS** (2026-11-05, [§10](#10-stage-b-run-1--headphone-playback-pass--2026-11-05)): ALSA
+headphone playback on the Y1 through the MT6572 AFE and the MT6323 codec. Stage C (speaker) is admitted later
+(§7). The owner chose audio before data and
+power (2026-11-05). Follows the [SMP plan](Y1-SMP-PLAN.md) (PASS) and the [system plan](Y1-SYSTEM-PLAN.md)
+(the Y2's userspace runs; it has `aplay`, `speaker-test`, `amixer`).
+
+## 1. Goal
+
+Sound from the Y1 under Linux through standard ALSA: first the headphones, then the speaker. Not in scope:
+recording, Bluetooth audio, the Y2's player, jack detection beyond what playback needs, suspend.
+
+## 2. Evidence
+
+### Existing code (2026-11-05)
+
+- **Mainline 6.18 and the mt6572-mainline fork:** no MT6572 audio front end (AFE), no MT6323 codec driver
+  (only newer PMICs: mt6351/57/58/59), no AW87559 driver. The fork has no audio work at all.
+- **The Y2** (`kernel/audio/`): `mt6582-afe.c` (DL1 memif, own DPCM front/back end, 44.1 kHz S16, IRQ
+  handling) drives a **second I2S to an external CS43131 DAC**; the MT6323's own codec is not used.
+  `aw87559.c` drives the same AW87559 amplifier (I2C, enable GPIO, the stock 39-register table).
+- **Reusable for the Y1:** `aw87559.c` with Y1 values (I2C0 `0x58`, enable GPIO143); most of
+  `mt6582-afe.c` (the MT6572 AFE has the same register offsets per the vendor `AudDrv_Afe.h`: DL1
+  `0x40`–`0x48`, IRQ `0x3a0`–`0x3ac`) with a different base and, instead of I2S, the **internal ADDA path**
+  to the PMIC. **To be written:** an MT6323 codec component (pwrap regmap, MFD child).
+
+### Stock 3.0.2 kernel (offline)
+
+- AFE at `0x11140000` (SRAM `0x11141000`), IRQ 96 = SPI 64, level low; clock `MT_CG_AUDIO_SW_CG`
+  (topckgen CG1 bit 25, mainline `CLK_TOP_AUDIO`); `AUDIO_TOP_CON0 = 0x60004000` at clock-on.
+- The kernel is a pass-through (`/dev/eac`): the closed HAL writes AFE registers and MT6323 registers
+  (`Ana_Set_Reg` over pwrap) by ioctl. The kernel itself only sets `AUDTOP_CON5/6` once at probe and drives
+  the AW87559 on the HAL's `SET_SPEAKER_ON/OFF` (GPIO143 high, 50 ms, init table, SYSCTRL `0x78`; off:
+  SYSCTRL `0x30`, GPIO low). PMIC audio registers: `ABB_AFE_CON0-11` `0x4000`–`0x4016`, `NEWIF_CFG0-3`
+  `0x4024`–`0x402a`, `AUDTOP_CON0-9` `0x700`–`0x712`, `SPK_CON` `0x52`–`0x6a`, clock gates `0x102`–`0x126`.
+  Jack: MT6323 ACCDET (`0x77a`–`0x790`) with EINT0 on GPIO135.
+- **The sequences (power-up, depop, rate, routing, gains) are in the HAL**, which the backup holds:
+  `libaudio.primary.default.so` (528 KB, exported C++ symbols, sha256 `af869d8f…bf6`), extracted from the
+  backup's `ANDROID` image into `evidence-private/2026-11-05-y1-audio-hal/`.
+
+## 3. Stages
+
+- **Stage 0 (offline, done, §8):** the HAL's exact register sequences for playback, the headphone and speaker
+  power-up/down, rates, routing and gains.
+- **Stage A (read-only, device):** the AFE, PMIC audio, clock-gate and ACCDET registers as LK leaves them,
+  from the running Y1 (SSH: `devmem` for the AFE after checking its clock gate; the PMIC through the
+  read-only regmap file). The baseline for stage B.
+- **Stage B (first sound, headphones):** AFE driver (from the Y2's, MT6572 base/IRQ/clocks, ADDA back end
+  with §8's interconnect and DL SRC2 values), MT6323 codec component with §8's headphone sequence (DC trim 0,
+  see §8) and the lowest analog gain, a sound card at 44.1 kHz S16 stereo (48 kHz differs only in the rate
+  codes); the PMIC wrapper's write policy extended to exactly the registers of §8 (`0x10a`/`0x10c` bit 8,
+  `0x4000`–`0x4016`, `0x4024`, `0x700`, `0x708`, `0x70a`, `0x70c`). Test: a quiet `speaker-test` tone, the
+  headphones away from the ears first.
+- **Stage C (speaker):** the headphone path on, then the AW87559 (shared driver) on, as stock: the speaker
+  amplifier is fed from the MT6323's headphone outputs (the PMIC's own speaker amplifier is never used); off
+  in the reverse order; low level first.
+
+## 4. Risks
+
+Loud pops or full-scale output into headphones (the test starts at low digital gain, headphones away from the
+ears for the first tone); a wrong analog sequence (wrong bias, DC on the output) — bounded by reproducing
+stock exactly; the speaker amplifier driven hard (stage C only, low level first). The AFE reads stage A does
+are gated on its clock being on.
+
+## 5. Later
+
+Jack detection (ACCDET), volume control mapped to the PMIC gains, 48 kHz if the path supports it, the Y2's
+player (milestone E).
+
+## 6. Admission for stage A (now)
+
+| Item | Bound |
+| --- | --- |
+| **Read the audio registers** (AFE `0x11140000`, PMIC audio and ACCDET ranges) | read-only (`devmem` reads after the AFE clock-gate check; the regmap file for the PMIC); nothing written |
+
+## 7. Admission for stages B and C (later, with stage 0 and A evidence)
+
+| Item | Bound |
+| --- | --- |
+| AFE playback (memif, interconnect, ADDA) | stock values only |
+| MT6323 codec writes | the HAL's headphone sequence; the wrapper policy allows only those registers |
+| AW87559 on, speaker | the stock table; low digital level first |
+
+## 8. Stage 0 result: the stock sequences — 2026-11-05
+
+Offline analysis of the stock HAL (`libaudio.primary.default.so`, ARM A32; notes
+`evidence-private/2026-11-05-y1-audio-hal/y1-audio-hal-notes.md`). CONFIRMED from code unless marked.
+
+- **Format:** primary output 44.1 kHz, stereo, 16-bit (`audio_policy.conf`, the HAL's defaults); no
+  resampling; DL1 buffer 16 KiB, IRQ every 2048 frames. 48 kHz differs only in the rate codes.
+- **Rate codes:** AFE fs 44.1k = 9, 48k = 10 (`DAC_CON1`, `IRQ_MCU_CON`, `I2S_CON1`, PMIC `0x4002`); NEWIF
+  44.1k = 7, 48k = 8; `ADDA_DL_SRC2_CON0` 44.1k `0x73001803`, 48k `0x83001803`; `DL_SRC2_CON1` `0xf74f0000`.
+- **AFE start** (`AudioMTKStreamOut::write`): the kernel's clock and buffer (it owns `AUDIO_TOP_CON0` and
+  `DL1_BASE/CUR/END`); `IRQ_MCU_CON 0x3a0` fs, `IRQ_MCU_CNT1 0x3ac = 2048`, IRQ on; interconnect
+  `CONN1 0x24` bit 21 (I05→O03), `CONN2 0x28` bit 6 (I06→O04); `0x260 = 0`, `0x264 = 0`; `0x108` rate value,
+  `0x10c = 0xf74f0000`, `0x34 = fs<<8 | 8`; enable `0x108` bit 0, `0x34` bit 0, `UL_DL_CON0 0x124` bit 0,
+  `0x4c4` bit 4 = 0; `DAC_CON0 0x10` bit 0; the analog power-up; `DAC_CON1 0x14` fs, `DAC_CON0` bit 1 (DL1
+  on). Init also writes `0x4b8 = 0x0300f872`, `0x4bc = 0x9331802f`, `0x4c0 = 7`, `0x4c4 = 0`. Playback never
+  writes NEWIF `0x138/0x13c` or `ADDA_TOP_CON0`. Stop is the reverse.
+- **MT6323 headphone power-up**, digital then analog: `0x10c` ← `0x100` (clock gate clear, INFERRED),
+  `0x4024` = `newif<<12 | 0x330`, `0x4002` = rate, `0x4006`/`0x4008` = left/right DC trim, `0x4014` bit 0,
+  `0x4016` bits 9:8 toggled, `0x4000` bit 0; then `0x70c = 0xF7F2`, `0x700` bits 15:12 = 7, `0x70a = 0x0014`,
+  `0x708 = 0x007C`, 10 ms, `0x70c = 0xF5BA`, `0x70a = 0x2214`. **Down:** `0x70a = 0x0014`, `0x70c = 0xF7F2`,
+  `0x708 = 0`, `0x700` bit 12 off (no uplink), `0x70c = 0x37E2`, `0x4000` bit 0 off, `0x10a` ← `0x100`.
+- **Volume:** `AUDTOP_CON5 0x70a` bits 14:12 and 10:8, 3-bit fields, 7 = loudest, 2 dB steps (scale
+  INFERRED).
+- **DC trim:** no efuse; stock measures the offset once through AUXADC channels 15/14 into NVRAM and writes
+  1.8 × that to `0x4006`/`0x4008` (mishandling negative values). Stage B writes 0 (no trim) and may add a
+  measured trim later.
+- **Speaker:** the MT6323's own speaker amplifier is never enabled; the speaker path is the headphone power-up
+  then the kernel's AW87559 on; close is the reverse. The volume uses the same `0x70a` fields.
+
+## 9. Stage A result and stage B build — 2026-11-05
+
+**Stage A** (owner-approved with stage B; `evidence-private/2026-11-05-y1-audio-a/regs.txt`): topckgen
+`CG_CON1` = `0xDAC9DAFF`, bit 25 set, so **the AFE's clock is gated after LK** and the AFE was not read
+(by design). The PMIC audio registers are idle: `0x108 = 0x03bf` (bit 8: the audio clock gated; `0x10a`/
+`0x10c` are its set/clear registers), `0x4000 = 0`, `0x4002 = 0`, `0x4014 = 1`, `0x4024 = 0x9330`,
+`0x4028`/`0x402a` = `0x302f`/`0xf872` (the halves of the AFE init values stock writes), `0x700 = 0x6010`,
+`0x708 = 0`, `0x70a = 0x1100`, `0x70c = 0x1c32`, ACCDET `0x77a = 0x0010` (off).
+
+**Stage B build:**
+- `kernel/y1/mt6572-afe.c` (added as `sound/soc/mediatek/y1-mt6572-afe.c`): one CPU DAI "DL1-ADDA" (no
+  DPCM): the Y2 AFE driver's IRQ, DMA and pointer handling; probe enables `CLK_TOP_AUDIO`, writes
+  `AUDIO_TOP_CON0 = 0x60004000`, the stock reset and init values; `prepare` the stock ADDA path and AFE on;
+  `trigger` IRQ and DL1 on; `hw_free` the reverse. 44.1 kHz S16 stereo.
+- `kernel/y1/mt6323-codec.c` (added as `sound/soc/mediatek/y1-mt6323-codec.c`, MFD cell in `0014`): the
+  stock headphone power-up at `prepare` (DC trim 0, final gain from the mixer), power-down at `hw_free`;
+  "Headphone Playback Volume" 0–7, default 0 (lowest); nothing written at probe.
+- `kernel/y1/pmic-audio-policy.h` (added to `drivers/soc/mediatek/`): the wrapper's policy admits the 12
+  audio registers with exact value guards (e.g. `0x70c` only `0xF7F2`/`0xF5BA`/`0x37E2`, `0x4024` only
+  `0x7330`, `0x70a` only `0x0014` plus the gain fields, `0x10a`/`0x10c` only `0x100`); overlay `0005`.
+- `0028`/`0029`: `SND_SOC_Y1_AUDIO`. Tree `innioasis-y1-thirteenth-boot.dts`: the AFE (SPI 64 level low,
+  `CLK_TOP_AUDIO`), the codec under the PMIC, a `simple-audio-card`. Config: `SOUND`, `SND`, `SND_SOC`,
+  `SND_SIMPLE_CARD`, `SND_SOC_Y1_AUDIO`.
+- Test tones (`out/y1-audio/`): 440 Hz, 3 s, 100 ms fades, at −40, −30 and −20 dBFS.
+
+Build `out/y1-thirteenth-boot-1`, BOOTIMG sha256
+`243db0ace5af2ef98be8d6f4809bcd85a0d9337d8d05eb613422f0f0c0f77e15`, no compiler warnings. Physical status
+NOT_RUN.
+
+## 10. Stage B run 1 — headphone playback PASS — 2026-11-05
+
+Build `243db0ac…`; `evidence-private/2026-11-05-y1-audio-b/`. Card `Y1`, device `DL1-ADDA-mt6323-hifi`;
+"Headphone Playback Volume" 0–7. During a −40 dBFS 440 Hz tone the registers were the stock sequence
+(PMIC `0x108` bit 8 clear, `0x4000 = 1`, `0x4002 = 9`, `0x4024 = 0x7330`, `0x700 = 0x7010`, `0x708 = 0x7c`,
+`0x70c = 0xF5BA`; AFE `CONN1` bit 21, `CONN2` bit 6, `DL_SRC2 = 0x73001803`, `UL_DL_CON0` on,
+`DAC_CON0 = 0x3003`, IRQ at fs 9, `DL1_CUR` inside the ring); `aplay` without underrun; afterwards the stock
+off state (`0x70c = 0x37E2`, `0x708 = 0`, `0x700 = 0x6010`, the audio clock gated). Charging unaffected.
+
+The owner, headphones: at gain step 0 and −40 dBFS nothing audible; at step 2 the tone; steps 2, 4, 6 louder
+each time, no distortion; `speaker-test` left and right on the correct sides; very small pops before the
+start and after the end (no DC trim, and the stock sequence has no ramp; as stock without its NVRAM trim,
+INFERRED). **Stage B: PASS.**
+
+Side findings (the HAL follow-up, `y1-audio-hal-notes.md`): the stock playback path writes no other AFE or
+PMIC register; the AFE writes at `0x4b8`–`0x4c4` read back 0 on the Y1 (not retained, meaning unknown,
+harmless); stock sets `DAC_CON0` bit 10 only on restarts and `0x4c4` bit 4 at standby. The headphones were
+first kept away from the ears; the pin mux (GPIO4–6 mode 1, AUD_CLK/MISO/MOSI) is as LK left it.
+
+Next: the default gain (step 0 is inaudible; stock starts at 2), volume mapping, the pops (a measured DC trim,
+a ramp), 48 kHz, jack detection, then stage C.
