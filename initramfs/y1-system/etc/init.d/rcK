@@ -1,0 +1,9 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's rcK: stop only the Y1-safe scripts, in reverse order.
+. /etc/init.d/y1-services
+reversed=
+for name in $Y1_SERVICES; do reversed="$name $reversed"; done
+for name in $reversed; do
+	i=/etc/init.d/$name
+	[ -f "$i" ] && "$i" stop
+done

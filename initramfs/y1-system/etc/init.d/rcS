@@ -1,0 +1,13 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's rcS (docs/planning/Y1-SYSTEM-PLAN.md, milestone A): start only the
+# Y1-safe scripts (y1-services), in numerical order, timed into /run/y2/boot-trace.jsonl as on the Y2.
+. /etc/init.d/y1-services
+trace=/run/y2/boot-trace.jsonl
+for name in $Y1_SERVICES; do
+	i=/etc/init.d/$name
+	[ -f "$i" ] || continue
+	read -r began _ < /proc/uptime
+	"$i" start
+	read -r ended _ < /proc/uptime
+	printf '{"script":"%s","start_s":%s,"end_s":%s}\n' "$name" "$began" "$ended" >> "$trace"
+done
