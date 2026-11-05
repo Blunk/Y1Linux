@@ -7,6 +7,9 @@
  * NVRAM); the headphone gain starts at step 2, stock's power-up value (step 0 was inaudible).
  * Stage C: the power-up and power-down are a DAPM DAC event, so DAPM powers the codec before the AW87559
  * speaker amplifier (an aux device fed from HPOUT) and down after it, the stock order.
+ * Reborn (docs/planning/Y1-REBORN-PLAN.md, stage R3) sets a "Master" element by dB, so the gain is that
+ * control with a dB scale: step 7 = 0 dB, 2 dB a step (the steps are the stock HAL's; the absolute level is
+ * not measured). Reborn's -24 dB for headphones clamps to step 0.
  */
 #include <linux/delay.h>
 #include <linux/mfd/mt6397/core.h>
@@ -120,6 +123,8 @@ static struct snd_soc_dai_driver y1_codec_dai = {
 		      .rates = SNDRV_PCM_RATE_44100, .formats = SNDRV_PCM_FMTBIT_S16_LE },
 };
 
+static const DECLARE_TLV_DB_SCALE(y1_master_tlv, -1400, 200, 0);
+
 static int y1_volume_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info *uinfo)
 {
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
@@ -156,7 +161,9 @@ static int y1_volume_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_valu
 }
 
 static const struct snd_kcontrol_new y1_codec_controls[] = {
-	{ .iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = "Headphone Playback Volume",
+	{ .iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = "Master Playback Volume",
+	  .access = SNDRV_CTL_ELEM_ACCESS_READWRITE | SNDRV_CTL_ELEM_ACCESS_TLV_READ,
+	  .tlv.p = y1_master_tlv,
 	  .info = y1_volume_info, .get = y1_volume_get, .put = y1_volume_put },
 };
 

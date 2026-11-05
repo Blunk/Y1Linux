@@ -1,0 +1,12 @@
+{
+  "schema": "org.y2linux.audio-enablement/v1",
+  "card": "Y2Audio",
+  "enabled_formats": ["S16_LE"],
+  "enabled_rates": [44100],
+  "channels": 2,
+  "experimental": true,
+  "qualified": false,
+  "source": "Innioasis Y1: MT6572 AFE DL1 to the MT6323 codec, 44.1 kHz S16_LE only (docs/planning/Y1-AUDIO-PLAN.md, Y1-REBORN-PLAN.md stage R3)",
+  "conversion_source_rates": [44100, 48000, 88200, 96000],
+  "fallback": "S16_LE at 44.1k; other rates converted"
+}
