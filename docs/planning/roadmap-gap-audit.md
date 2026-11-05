@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 root filesystem planning — 2026-11-05
+
+Boundary review for a real userspace ([plan](Y1-ROOTFS-PLAN.md)): the first filesystem mount and the first
+foreign binaries on the Y1. Evidence: the card is one FAT32 partition with the owner's data (read
+read-only); the Y2's Buildroot root filesystem is published per release (`baseline-220`, 51 MB, signed
+manifest); a local build lacks disk space, `Y2Reborn` and Rust. Owner's choice: the Y2 userspace, an image
+file first, an own partition later. Step 1 writes nothing: card and image read-only, a tmpfs overlay, a
+chroot shell, no Y2 init or service. Redesign (the card is built in): owner-approved write of `Y2ROOT` into
+the eMMC `ANDROID` partition (stock's partition extracted from the backup first). Result: **PASS** after a
+Thumb-userspace correction: the Y2's busybox shell and tools run on the Y1, the partition hash matches the
+release image on the device, Linux writes nothing. Next: the Y2's services need a Y1 review.
+
 ## Y1 backlight planning — 2026-11-05
 
 Boundary review for backlight control ([plan](Y1-BACKLIGHT-PLAN.md)): the first Linux write to the Y1's

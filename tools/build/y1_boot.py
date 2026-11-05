@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to eighth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to ninth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -99,6 +99,8 @@ VARIANTS['eighth'] = dict(VARIANTS['seventh'], expected=VARIANTS['seventh']['exp
     'compatible = "innioasis,y2-backlight";',
     'innioasis,isink-mask = <0x03>;',
 ])
+# Root filesystem step 1 (docs/planning/Y1-ROOTFS-PLAN.md): the eighth tree unchanged.
+VARIANTS['ninth'] = VARIANTS['eighth']
 
 
 def empty_ramdisk():
