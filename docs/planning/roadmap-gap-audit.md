@@ -1,5 +1,14 @@
 # Roadmap gap audit
 
+## Y1 USB networking planning — 2026-11-05
+
+Boundary review for system milestone C ([plan](Y1-NETWORK-PLAN.md)): the Y1's first network link. Evidence:
+the Y2's `S20y2-usb` (address only) and install guide (`10.42.0.1`, key SSH); the Y2's `ssh-daemon` needs
+`Y2DATA`; `g_cdc` (ECM + ACM) needs only `NET` and is self-powered like `g_serial`, so the charger's budget
+source holds. Bounds: one USB link, IPv4 only, key-only root SSH with RAM host keys, a Y1 key pair kept in
+`out/`. Owner-approved; result **PASS** in one run: ping, key SSH, `scp` round trip, password refused,
+charging unaffected.
+
 ## Y1 system planning — 2026-11-05
 
 Boundary review for running the Y2's init and services on the Y1 ([plan](Y1-SYSTEM-PLAN.md)). Evidence: a

@@ -18,6 +18,17 @@ static const char *const override_dirs[] = {
     "/mnt/upper/u/usr/libexec",
 };
 
+#ifdef Y1_ELEVENTH_BOOT
+/* SSH state where the Y2 keeps it (/etc/dropbear and /root/.ssh link into /data/ssh), in RAM until a
+ * Y2DATA exists (docs/planning/Y1-NETWORK-PLAN.md). */
+static const struct override private_dirs[] = {
+    { "/data", 0755 },
+    { "/data/ssh", 0755 },
+    { "/data/ssh/host-keys", 0700 },
+    { "/data/ssh/authorized_keys.d", 0700 },
+};
+#endif
+
 static const struct override overrides[] = {
     { "/etc/inittab", 0644 },
     { "/etc/init.d/y1-services", 0644 },
@@ -25,6 +36,10 @@ static const struct override overrides[] = {
     { "/etc/init.d/rcK", 0755 },
     { "/etc/default/syslogd", 0644 },
     { "/usr/libexec/reborn-boot-services", 0755 },
+#ifdef Y1_ELEVENTH_BOOT
+    { "/etc/init.d/S50y1-dropbear", 0755 },
+    { "/data/ssh/authorized_keys.d/authorized_keys", 0600 },
+#endif
 };
 
 static int install_file(const char *path, unsigned mode)
@@ -47,6 +62,13 @@ static int install_y1_overrides(void)
 {
     for (unsigned i = 0; i < sizeof(override_dirs) / sizeof(override_dirs[0]); ++i)
         call5(SYS_MKDIR, (long)override_dirs[i], 0755, 0, 0, 0);
+#ifdef Y1_ELEVENTH_BOOT
+    for (unsigned i = 0; i < sizeof(private_dirs) / sizeof(private_dirs[0]); ++i) {
+        char dir[96];
+        copy(dir, sizeof(dir), "/mnt/upper/u", private_dirs[i].path, 0);
+        call5(SYS_MKDIR, (long)dir, private_dirs[i].mode, 0, 0, 0);
+    }
+#endif
     for (unsigned i = 0; i < sizeof(overrides) / sizeof(overrides[0]); ++i)
         if (!install_file(overrides[i].path, overrides[i].mode)) {
             put("rootfs: Y1 override "); put(overrides[i].path); put(" not installed\n"); send(SCREEN | USB);

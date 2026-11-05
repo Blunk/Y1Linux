@@ -1,0 +1,4 @@
+# Innioasis Y1: the Y2 boot scripts that are safe on Y1 hardware (docs/planning/Y1-SYSTEM-PLAN.md §2), with
+# USB networking and SSH (docs/planning/Y1-NETWORK-PLAN.md): the Y2's S20y2-usb (10.42.0.1 on usb0) and
+# S40network (loopback), and the Y1's S50y1-dropbear instead of the Y2's S50dropbear (which needs Y2DATA).
+Y1_SERVICES="S00y2-runtime S01syslogd S02klogd S02sysctl S03y2-time S11modules S20y2-usb S25y2-display S40network S50crond S50y1-dropbear"
