@@ -183,7 +183,7 @@
  "unsafe": {
   "platform/y2-platform": 47,
   "platform/y2p-core": 76,
-  "reborn/reborn-audio": 21,
+  "reborn/reborn-audio": 22,
   "reborn/reborn-graphics": 16,
   "reborn/reborn-media": 37,
   "reborn/reborn-platform": 36
