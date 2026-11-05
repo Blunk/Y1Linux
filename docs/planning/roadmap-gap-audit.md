@@ -9,7 +9,9 @@ sequences are in the closed HAL, which the backup holds. Staged: offline HAL ana
 baseline, headphones, then the speaker. Stage A read the idle state (the AFE clock gated after LK, so not read);
 stage B (owner-approved): **PASS** in one run, a quiet 440 Hz tone on both headphone channels at three gain steps,
 the stock register sequence verified during playback, the PMIC wrapper admitting only the 12 audio registers'
-stock values. Small start/stop pops remain. Stage C (speaker) is the next admission.
+stock values. Small start/stop pops remain. Stage C (owner-approved): **PASS** in one run: the amplifier is an
+OCA72559 (ID `0x09`), driven by the shared driver on I2C0/GPIO143 after the codec (DAPM order as stock); tones
+from the speaker, headphones still correct with the speaker switched off.
 
 ## Y1 second CPU core planning — 2026-11-05
 

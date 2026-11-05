@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirteenth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fourteenth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -113,6 +113,13 @@ VARIANTS['thirteenth'] = dict(VARIANTS['twelfth'], expected=VARIANTS['twelfth'][
     'compatible = "innioasis,y1-mt6323-codec";',
     'compatible = "simple-audio-card";',
 ])
+# The speaker (docs/planning/Y1-AUDIO-PLAN.md, stage C): I2C0 with the AW87559 enabled.
+VARIANTS['fourteenth'] = dict(VARIANTS['thirteenth'], enabled=VARIANTS['thirteenth']['enabled'] + 1,
+                              expected=VARIANTS['thirteenth']['expected'] + [
+                                  'compatible = "awinic,aw87559";',
+                                  'reg = <0x58>;',
+                                  'simple-audio-card,aux-devs = <',
+                              ])
 
 
 def empty_ramdisk():

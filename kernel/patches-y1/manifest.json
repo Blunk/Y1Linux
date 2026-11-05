@@ -166,13 +166,13 @@
     {
       "path": "sound/soc/mediatek/Kconfig",
       "base_sha256": "0bb03979e1b171cccf16fb727332cc24413794442e571c31a73745acd542ad70",
-      "result_sha256": "ebb3a80ddfa419c48972e43d3fa2d3fbf8a18811556c1ffdac5390f536f0a701",
+      "result_sha256": "f34450138f0c410c6c2bdbbbe910c9170a2f0515b96437d797c3710be5e2c126",
       "patch": "0028-innioasis-y1-audio-kconfig.patch"
     },
     {
       "path": "sound/soc/mediatek/Makefile",
       "base_sha256": "5a4c58e2b6ff638bfe69aba785dee981a003ee1e5a894a5636e055d647b8c9ec",
-      "result_sha256": "721af2bb281b27d144226f5d5f98484fb5546baf3e8794f5975d7db9873db58a",
+      "result_sha256": "f09c64cb4a9f4ac4f45cddda994dbdabd290ef1baea18b07f55e4766710701af",
       "patch": "0029-innioasis-y1-audio-makefile.patch"
     }
   ],
@@ -350,12 +350,17 @@
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",
       "source": "kernel/y1/mt6323-codec.c",
-      "sha256": "1e92b70c8897af587b5b88eccb61ac18083dfd7fdf1ceeab0b7a51e9220ece45"
+      "sha256": "c8827ba7f09c0e517c6f62353a431757cea11d05ca99c8ab48bb99bf13c3a363"
     },
     {
       "path": "drivers/soc/mediatek/pmic-audio-policy.h",
       "source": "kernel/y1/pmic-audio-policy.h",
       "sha256": "d57c9b782374a1f96c360562d6faa3fb140101f598b86933c9ef0775fb738387"
+    },
+    {
+      "path": "sound/soc/mediatek/aw87559.c",
+      "source": "kernel/audio/aw87559.c",
+      "sha256": "f0f382d84ef0e9f68d215538d92cd535154bffb5fa5bbbf71dc89833c989096b"
     }
   ]
 }
