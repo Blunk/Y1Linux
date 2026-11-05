@@ -1,5 +1,19 @@
 # Roadmap gap audit
 
+## Y1 display planning — 2026-11-05
+
+Boundary review for the display driver ([plan](Y1-DISPLAY-PLAN.md)). Evidence: the Y1's recorded panel facts
+(ST7701S, tables equal to the Y2's, LK's lit RGB565 frame buffer at `0x9fc00000`), the mt6572-mainline fork's
+MT6572 DRM data (small, but routing marked guesswork, no LK takeover, no MT6572 PHY code, no working claim),
+and the Y2's working MT6582 stack (takeover logic, panel tables; MT6582 bases and Y2-gated workarounds).
+Decision: fork data as the skeleton, Y2 takeover approach on top, no IOMMU. Unknown before any write: panel
+reset routing, backlight controller, LK's routing and timings. Staged: offline disassembly, a read-only
+register dump (stage A), then a first DRM milestone that leaves the panel and backlight as LK set them.
+Stage 0 (offline) and stage A (read-only dump) agree on routing, mutex, timings, PLL and the PMIC ISINK
+backlight; the panel reset is `LCD_RSTB` (`0x14012010`). Stage B (owner-approved): **PASS** after three
+runs (OF graph for the panel, `FB_DEVICE`): the MediaTek DRM driver drives the panel from a Linux buffer,
+console and colour bars visible, no error. Next display milestones need their own review.
+
 ## Y1 charging planning — 2026-11-05
 
 Boundary review on the third boot's PASS: charging is the next hardware scope ([plan](Y1-CHARGING-PLAN.md)).

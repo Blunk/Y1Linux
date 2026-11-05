@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md.",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md.",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -102,6 +102,54 @@
       "base_sha256": "5062242508ba3ccee99eabb032b03c2717a015fefcdfbea7b536e88e17eba842",
       "result_sha256": "ff237381f6edb6e6020972063a42b787064a63626b513106a0f12fb8824c940a",
       "patch": "0017-innioasis-mt6323-charger-makefile.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_drm_drv.c",
+      "base_sha256": "9429cb523b3c02a952af171b415aafb35ce4bb7997e5d274c9a80ee58666981e",
+      "result_sha256": "7404cca1cdd9e4aab830245430b87020b2c4aff36dba39aaa5d461c12087d9bd",
+      "patch": "0018-mt6572-drm-compatibles.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_disp_ovl.c",
+      "base_sha256": "405ee251d3f328a00074158d2cf9664c934de40a5b47c7a5b018a8deeb6b233d",
+      "result_sha256": "37ad9bd653ecb5319fa0b7e36e3d25a657aa4af125465ac249eecfcc61517d57",
+      "patch": "0019-mt6572-disp-ovl.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_disp_rdma.c",
+      "base_sha256": "accb19352368a971d67937c4e0b97a17988f5136c22870aa72e69c5787dadd26",
+      "result_sha256": "c7ed16c2b44244f5b20ada7f6e9e7c43245512eb59e4b7cfe634541ea76da76a",
+      "patch": "0020-mt6572-disp-rdma.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_dsi.c",
+      "base_sha256": "a8405967bc29d4786727389cff06f9f7129b319ecb27840ae9b4ed0fcd857476",
+      "result_sha256": "175aa4467e4c2fc4ae2e417741a019c5a931620a54b7bfbbea4368a4a9cff873",
+      "patch": "0021-mt6572-dsi.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-mmsys.c",
+      "base_sha256": "6f959cf51269bd1e1cf2895c38962bec5341a53e4f189681ff0db75e960e3dac",
+      "result_sha256": "efe14f91497046659d16f53e94278823d2b9a02104da24c2383f0179dc0054ac",
+      "patch": "0022-mt6572-mmsys.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-mutex.c",
+      "base_sha256": "3d62c9f315dc53c189f97febb3aaaea9a76528c84bf42515cf572c5f5f11f2e3",
+      "result_sha256": "6611c5469dc7b5c67bea6d97fe62da89691571a3d2ec45e85d953b4d4812ebab",
+      "patch": "0023-mt6572-mutex.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/Kconfig",
+      "base_sha256": "a546ec259f9111566bf9b64542d89d2ddb045851eb9335fce67a7f2bdc4921ea",
+      "result_sha256": "2495a21a74dfca5e02cc1710b25a03df9abfc2b71a3d0c8533c0573b0082ee91",
+      "patch": "0024-innioasis-y1-lk-panel-kconfig.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/Makefile",
+      "base_sha256": "711e270b1a7c41f0be3d629f3fc3323478afb24cac5f54376dd58023db4f3da7",
+      "result_sha256": "9a2414fe0d975e0f0eed86ba2b67d223a97c5268453cab3e2285737d6f7d0918",
+      "patch": "0025-innioasis-y1-lk-panel-makefile.patch"
     }
   ],
   "added": [
@@ -249,6 +297,16 @@
       "path": "drivers/soc/mediatek/vproc-sleep-policy.h",
       "source": "kernel/platform/vproc-sleep-policy.h",
       "sha256": "e16193cc9d27b87bfbcdd9213017981a8b098b7091354424ce183a3dae72994c"
+    },
+    {
+      "path": "drivers/soc/mediatek/mt6572-mmsys.h",
+      "source": "kernel/y1/mt6572-mmsys.h",
+      "sha256": "db1886bb61dc3be20f02939dcdf6c9b473d8f233e1f51dd889b0ebc1bb3bed7f"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/panel-innioasis-y1-lk.c",
+      "source": "kernel/y1/panel-lk.c",
+      "sha256": "27ca330572674a33d9db0fa5aa248d760d5c32ae428cdf8a2d4cd79505d42dd6"
     }
   ]
 }

@@ -23,6 +23,13 @@ static void fourth_boot_setup(void);
 #ifdef Y1_FIFTH_BOOT
 static void put_charge_state(void);
 #endif
+#ifdef Y1_SIXTH_BOOT
+static int sixth_command(const char *line, const char *argument, long watchdog);
+#endif
+#ifdef Y1_SEVENTH_BOOT
+static int seventh_command(const char *line, const char *argument, long watchdog);
+static void show_bars(long watchdog);
+#endif
 
 static void sleep_ms(unsigned ms)
 {
@@ -257,6 +264,12 @@ static void shell_help(void)
 #ifdef Y1_FOURTH_BOOT
               "  pmic         MT6323 charger registers, read through regmap debugfs\n"
 #endif
+#ifdef Y1_SIXTH_BOOT
+              "  regs         display registers (read-only /dev/mem) and the PMIC ISINK block\n"
+#endif
+#ifdef Y1_SEVENTH_BOOT
+              "  bars         colour bars on the DRM frame buffer for 10 s\n"
+#endif
               "  reboot       restart the player\n");
 }
 
@@ -372,6 +385,12 @@ static void shell_line(char *line, long watchdog)
 #ifdef Y1_FOURTH_BOOT
     else if (fourth_command(line, argument, watchdog)) {}
 #endif
+#ifdef Y1_SIXTH_BOOT
+    else if (sixth_command(line, argument, watchdog)) {}
+#endif
+#ifdef Y1_SEVENTH_BOOT
+    else if (seventh_command(line, argument, watchdog)) {}
+#endif
     else usb_say("unknown command; type help\n");
     usb_say("y1# ");
 }
@@ -427,6 +446,9 @@ static void third_boot(long watchdog)
     say(udc[0] ? "usb: " : "usb: no device controller\n");
     if (udc[0]) { say(udc); say("\n"); }
     show_usb_log(watchdog);
+#ifdef Y1_SEVENTH_BOOT
+    show_bars(watchdog);
+#endif
     for (unsigned i = 0; i < INPUT_NODES; ++i) {
         path[16] = (char)('0' + i);
         keys[i] = call5(SYS_OPEN, (long)path, O_RDONLY | O_NONBLOCK, 0, 0, 0);
