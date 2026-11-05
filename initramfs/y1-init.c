@@ -91,7 +91,7 @@ static int is_selftest(long *stack)
 }
 
 /* Opening starts the watchdog if LK left it stopped; any write feeds it. Never closed. */
-static long arm_watchdog(void)
+__attribute__((unused)) static long arm_watchdog(void)
 {
     long fd = call5(SYS_OPEN, (long)"/dev/watchdog", O_WRONLY, 0, 0, 0);
     say(fd < 0 ? "watchdog: unavailable\n" : "watchdog: armed, fed every heartbeat\n");
@@ -122,11 +122,20 @@ static long arm_watchdog(void)
 #ifdef Y1_NINTH_BOOT
 #include "y1-ninth-boot.h"
 #endif
+#ifdef Y1_TENTH_BOOT
+#include "y1-tenth-boot.h"
+#endif
 
 static void observe(void)
 {
     say("\nY1 FIRST BOOT: Linux reached userspace on the Innioasis Y1.\n");
+#ifdef Y1_TENTH_BOOT
+    /* Left to the kernel's boot handler, as on the Y2: the Y2's init never feeds it. */
+    long watchdog = -1;
+    say("watchdog: left to the kernel's boot handler\n");
+#else
     long watchdog = arm_watchdog();
+#endif
     if (call5(SYS_MOUNT, (long)"proc", (long)"/proc", (long)"proc", 0, 0) == 0) {
         show_first_line("kernel: ", "/proc/version");
         show_first_line("memory: ", "/proc/meminfo");

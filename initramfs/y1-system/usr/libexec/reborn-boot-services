@@ -1,0 +1,7 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's reborn-boot-services (docs/planning/Y1-SYSTEM-PLAN.md, milestone A).
+# The Y2 initramfs creates /run/y2; here it is created after /run is mounted. Without Y2DATA and local
+# networking for the player, the boot evidence, boot stages and the splash (which would hide the console)
+# are left out.
+mkdir -p -m 0700 /run/y2
+/etc/init.d/rcS >/dev/kmsg 2>&1

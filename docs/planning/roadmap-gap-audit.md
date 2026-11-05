@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 system planning — 2026-11-05
+
+Boundary review for running the Y2's init and services on the Y1 ([plan](Y1-SYSTEM-PLAN.md)). Evidence: a
+read-only review of all 22 boot scripts and the `y2-platform` sources: no PMIC/charger/clock writes, no
+modules, no `/dev/mem`; risky paths gated on `Y2DATA`. Must stay off on the Y1: internal-media setup (can
+format the stock FAT partition), the power daemon (no Y1 power-off path), readiness (gadget switch, SD
+read-write, raw MISC write), Y2 platform, CPU idle, connectivity, the player. Milestone A: Y2 init with a
+safe list, local sockets only, watchdog left to the kernel's boot handler, nothing written. Owner-approved;
+result **PASS** after three runs (syslog to a RAM file; `COMPAT_32BIT_TIME`, the real cause of instant
+sleeps): busybox init as PID 1, eight services, a shell on USB, an idle system. Next: data, USB networking,
+power, player, each with its own review.
+
 ## Y1 root filesystem planning — 2026-11-05
 
 Boundary review for a real userspace ([plan](Y1-ROOTFS-PLAN.md)): the first filesystem mount and the first
