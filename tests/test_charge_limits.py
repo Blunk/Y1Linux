@@ -255,6 +255,26 @@ int main(void){
 }
 ''')
 
+    def test_y1_usb_budget_source_charges_only_from_a_configured_pc(self):
+        """innioasis,usb-budget-source (Y1, docs/planning/Y1-CHARGING-PLAN.md): no BC1.1; every source is a
+        PC port, 450 mA only with an allocation, the floor otherwise; the CHRDET change is consumed."""
+        run_c(self.fixture() + r'''
+static unsigned selector_now(void){return regs[8/2]&15;}
+int main(void){
+ struct y2_charger c;reset();charger(&c);c.budget_source=true;c.charge_ceiling_ua=450000;
+ /* A wall charger (BC1.1 would say DCP) that never configures the gadget: the floor only. */
+ source_kind=4;supply.budget=-1;regs[0]|=0x20;c.source_changed=true;clock_ms+=1000;y2_charger_run(&c);
+ assert(c.source==Y2_SOURCE_SDP && c.source_valid && !c.source_changed && !c.fault);
+ assert(c.charge_ua<=70000 && selector_now()==15);
+ /* A PC configures the gadget. */
+ supply.budget=500000;clock_ms+=1000;y2_charger_run(&c);
+ assert(c.active && c.charge_ua==450000 && selector_now()==12 && !c.fault);
+ /* Suspended or unconfigured again: back to the floor, never a stale 450 mA. */
+ supply.budget=-1;clock_ms+=1000;y2_charger_run(&c);
+ assert(c.charge_ua<=70000 && !c.fault);
+}
+''')
+
     def test_thermal_derating_pause_resume_and_the_latched_emergency_fault(self):
         run_c(self.fixture() + r'''
 static unsigned selector_now(void){return regs[8/2]&15;}

@@ -1,5 +1,19 @@
 # Roadmap gap audit
 
+## Y1 charging planning — 2026-11-05
+
+Boundary review on the third boot's PASS: charging is the next hardware scope ([plan](Y1-CHARGING-PLAN.md)).
+Evidence: Y1 stock lifecycle values (3.4 V pre-charge, 4.2 V top-off, 4.325 V CV, 500 mA PC port,
+battery temperature not read), third-boot telemetry (charger input, a BATON reading consistent with a pack
+NTC near room temperature), and the Y2 charger's code, whose protection checks expect Y2-observed register
+values and whose USB contract mainline USB does not provide. Staged: a read-only PMIC observation boot
+(stage A) before any charger write (stage B, admitted separately). Stage A (2026-11-05): the Y2 charger's
+fixed protection values all hold on the Y1; BATON does not respond, so no pack-temperature window. Stage B,
+owner-approved: the Y2 charger with a PC-port-only USB budget source, 450 mA after configuration, 4.175 V,
+the Y2 charger-block write policy in the PMIC wrapper. Result after three runs (two fixes, each with a
+test): **charging works**, 445–469 mA constant current for 13 minutes, no fault, die 50 °C and levelling.
+Open: a full charge (CV phase, termination, timers), deferred.
+
 ## Y1 third boot planning — 2026-11-05
 
 Boundary review on the second boot's physical PASS (2026-11-05). New hardware scope proposed, not admitted:

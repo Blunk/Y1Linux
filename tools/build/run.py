@@ -14,8 +14,10 @@ REBORN = PROJECT.parent / 'Y2Reborn'
 sys.path.insert(0, str(PROJECT))
 
 
-def prepare_overlay(project, spec, patches):
-    """Publish verified immutable overlay bytes; never rewrite a bound inode."""
+def prepare_overlay(project, spec, patches=None):
+    """Publish verified immutable overlay bytes; never rewrite a bound inode. Patches are read from
+    the manifest's directory, by default the Y2 set in kernel/patches."""
+    patches = project / 'kernel/patches' if patches is None else patches
     original = (project / '.cache/sources/linux-6.18' / spec['path']).read_bytes()
     if hashlib.sha256(original).hexdigest() != spec['base_sha256']:
         raise ValueError('Reviewed overlay base mismatch: ' + spec['path'])

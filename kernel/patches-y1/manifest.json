@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md.",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md.",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -28,7 +28,7 @@
     {
       "path": "drivers/soc/mediatek/mtk-pmic-wrap.c",
       "base_sha256": "80173dd03ba85c5f900d27d35a2b6d0bd60bb5cf4bd801295e9953a0e4eaec12",
-      "result_sha256": "0dd5720f302cf7f8a3af4ca527678328f57ca3b8a7b8d384b3fc243a18c3588b",
+      "result_sha256": "b66f2504be9fc1bfb3476429bd739f90a1275ee6147427705c3a1a402242595c",
       "patch": "0005-mt6572-pmic-wrap.patch"
     },
     {
@@ -82,14 +82,26 @@
     {
       "path": "drivers/mfd/mt6397-core.c",
       "base_sha256": "4c9b1a942df7ade97f0bb4cd7af65a8f7a9487df96b278eedc125f1eda6e3209",
-      "result_sha256": "05c07433ae384f1255baa5cf8ce70f289ac2b68e966fbbed1adf5009fdca5b28",
-      "patch": "0014-mt6323-auxadc-cell.patch"
+      "result_sha256": "a5763dd5176160bcfa898ac8c4b5741e2bca70a12884e712f8e13a2c8ed6335b",
+      "patch": "0014-mt6323-auxadc-charger-cells.patch"
     },
     {
       "path": "drivers/phy/mediatek/phy-mtk-tphy.c",
       "base_sha256": "c57efe8f40fdaf6572805a0546d3fceef8c4028c402405a3f61264955d90051b",
       "result_sha256": "44cab8c9e3c6c27dd7b64df471f2964e66e916e4751728c6367bd2931672e445",
       "patch": "0015-mtk-tphy-force-session-valid.patch"
+    },
+    {
+      "path": "drivers/power/supply/Kconfig",
+      "base_sha256": "f7b8c230ddfcebc2b95065c74929986eed9e74c4726a57a5a93b0ef4910003b7",
+      "result_sha256": "638d22b578f1ed7429f709751621d759bef1f263fcd93a7beb7157678e95c118",
+      "patch": "0016-innioasis-mt6323-charger-kconfig.patch"
+    },
+    {
+      "path": "drivers/power/supply/Makefile",
+      "base_sha256": "5062242508ba3ccee99eabb032b03c2717a015fefcdfbea7b536e88e17eba842",
+      "result_sha256": "ff237381f6edb6e6020972063a42b787064a63626b513106a0f12fb8824c940a",
+      "patch": "0017-innioasis-mt6323-charger-makefile.patch"
     }
   ],
   "added": [
@@ -172,6 +184,71 @@
       "path": "drivers/iio/adc/charge-table.h",
       "source": "kernel/platform/charge-table.h",
       "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/power/supply/innioasis-mt6323-charger.c",
+      "source": "kernel/platform/mt6323-charger.c",
+      "sha256": "79f2a5be7cde2ea45e4054e8167ebe23ed225a62e1b30301fefce961a87a94d9"
+    },
+    {
+      "path": "drivers/power/supply/y1-usb-source.c",
+      "source": "kernel/y1/usb-source.c",
+      "sha256": "db8b76b532e362a66e985c40d50a496a5d17f8a969ff7b70185daa67660ac899"
+    },
+    {
+      "path": "drivers/power/supply/power-math.h",
+      "source": "kernel/platform/power-math.h",
+      "sha256": "0bb2eab32e1aef4d0c3c150c5e6f24bc68dbe0f78fea77c51fd7c5a4b3af43da"
+    },
+    {
+      "path": "drivers/power/supply/charger-policy.h",
+      "source": "kernel/platform/charger-policy.h",
+      "sha256": "9657f24f5ea9dd09546a07b0e0d31abaa5438b38a0075abab553976d237eeda5"
+    },
+    {
+      "path": "drivers/power/supply/source-policy.h",
+      "source": "kernel/platform/source-policy.h",
+      "sha256": "6a61e61e5273e277f477ba6443f8288ea4640fd7a246bef20403dd42012bc0e2"
+    },
+    {
+      "path": "drivers/power/supply/charge-limits.h",
+      "source": "kernel/platform/charge-limits.h",
+      "sha256": "654685f6d25aae39b131ce892ce24d91bb2f45ab2a4bc402542a70374f92545a"
+    },
+    {
+      "path": "drivers/power/supply/source.h",
+      "source": "kernel/platform/source.h",
+      "sha256": "7a6def590cc0146cb37166071ce11e03b5e2418b061a3670682865756ea84bda"
+    },
+    {
+      "path": "drivers/power/supply/charger-idle.h",
+      "source": "kernel/platform/charger-idle.h",
+      "sha256": "8c5e8dfe73024525fb7c21750118f6ed5a100e660088010e5f5388f052a86a25"
+    },
+    {
+      "path": "drivers/power/supply/poweroff-policy.h",
+      "source": "kernel/platform/poweroff-policy.h",
+      "sha256": "72e2c7e6e8ca40a72b13e730f166f6e47875c78562973d1c16fbc92019c24815"
+    },
+    {
+      "path": "drivers/power/supply/charge-table.h",
+      "source": "kernel/platform/charge-table.h",
+      "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/soc/mediatek/policy.h",
+      "source": "kernel/platform/policy.h",
+      "sha256": "a044da8046657d01ec2d122bd46ace39b7361b281c415bbf28c3824588b16983"
+    },
+    {
+      "path": "drivers/soc/mediatek/charge-table.h",
+      "source": "kernel/platform/charge-table.h",
+      "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/soc/mediatek/vproc-sleep-policy.h",
+      "source": "kernel/platform/vproc-sleep-policy.h",
+      "sha256": "e16193cc9d27b87bfbcdd9213017981a8b098b7091354424ce183a3dae72994c"
     }
   ]
 }

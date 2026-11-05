@@ -15,6 +15,14 @@ static char text[512];
 static unsigned text_used;
 static char iio[48];      /* /sys/bus/iio/devices/iio:deviceN of the MT6323 AUXADC, empty if absent */
 static char udc[96];      /* /sys/class/udc/<controller>/state, empty if absent */
+#ifdef Y1_FOURTH_BOOT
+static void put_pack_temperature(void);
+static int fourth_command(const char *line, const char *argument, long watchdog);
+static void fourth_boot_setup(void);
+#endif
+#ifdef Y1_FIFTH_BOOT
+static void put_charge_state(void);
+#endif
 
 static void sleep_ms(unsigned ms)
 {
@@ -133,6 +141,12 @@ static void put_telemetry(void)
     put(" mV  die ");
     if (adc_raw("in_temp3_input", &die)) { put_number(die / 1000); put(" C"); }
     else put("?");
+#ifdef Y1_FOURTH_BOOT
+    put_pack_temperature();
+#endif
+#ifdef Y1_FIFTH_BOOT
+    put_charge_state();
+#endif
     if (udc[0]) {
         char state[32];
         put("  usb ");
@@ -240,6 +254,9 @@ static void shell_help(void)
               "  cat PATH     a file, up to 1 MiB (/proc, /sys, ...)\n"
               "  ls PATH      a directory\n"
               "  disks        /proc/partitions and the read-only flags\n"
+#ifdef Y1_FOURTH_BOOT
+              "  pmic         MT6323 charger registers, read through regmap debugfs\n"
+#endif
               "  reboot       restart the player\n");
 }
 
@@ -352,6 +369,9 @@ static void shell_line(char *line, long watchdog)
     else if (same(line, "ls") && *argument) each_entry(argument, list_entry);
     else if (same(line, "disks")) { shell_cat("/proc/partitions", watchdog); each_entry("/sys/block", show_read_only_flag); }
     else if (same(line, "reboot")) shell_reboot();
+#ifdef Y1_FOURTH_BOOT
+    else if (fourth_command(line, argument, watchdog)) {}
+#endif
     else usb_say("unknown command; type help\n");
     usb_say("y1# ");
 }
@@ -395,6 +415,9 @@ static void third_boot(long watchdog)
         say("devtmpfs: mount failed\n");
     if (call5(SYS_MOUNT, (long)"sysfs", (long)"/sys", (long)"sysfs", MS_SILENT, 0) != 0)
         say("sysfs: mount failed\n");
+#ifdef Y1_FOURTH_BOOT
+    fourth_boot_setup();
+#endif
     show_disks(watchdog);
     protect_disks();
     each_entry("/sys/bus/iio/devices", find_adc);

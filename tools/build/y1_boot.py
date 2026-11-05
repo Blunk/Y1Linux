@@ -1,5 +1,5 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first, second or third) from a fresh build directory;
-never access a device.
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fifth) from a fresh
+build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
 the kernel, so the separate ramdisk is an empty archive that only keeps LK's loader satisfied.
@@ -69,6 +69,16 @@ VARIANTS = {
         'regulators': CARD_RAILS + ['regulator-name = "vgp1";', 'regulator-name = "vusb";'],
     },
 }
+# Charging stage A (docs/planning/Y1-CHARGING-PLAN.md): the third tree unchanged; debugfs is kernel config.
+VARIANTS['fourth'] = VARIANTS['third']
+# Charging stage B: the charger node, its USB budget source and the wrapper's charger-block policy.
+VARIANTS['fifth'] = dict(VARIANTS['third'], expected=VARIANTS['third']['expected'] + [
+    'innioasis,pmic-charger-policy;',
+    'compatible = "innioasis,y1-usb-input";',
+    'compatible = "innioasis,y2-mt6323-charger";',
+    'innioasis,usb-budget-source;',
+    'innioasis,max-charge-current-microamp = <0x6ddd0>;',
+])
 
 
 def empty_ramdisk():

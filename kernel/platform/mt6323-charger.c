@@ -47,6 +47,9 @@ enum y2_charge_fault {
 };
 struct y2_charger {
 	struct device *dev;
+	/* innioasis,usb-budget-source (Y1): no BC1.1; every source is a PC port whose
+	 * current follows the gadget's configured budget (y2_usb_charge_allocation). */
+	bool budget_source;
 	struct regmap *map;
 	void __iomem *rgu;
 	struct y2_charge_io io;
@@ -209,6 +212,14 @@ static int y2_charger_detect(struct y2_charger *c)
 	ret = y2_charger_inhibit(c);
 	if (ret) return ret;
 	y2_usb_source_invalidate();
+	if (c->budget_source) {
+		/* An unconfigured or non-PC source keeps the SDP floor of 70 mA (source-policy.h).
+		 * Like a BC1.1 pass, this classification consumes the CHRDET change. */
+		WRITE_ONCE(c->source_changed, false);
+		c->source = Y2_SOURCE_SDP;
+		c->source_valid = true;
+		return 0;
+	}
 	ret = y2_usb_bc11_begin();
 	if (ret) return ret;
 	WRITE_ONCE(c->source_changed, false);
@@ -844,6 +855,7 @@ static int y2_charger_probe(struct platform_device *pdev)
 	ret = y2_charge_stop(&c->io);
 	if (ret) return dev_err_probe(dev, ret, "charging inhibit\n");
 	c->charge_ceiling_ua = Y2_CHARGE_DEFAULT_CEILING_UA;
+	c->budget_source = device_property_read_bool(dev, "innioasis,usb-budget-source");
 	of_property_read_u32(dev->of_node, "innioasis,max-charge-current-microamp", &c->charge_ceiling_ua);
 	if (y2_cs_selector_exact(c->charge_ceiling_ua) < 0)
 		return dev_err_probe(dev, -EINVAL, "unsupported source-backed charge ceiling\n");
@@ -889,7 +901,8 @@ static int y2_charger_probe(struct platform_device *pdev)
 	if (ret) return ret;
 	WRITE_ONCE(c->stopping, false);
 	queue_delayed_work(c->wq, &c->work, msecs_to_jiffies(Y2_POLL_MS));
-	dev_info(dev, "stock-derived BC1.1 charging, selector table up to %u uA, ceiling %u uA, 4.175V; pack temp/SOC unavailable\n", Y2_CHARGE_VENDOR_MAX_UA, c->charge_ceiling_ua);
+	dev_info(dev, "stock-derived %s charging, selector table up to %u uA, ceiling %u uA, 4.175V; pack temp/SOC unavailable\n",
+		 c->budget_source ? "USB-budget (no BC1.1)" : "BC1.1", Y2_CHARGE_VENDOR_MAX_UA, c->charge_ceiling_ua);
 	return 0;
 }
 static const struct dev_pm_ops y2_charger_pm = {
