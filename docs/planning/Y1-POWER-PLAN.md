@@ -1,6 +1,6 @@
 # Y1 power (system milestone D)
 
-Status: **planned** (2026-11-05), not admitted. The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05), both owner-approved); D2–D3 not admitted. The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -128,3 +128,59 @@ driver and clock, the Y2DATA partition (milestone B) and the player UI (mileston
 | D1 | **Power off the PMIC** | BBPU `0x4300` and `WRTGR` 1 at power-off only, mainline's driver with the Y2's patch 0027; no RTC unlock, no RGU, no other PMIC write |
 | D2 | **Run the power daemon** | Y2 daemon unchanged except a tolerance for missing Y2-only files; Y1 profile and policy in the RAM overlay; shutdown through D1's path only |
 | D3 | **Scale the CPU clock** | 598/806/1001 MHz only, CPU mux and ARMPLL through the fork's driver with the intermediate clock; no VPROC or other PMIC write |
+
+## 10. D0 result — 2026-11-05
+
+Owner-approved. Fourteenth boot over SSH, reads only: PMIC registers by offset from the regmap debugfs file
+(the full dump reads every PMIC register and took over a minute, so it was stopped), MMIO with `devmem`
+(`evidence-private/2026-11-05-y1-power-d0/regs.txt`). Battery 3.846 V, not charging.
+
+| Read | Value | Meaning |
+| --- | --- | --- |
+| RTC_PROT `0x8036` | `0x9136` | the second unlock key: LK left the RTC write interface unlocked (INFERRED from the stock sequence) |
+| BBPU `0x8000` | `0x000d` | `PWREN`, power line on (bit 2), `AUTO` |
+| PDN1 `0x802c` / RTC_CON `0x803e` | `0x0000` / `0x0426` | stock's `RTC_CON` bit 5 already set; nothing to add before the BBPU write |
+| VPROC VOSEL `0x21e`–`0x224` | `0x48` each | **1150 mV** ((0x48 × 6.25) + 700): D3's precondition holds |
+| Efuse `0x10009180` | `0x2800` | speed bin (bits 9:8) **0**: stock's widest table (up to 1300 MHz); the fork's offset (INFERRED as stock's devinfo[18]) |
+| CPU mux `0x10001000` | `0x4` | bits 3:2 = 1: the CPU runs from ARMPLL |
+| `ARMPLL_CON1` `0x10205104` | `0x0009a000` | PCW `0x9a000`, post-divider /1: **1001 MHz** (26 MHz × PCW / 2^14), with the VCO at 1001 MHz |
+| Battery ID (AUXADC ch 0) | not read | the Y1 IIO device exposes channels 4–7 and the die temperature only; a conversion needs a write, outside D0 |
+
+Consequences: **D1** can use mainline's unlocked BBPU write as on the Y2. **D2** uses battery id 0 (provisional; the
+ids differ mainly in the last few percent: empty at 3417, 3400 or 3327 mV). **D3** needs no voltage change, but
+LK runs ARMPLL at /1 with its VCO at the bottom of the fork's 1000–1800 MHz range; 598 and 806 MHz need the /2
+post-divider (VCO 1196 and 1612 MHz), as stock's formula does, so the driver's PLL path must be checked for that.
+
+## 11. D1 build — 2026-11-05
+
+Owner-approved. `kernel/config/y1-fifteenth-boot.config`: the fourteenth fragment plus `POWER_RESET`,
+`POWER_RESET_MT6323` (no `RTC_CLASS`); `kernel/patches-y1/0030-mt6323-poweroff-atomic.patch`, the Y2's 0027
+byte for byte (manifest hashes as the Y2's); `innioasis-y1-fifteenth-boot.dts`: the fourteenth tree plus
+`power-controller { compatible = "mediatek,mt6323-pwrc"; }` under the PMIC; PID1 and initramfs as the fourteenth
+(`y1-init` `f00d5397…` unchanged). Build `out/y1-fifteenth-boot-1`, BOOTIMG sha256
+`716f0c69210f7232c9cc70331ac366d16b74affe53d6ea7633ed8a953c17197e` (`0x323000` bytes).
+
+## 12. D1 run — 2026-11-05
+
+The image as flashed reports `6.18.56-y1-fourteenth-boot`: the fifteenth fragment kept the fourteenth's
+`CONFIG_LOCALVERSION` (cosmetic; the device tree model reads "fifteenth-boot"). `mt6323-pwrc` bound; no new warning.
+SSH host keys are new at every boot (RAM, as planned until milestone B), so each boot replaces the entry in
+`out/y1-ssh/known_hosts`.
+
+- **Test 2, USB attached** (the owner did not unplug in time; `evidence-private/2026-11-05-y1-power-d1-*`):
+  `busybox poweroff` at 16:05:06; the player came straight back: Innioasis logo, Linux booting, SSH up about 15 s
+  later. No charging screen. The boot OCV read the same 3.852 V as the boot before, so the PMIC most likely
+  never lost power (INFERRED). With a charger present the mainline path is a restart, not an off state; the
+  stock path (a watchdog reset into LK's charging mode) is the later, separately admitted option.
+- **Test 1, battery only:** `busybox poweroff` at 16:11:02 with USB unplugged; the screen went dark and the
+  player stayed off. The owner held the centre button at about 16:13:50 (about 3 minutes off, not the planned 10);
+  it switched on through LK into Linux. The PMIC had really been off: the boot OCV register was sampled
+  afresh (`0x724` `0xc979` before, `0xc476` after; `voltage_ocv` 3.852 V before, 3.858 V after, the pack
+  rested), BBPU back at `0x000d`. Charging normal on that boot (450 mA source, no fault).
+  **Power-off on battery: PASS.**
+- **Unrelated finding, the charger:** on the first boot of this image the charger latched `fault=0x1` (I/O) at
+  5.4 s, `charger inhibit not verified: -1` (the Y1 PMIC wrapper's policy refused a write of the stop
+  sequence, `-EPERM`); the following stop succeeded (`stop_error=0`), but the fault stays latched until the
+  cable is removed, so the player did not charge on that boot. The next boot charged normally (450 mA
+  source, no fault). D0's "Not charging" on the fourteenth boot is likely the same. Open: which register was
+  refused (the driver reports only the error code).

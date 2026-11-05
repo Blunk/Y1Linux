@@ -8,7 +8,10 @@ low-battery shutdown and no CPU scaling; the centre button is the only power key
 through the RTC BBPU (with a write-interface unlock mainline does not do), gauges on a 4.35 V cell's OCV table
 (id 0 likely, unresolved) and scales 598/806/1001 MHz at a fixed 1150 mV. Mainline `cpufreq-dt` would offer
 unverified 1.2–1.4 GHz rates. Staged: a read-only baseline, power-off, the Y2's power daemon with a Y1
-profile, then CPU scaling without voltage changes. Not admitted.
+profile, then CPU scaling without voltage changes. D0 (owner-approved, read-only): RTC write interface
+unlocked by LK, VPROC 1150 mV, speed bin 0, CPU at 1001 MHz on ARMPLL; battery ID not readable without a write.
+D1 (owner-approved): **PASS**, power-off on battery and power-on with the centre button through LK; with USB
+attached the player restarts instead (recorded; a charger-present path is a later admission). D2–D3 not admitted.
 
 ## Y1 audio planning — 2026-11-05
 
