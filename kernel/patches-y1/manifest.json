@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device), Y1-DATA-PLAN.md (0034: the eMMC write guard).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -198,6 +198,12 @@
       "base_sha256": "4a085e49f16e12cc6c00f7b74b7c1e7e18735b45eccd26f0b24e076d9f940d1e",
       "result_sha256": "81db233c781d2a39369ce96adc6c3450f0a6777f354f3920d25268aecbd35b40",
       "patch": "0033-mtk-pmic-keys-label.patch"
+    },
+    {
+      "path": "drivers/mmc/host/mtk-sd.c",
+      "base_sha256": "8fd10e3a6f6d60e37216de79b2d7a8b8f766c7d7e5cdd5851cccfe375e2536d1",
+      "result_sha256": "03984d52468d01b99d09947b3d63d9efc25ee664f00e6a93f522488f11ca7b78",
+      "patch": "0034-y1-emmc-write-guard.patch"
     }
   ],
   "added": [
@@ -390,6 +396,11 @@
       "path": "drivers/pmdomain/mediatek/mt6572-pm-domains.h",
       "source": "kernel/y1/mt6572-pm-domains.h",
       "sha256": "1c986c9db3cde92a91b9420038d0202648df52e703cf7d365d55b1591fdf4379"
+    },
+    {
+      "path": "drivers/mmc/host/y1-emmc-guard.h",
+      "source": "kernel/y1/emmc-guard.h",
+      "sha256": "5c4936b4631957ed7ec4af71c1dedf36f459a916799d58daf640850a0a179d66"
     }
   ]
 }
