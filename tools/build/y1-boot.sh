@@ -1,12 +1,12 @@
 #!/bin/sh
-# Innioasis Y1 test BOOTIMG, variant "first" to "eleventh" (docs/knowledge/y1-hardware.md,
+# Innioasis Y1 test BOOTIMG, variant "first" to "twelfth" (docs/knowledge/y1-hardware.md,
 # docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --output out/<fresh-dir> -- sh /project/tools/build/y1-boot.sh first
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
-#       -- sh /project/tools/build/y1-boot.sh second   (or third to eleventh)
+#       -- sh /project/tools/build/y1-boot.sh second   (or third to twelfth)
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
-variant=${1:?variant: first to eleventh}
+variant=${1:?variant: first to twelfth}
 case $variant in
 first) defines= ;;
 second) defines=-DY1_SECOND_BOOT ;;
@@ -19,6 +19,7 @@ eighth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BO
 ninth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT" ;;
 tenth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT" ;;
 eleventh) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
+twelfth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
 *) echo "unknown variant $variant" >&2; exit 2 ;;
 esac
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }
