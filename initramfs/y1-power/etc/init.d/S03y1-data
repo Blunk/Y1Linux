@@ -1,0 +1,9 @@
+#!/bin/sh
+# Innioasis Y1: Reborn's RAM /data (an ext4 image, S90y1-reborn) before the power daemon starts
+# (docs/planning/Y1-POWER-PLAN.md, D2), which keeps its journals there.
+case "$1" in
+	start)
+		printf 'Preparing /data: '
+		/etc/init.d/S90y1-reborn data && echo OK || echo FAIL
+		;;
+esac
