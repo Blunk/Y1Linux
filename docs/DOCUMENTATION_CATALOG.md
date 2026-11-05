@@ -363,6 +363,7 @@ Indexed pages: **352**. Explicit scope notices: **228**.
 | [Y1 second boot plan](planning/Y1-SECOND-BOOT-PLAN.md) | MT6572 base drivers from the mainline fork, read-only eMMC/SD, wheel and centre button; tooling, safety and admission items |
 | [Y1 third boot plan](planning/Y1-THIRD-BOOT-PLAN.md) | USB serial shell (MUSB + T-PHY, peripheral only), VUSB, read-only battery telemetry; charging evidence; admission items |
 | [Y1 charging plan](planning/Y1-CHARGING-PLAN.md) | Read-only PMIC observation boot, then a first PC-port charging boot on the shared Y2 charger; Y1 vs Y2 stock values; staged admission |
+| [Y1 display plan](planning/Y1-DISPLAY-PLAN.md) | Fork MT6572 DRM data vs the Y2 MT6582 stack; offline stage, read-only display register dump, first DRM milestone adopting LK's panel |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |

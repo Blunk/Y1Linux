@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fifth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to seventh) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -19,10 +19,14 @@ from tools.validation.d08 import require, up
 BOOTIMG_PARTITION = 0x600000  # Y1 PMT: BOOTIMG at 0x3180000, length 0x600000
 ZIMAGE_MAGIC = 0x016f2818
 DTB_LIMIT = 0x10000
-# Every property both test device trees must carry (docs/knowledge/y1-hardware.md).
+# Every property all test device trees must carry (docs/knowledge/y1-hardware.md).
 DTB_COMMON = [
     'compatible = "innioasis,y1", "mediatek,mt6572";',
     'reg = <0x80000000 0x1e000000 0x9ea00000 0x1200000>;',
+    'stdout-path = "serial0:921600n8";',
+]
+# LK's frame buffer, borrowed until the seventh boot's DRM pipeline replaces it.
+SIMPLEFB = [
     'framebuffer@9fc00000 {',
     'compatible = "simple-framebuffer";',
     'reg = <0x9fc00000 0x54600>;',
@@ -30,7 +34,6 @@ DTB_COMMON = [
     'height = <0x168>;',
     'stride = <0x3c0>;',
     'format = "r5g6b5";',
-    'stdout-path = "serial0:921600n8";',
 ]
 SECOND = [
     'clk_ignore_unused',
@@ -48,14 +51,14 @@ SECOND = [
 CARD_RAILS = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";']
 # Per variant: the additional properties, how many optional devices may be enabled, and the regulators.
 VARIANTS = {
-    'first': {'expected': [], 'enabled': 1, 'regulators': []},  # UART0
+    'first': {'expected': SIMPLEFB, 'enabled': 1, 'regulators': []},  # UART0
     'second': {  # UART0, I2C1, mmc0, mmc1 (docs/planning/Y1-SECOND-BOOT-PLAN.md)
-        'expected': SECOND,
+        'expected': SIMPLEFB + SECOND,
         'enabled': 4,
         'regulators': CARD_RAILS + ['regulator-name = "vgp1";'],
     },
     'third': {  # the second's devices plus the USB controller and its PHY (docs/planning/Y1-THIRD-BOOT-PLAN.md)
-        'expected': SECOND + [
+        'expected': SIMPLEFB + SECOND + [
             'dr_mode = "peripheral";',
             'mediatek,eye-src = <0x04>;',
             'innioasis,force-session-valid;',
@@ -79,6 +82,18 @@ VARIANTS['fifth'] = dict(VARIANTS['third'], expected=VARIANTS['third']['expected
     'innioasis,usb-budget-source;',
     'innioasis,max-charge-current-microamp = <0x6ddd0>;',
 ])
+# Display stage A (docs/planning/Y1-DISPLAY-PLAN.md): the fifth tree unchanged; /dev/mem is kernel config.
+VARIANTS['sixth'] = VARIANTS['fifth']
+# Display stage B: the DRM pipeline replaces simple-framebuffer; DSI and BLS enabled, the LK panel stub.
+VARIANTS['seventh'] = dict(VARIANTS['sixth'], enabled=VARIANTS['sixth']['enabled'] + 2,
+                           expected=[line for line in VARIANTS['sixth']['expected'] if line not in SIMPLEFB] + [
+                               'compatible = "mediatek,mt6572-dsi";',
+                               'compatible = "innioasis,y1-lk-panel";',
+                               'remote-endpoint = <',
+                               'compatible = "mediatek,mt6572-disp-ovl";',
+                               'compatible = "mediatek,mt6572-disp-rdma";',
+                               'compatible = "mediatek,mt6572-disp-mutex";',
+                           ], forbidden=['simple-framebuffer', 'iommus = '])
 
 
 def empty_ramdisk():
@@ -101,6 +116,8 @@ def check_dtb(root, dtb, variant):
     rules = VARIANTS[variant]
     missing = [line for line in DTB_COMMON + rules['expected'] if line not in source]
     require(not missing, 'DTB lacks: ' + '; '.join(missing))
+    present = [text for text in rules.get('forbidden', []) if text in source]
+    require(not present, 'DTB must not contain: ' + '; '.join(present))
     enabled = [line for line in source.splitlines() if 'status = "okay"' in line]
     require(len(enabled) == rules['enabled'], f'exactly {rules["enabled"]} enabled optional devices')
     regulators = [line.strip() for line in source.splitlines() if 'regulator-name' in line]
