@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twelfth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirteenth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -107,6 +107,12 @@ VARIANTS['tenth'] = VARIANTS['ninth']
 VARIANTS['eleventh'] = VARIANTS['tenth']
 # Both CPU cores (docs/planning/Y1-SMP-PLAN.md): the eleventh tree unchanged; SMP is kernel config.
 VARIANTS['twelfth'] = VARIANTS['eleventh']
+# Headphone audio (docs/planning/Y1-AUDIO-PLAN.md, stage B): the AFE, the MT6323 codec and the card.
+VARIANTS['thirteenth'] = dict(VARIANTS['twelfth'], expected=VARIANTS['twelfth']['expected'] + [
+    'compatible = "innioasis,y1-mt6572-afe";',
+    'compatible = "innioasis,y1-mt6323-codec";',
+    'compatible = "simple-audio-card";',
+])
 
 
 def empty_ramdisk():
