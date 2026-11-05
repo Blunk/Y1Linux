@@ -21,7 +21,9 @@ class QuietDisplayPower(unittest.TestCase):
         self.assertIn('.shutdown = y2_bl_shutdown', bl)
         body = bl[bl.index('static void y2_bl_shutdown('):]
         body = body[:body.index('\n}\n')]
-        self.assertIn('regmap_update_bits(b->map, 0x356, 15, 0)', body)   # all four ISINKs off
+        # Every selected ISINK off; the Y2 selects all four (default mask, no innioasis,isink-mask).
+        self.assertIn('regmap_update_bits(b->map, 0x356, b->mask, 0)', body)
+        self.assertIn('b->mask = 15;', bl)
         self.assertIn('platform_set_drvdata(pdev, bl);', bl)
 
     def test_splash_modeset_is_dark_and_always_relit(self):
