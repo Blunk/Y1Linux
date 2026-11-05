@@ -1,12 +1,12 @@
 #!/bin/sh
-# Innioasis Y1 test BOOTIMG, variant "first" to "fourteenth" (docs/knowledge/y1-hardware.md,
-# docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md). Runs inside the locked build userspace:
+# Innioasis Y1 test BOOTIMG, variant "first" to "fifteenth" (docs/knowledge/y1-hardware.md,
+# docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-POWER-PLAN.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --output out/<fresh-dir> -- sh /project/tools/build/y1-boot.sh first
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
-#       -- sh /project/tools/build/y1-boot.sh second   (or third to fourteenth)
+#       -- sh /project/tools/build/y1-boot.sh second   (or third to fifteenth)
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
-variant=${1:?variant: first to fourteenth}
+variant=${1:?variant: first to fifteenth}
 case $variant in
 first) defines= ;;
 second) defines=-DY1_SECOND_BOOT ;;
@@ -22,6 +22,7 @@ eleventh) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_
 twelfth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
 thirteenth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
 fourteenth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
+fifteenth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT" ;;
 *) echo "unknown variant $variant" >&2; exit 2 ;;
 esac
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }

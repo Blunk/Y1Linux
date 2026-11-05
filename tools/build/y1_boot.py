@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fourteenth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to fifteenth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -120,6 +120,11 @@ VARIANTS['fourteenth'] = dict(VARIANTS['thirteenth'], enabled=VARIANTS['thirteen
                                   'reg = <0x58>;',
                                   'simple-audio-card,aux-devs = <',
                               ])
+
+# Power-off (docs/planning/Y1-POWER-PLAN.md, stage D1): the MT6323 power controller.
+VARIANTS['fifteenth'] = dict(VARIANTS['fourteenth'], expected=VARIANTS['fourteenth']['expected'] + [
+    'compatible = "mediatek,mt6323-pwrc";',
+])
 
 
 def empty_ramdisk():
