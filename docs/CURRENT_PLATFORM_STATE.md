@@ -1,6 +1,14 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.3.13, Baseline 221 — 2026-11-05 (latest, published)
+## Y2Linux 1.0 Beta 9.3.15, Baseline 223 — 2026-11-05 (latest, published)
+
+Release `1.0.0-beta.9.3.15`, tag `baseline-223`, Linux `e9bcdee5`, Reborn `e2555d2`, sequence 14800 (test build 222 =
+9.3.14, the same menu as a list, never published). Holding Power opens the Quick Menu (Y2Linux #85): a centred,
+animated panel of tiles (Wi-Fi, Bluetooth, Brightness, Sleep Timer, Restart, Power Off); holding on fills the
+turn-off ring around Power Off (3 s + 1.2 s). Reborn `quick_menu.rs` / `views_quick.rs`. Installed on the developer's
+player. Details: [Beta 9.3.15 report](validation/Y2-LINUX-1.0-BETA-9.3.15.md).
+
+## Y2Linux 1.0 Beta 9.3.13, Baseline 221 — 2026-11-05 (published)
 
 Release `1.0.0-beta.9.3.13`, tag `baseline-221`, Linux `24d50299`, Reborn `94f417c`, sequence 14600. A Wi-Fi join that
 finds nothing restarts Wi-Fi once (`y2-radiod` `WifiRestart`) and tries again (Y2Linux #83, report 1da7496c: 34 s of
