@@ -13,6 +13,13 @@
  *
  * We only handle class 3 (wheel scroll); reg4 selects the direction. Frame
  * layout + the data-ready line were reverse-engineered from the vendor kernel.
+ *
+ * Innioasis Y1 (docs/knowledge/y1-hardware.md): the zones are not GPIO lines but
+ * arrive in the same frame, class 1 (press) and class 2 (release) with reg3 a
+ * bitmask of zones; stock 3.0.2 checks only reg1. A "linux,keycodes" property
+ * (one code per reg3 bit) turns this on; without it the driver is the Y2 one.
+ * A "vdd" supply (Y1: MT6323 VGP1) is switched on and followed by the stock
+ * reset pulse before the first read.
  */
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
@@ -22,15 +29,21 @@
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/property.h>
+#include <linux/regulator/consumer.h>
 
 #define APT32F_FRAME_LEN 9
 #define APT32F_VALID 0x55     /* reg1 */
+#define APT32F_CLASS_PRESS 1  /* reg2, Y1: reg3 = zones pressed */
+#define APT32F_CLASS_RELEASE 2
 #define APT32F_CLASS_SCROLL 3 /* reg2 */
+#define APT32F_ZONES 4	      /* reg3 bits */
 
 struct apt32f_wheel {
 	struct i2c_client *client;
 	struct input_dev *input;
-	struct gpio_desc *reset; /* GPIO56, active low; NULL = no reset owner */
+	struct gpio_desc *reset; /* Y2 GPIO56, Y1 GPIO134; active low; NULL = no reset owner */
+	u32 zone_keys[APT32F_ZONES]; /* Y1 zones in the frame; all 0 on the Y2 */
+	bool zones;
 	int version;		 /* reg6 at probe, <0 = read error */
 	bool sleep_enabled;	 /* owner switch, default on (stock behaviour) */
 	enum { APT32F_AWAKE, APT32F_I2C_SLEEP, APT32F_RESET_HELD } state;
@@ -46,6 +59,29 @@ static const unsigned short apt32f_scroll_keys[] = {
     [4] = KEY_PAGEDOWN,
 };
 
+static void apt32f_scroll(struct apt32f_wheel *w, u8 code)
+{
+	unsigned short key = code < ARRAY_SIZE(apt32f_scroll_keys) ? apt32f_scroll_keys[code] : 0;
+
+	if (!key)
+		return;
+	input_report_key(w->input, key, 1);
+	input_sync(w->input);
+	input_report_key(w->input, key, 0);
+	input_sync(w->input);
+}
+
+/* Y1: each set reg3 bit is a zone going down (class 1) or up (class 2). */
+static void apt32f_zones(struct apt32f_wheel *w, u8 bits, int value)
+{
+	unsigned int zone;
+
+	for (zone = 0; zone < APT32F_ZONES; zone++)
+		if ((bits & BIT(zone)) && w->zone_keys[zone])
+			input_report_key(w->input, w->zone_keys[zone], value);
+	input_sync(w->input);
+}
+
 static irqreturn_t apt32f_irq(int irq, void *dev_id)
 {
 	struct apt32f_wheel *w = dev_id;
@@ -55,7 +91,6 @@ static irqreturn_t apt32f_irq(int irq, void *dev_id)
 	    {.addr = w->client->addr, .flags = 0, .len = 1, .buf = &reg},
 	    {.addr = w->client->addr, .flags = I2C_M_RD, .len = APT32F_FRAME_LEN, .buf = f},
 	};
-	unsigned short key;
 
 	/*
 	 * Read the frame aligned to reg0: write the register pointer (0) then
@@ -68,21 +103,20 @@ static irqreturn_t apt32f_irq(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
-	if (f[0] != 0xaa || f[1] != APT32F_VALID || f[2] != APT32F_CLASS_SCROLL)
+	/* The Y2 frame was established with its reg0 header; the Y1 stock driver checks reg1 only. */
+	if (f[1] != APT32F_VALID || (!w->zones && f[0] != 0xaa))
 		return IRQ_HANDLED;
 
-	if (f[4] >= ARRAY_SIZE(apt32f_scroll_keys))
-		return IRQ_HANDLED;
-
-	key = apt32f_scroll_keys[f[4]];
-	if (!key)
-		return IRQ_HANDLED;
-
-	input_report_key(w->input, key, 1);
-	input_sync(w->input);
-	input_report_key(w->input, key, 0);
-	input_sync(w->input);
-
+	switch (f[2]) {
+	case APT32F_CLASS_SCROLL:
+		apt32f_scroll(w, f[4]);
+		break;
+	case APT32F_CLASS_PRESS:
+	case APT32F_CLASS_RELEASE:
+		if (w->zones)
+			apt32f_zones(w, f[3], f[2] == APT32F_CLASS_PRESS);
+		break;
+	}
 	return IRQ_HANDLED;
 }
 
@@ -156,6 +190,30 @@ static int apt32f_leave_sleep(struct apt32f_wheel *w)
 	return 0;
 }
 
+/*
+ * Y1 stock tpd_driver_init/tpd_probe (3.0.2, 0xc0793024/0xc05944b8): VGP1 to 3.0 V, then
+ * reset 1, 10 ms, 0, 10 ms, 1 and 150 ms before the first read. Without a described supply
+ * (the Y2) nothing is done here.
+ */
+static int apt32f_power_on(struct apt32f_wheel *w)
+{
+	struct device *dev = &w->client->dev;
+	int ret = devm_regulator_get_enable_optional(dev, "vdd");
+
+	if (ret == -ENODEV)
+		return 0;
+	if (ret)
+		return dev_err_probe(dev, ret, "vdd supply\n");
+	if (w->reset) {
+		msleep(10);
+		gpiod_set_value_cansleep(w->reset, 1);
+		msleep(10);
+		gpiod_set_value_cansleep(w->reset, 0);
+	}
+	msleep(150);
+	return 0;
+}
+
 static int apt32f_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
@@ -176,6 +234,10 @@ static int apt32f_probe(struct i2c_client *client)
 	w->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(w->reset))
 		return dev_err_probe(dev, PTR_ERR(w->reset), "reset gpio\n");
+	ret = apt32f_power_on(w);
+	if (ret)
+		return ret;
+	w->zones = !device_property_read_u32_array(dev, "linux,keycodes", w->zone_keys, APT32F_ZONES);
 	w->version = i2c_smbus_read_byte_data(client, APT32F_REG_VERSION);
 	i2c_set_clientdata(client, w);
 
@@ -189,6 +251,9 @@ static int apt32f_probe(struct i2c_client *client)
 	for (i = 0; i < ARRAY_SIZE(apt32f_scroll_keys); i++)
 		if (apt32f_scroll_keys[i])
 			input_set_capability(w->input, EV_KEY, apt32f_scroll_keys[i]);
+	for (i = 0; w->zones && i < APT32F_ZONES; i++)
+		if (w->zone_keys[i])
+			input_set_capability(w->input, EV_KEY, w->zone_keys[i]);
 
 	ret = input_register_device(w->input);
 	if (ret)
@@ -267,5 +332,5 @@ static struct i2c_driver apt32f_driver = {
 };
 module_i2c_driver(apt32f_driver);
 
-MODULE_DESCRIPTION("Innioasis Y2 APT32F click-wheel scroll driver");
+MODULE_DESCRIPTION("Innioasis Y1/Y2 APT32F click-wheel driver");
 MODULE_LICENSE("GPL");
