@@ -1,5 +1,14 @@
 # Roadmap gap audit
 
+## Y1 persistent data planning (milestone B) — 2026-11-05
+
+Owner's choice: Y2DATA after the power daemon ([plan](Y1-DATA-PLAN.md)). Evidence: `/data` is RAM-only today;
+USRDATA (2 GiB, stock Android `/data`) is the Y2's place for Y2DATA too; Linux sees the Y1 eMMC without partitions
+and reaches Y2ROOT through a read-only loop, with every disk set read-only by PID1; the Y1 kernel has no eMMC
+write guard (the Y2's has); the full eMMC backup exists, its second-drive copy is still owed. Staged: preparation
+without writes (backup copy, guard, offline seed image), the one destructive write of USRDATA by mtkclient, a
+guarded mount at boot, then music. Not admitted.
+
 ## Y1 player UI planning (milestone E) — 2026-11-05
 
 Owner's choice: Reborn before the power daemon and Y2DATA ([plan](Y1-REBORN-PLAN.md)). Evidence: the Reborn
