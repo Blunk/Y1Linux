@@ -33,6 +33,11 @@ static void show_bars(long watchdog);
 #ifdef Y1_EIGHTH_BOOT
 static int eighth_command(const char *line, const char *argument, long watchdog);
 #endif
+#ifdef Y1_NINTH_BOOT
+static void prepare_root(void);
+static int root_shell_running(void);
+static int ninth_command(const char *line, const char *argument, long watchdog);
+#endif
 
 static void sleep_ms(unsigned ms)
 {
@@ -276,6 +281,9 @@ static void shell_help(void)
 #ifdef Y1_EIGHTH_BOOT
               "  bl [N]       backlight brightness 0..32 (the only command that writes)\n"
 #endif
+#ifdef Y1_NINTH_BOOT
+              "  rootsh       the Y2 root filesystem's shell (exit returns here)\n"
+#endif
               "  reboot       restart the player\n");
 }
 
@@ -400,6 +408,9 @@ static void shell_line(char *line, long watchdog)
 #ifdef Y1_EIGHTH_BOOT
     else if (eighth_command(line, argument, watchdog)) {}
 #endif
+#ifdef Y1_NINTH_BOOT
+    else if (ninth_command(line, argument, watchdog)) { return; }
+#endif
     else usb_say("unknown command; type help\n");
     usb_say("y1# ");
 }
@@ -410,6 +421,9 @@ static void poll_shell(unsigned tick, long watchdog)
 {
     static int announced;
     char line[256];
+#ifdef Y1_NINTH_BOOT
+    if (root_shell_running()) return;
+#endif
     if (usb_tty < 0) {
         if (tick % TICKS_PER_SECOND) return;
         usb_tty = call5(SYS_OPEN, (long)"/dev/ttyGS0", O_RDWR | O_NOCTTY | O_NONBLOCK, 0, 0, 0);
@@ -457,6 +471,9 @@ static void third_boot(long watchdog)
     show_usb_log(watchdog);
 #ifdef Y1_SEVENTH_BOOT
     show_bars(watchdog);
+#endif
+#ifdef Y1_NINTH_BOOT
+    prepare_root();
 #endif
     for (unsigned i = 0; i < INPUT_NODES; ++i) {
         path[16] = (char)('0' + i);

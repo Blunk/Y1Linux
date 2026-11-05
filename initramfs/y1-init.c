@@ -119,6 +119,9 @@ static long arm_watchdog(void)
 #ifdef Y1_EIGHTH_BOOT
 #include "y1-eighth-boot.h"
 #endif
+#ifdef Y1_NINTH_BOOT
+#include "y1-ninth-boot.h"
+#endif
 
 static void observe(void)
 {
