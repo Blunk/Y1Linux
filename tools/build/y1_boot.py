@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to nineteenth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twentieth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -148,6 +148,9 @@ VARIANTS['nineteenth'] = dict(VARIANTS['eighteenth'], expected=VARIANTS['eightee
     'simple-audio-card,name = "Y2Audio";',
     'simple-audio-card,pin-switches = "Headphone", "Speaker";',
 ])
+
+# The power daemon (docs/planning/Y1-POWER-PLAN.md, D2): the nineteenth tree unchanged.
+VARIANTS['twentieth'] = VARIANTS['nineteenth']
 
 
 def empty_ramdisk():

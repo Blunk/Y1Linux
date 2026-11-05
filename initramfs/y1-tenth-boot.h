@@ -51,6 +51,12 @@ static const struct override overrides[] = {
     /* Reborn's audio profile for the Y1 card (stage R3). */
     { "/etc/y2linux/audio-enabled.json", 0644 },
 #endif
+#ifdef Y1_TWENTIETH_BOOT
+    /* The power daemon with the Y1 battery profile and policy (docs/planning/Y1-POWER-PLAN.md, D2). */
+    { "/etc/init.d/S03y1-data", 0755 },
+    { "/etc/y2linux/battery-profile.json", 0644 },
+    { "/etc/y2linux/power-policy.json", 0644 },
+#endif
 };
 
 static int install_file(const char *path, unsigned mode)
