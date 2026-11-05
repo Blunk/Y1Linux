@@ -33,10 +33,10 @@ Manifest and images: `evidence-private/2026-11-04-y1-backup/` (not published).
 | DRAM `0x20000000` (512 MiB) | CONFIRMED (DA report) |
 | eMMC user area `0xe7000000` (3.61 GiB); boot1, boot2 and RPMB 2 MiB each | CONFIRMED |
 | Partition table equals the 3.0.2 scatter; `FAT` is `0x18bc0000` (scatter: 0) | CONFIRMED |
-| Dump offsets equal table offsets: the user area starts with an `EMMC_BOOT` header and the preloader at `0x800` (unlike the Y2's 20 MiB shift) | CONFIRMED |
+| ~~Dump offsets equal table offsets: the user area starts with an `EMMC_BOOT` header and the preloader at `0x800`~~ ~~physical = logical − `0x1400000`~~ **Measured by the second boot (run 4):** the dump is MediaTek's *logical* space: BOOT0 (`EMMC_BOOT` header, preloader at `0x800`) at 0–2 MiB, BOOT1 at 2–4 MiB, RPMB at 4–6 MiB, then the user area: **physical = logical − `0x600000`**. Linux finds the MBR/EBR1 `55AA` at physical `0xe00000`/`0xe80000` (dump `0x1400000`/`0x1480000`) and RECOVERY's `ANDROID!` at `0x3180000` (dump `0x3780000`); `mmcblk0boot0`/`boot1` equal dump 0–2/2–4 MiB. The dump lacks the last 6 MiB of the user area, past `FAT` | CONFIRMED (Linux reads, 2026-11-05) |
 | Preloader, MBR, EBR1, LK, BOOTIMG and RECOVERY byte-identical to the public 3.0.2 ROM, so the kernel analysis applies to this player | CONFIRMED |
 | Whole user area read once (sha256 `796cdf27…3497ef`); `0x0`–`0x3120000` (through SECCFG, including NVRAM and PROTECT_F/S) read twice, identical | CONFIRMED |
-| eMMC BOOT1/BOOT2: both `--parttype` reads returned the user area's first 2 MiB; the legacy DA's partition switch is unchecked | NOT ACQUIRED |
+| eMMC BOOT1/BOOT2: both `--parttype` reads returned dump 0–2 MiB (the partition switch is unchecked). **Corrected:** BOOT0 and BOOT1 are *in* the user-area dump (0–2 MiB and 2–4 MiB) | ACQUIRED, confirmed by Linux digests |
 | Any restore; an independent second copy | NOT PROVEN / owed |
 
 ## ADB evidence boot — 2026-11-04
@@ -76,7 +76,7 @@ Buttons (owner pressed each once with `getevent -lt` running; the Y1 has no volu
 ## First-boot test design — 2026-11-04
 
 Admitted by the owner as source and offline work ([admission](../planning/roadmap-gap-audit.md#y1-first-device-tree-and-minimal-boot-test-admission--2026-11-04)).
-Build: `python3 tools/build/run.py --output out/<fresh> -- sh /project/tools/build/y1-first-boot.sh`.
+Build: `python3 tools/build/run.py --output out/<fresh> -- sh /project/tools/build/y1-boot.sh first` (the script was `y1-first-boot.sh` when this image was built; same commands).
 
 | Part | Choice | Why |
 | --- | --- | --- |
@@ -84,7 +84,7 @@ Build: `python3 tools/build/run.py --output out/<fresh> -- sh /project/tools/bui
 | Memory | `0x80000000`–`0x9dffffff` and `0x9ea00000`–`0x9fbfffff` | Stock System RAM plus the idle connsys MiB at the base (the kernel lives there with `AUTO_ZRELADDR`, as on the Y2); the unexplained 10 MiB and the frame buffer stay out |
 | Kernel | `kernel/config/y1-first-boot.config`: the Y2's booted first-boot config without its diagnostic, plus fbcon on `simplefb`, `MEDIATEK_WATCHDOG` and `WATCHDOG_HANDLE_BOOT_ENABLED` (allnoconfig turns that default off); Y2 options off, so the Y2 overlays stay inert | The screen is the only output the owner can see; `mtk_wdt` adopts a watchdog LK left running (15 s, `mt6572.dtsi`) and the core feeds it until PID1 takes over |
 | Userspace | `initramfs/y1-init.c` built into the kernel (`initramfs/y1-first-boot.list`); opens `/dev/watchdog` (starting it if LK left it stopped) and feeds it every heartbeat; prints a banner, the kernel version and `MemTotal`, a heartbeat every 5 s for 120 s, then reboots | Independent of where Y1's LK puts the ramdisk; a hang after PID1 starts ends in a watchdog reset; the reboot gives the owner a preloader window to restore BOOTIMG (no power button) |
-| Image | `tools/build/y1_first_boot.py`: zImage + DTB, an empty ramdisk, the shared `bootimage.pack()` (the Y1 stock header uses the Y2's load addresses), `bootimg.check()`, ≤ 6 MiB | Same reviewed format as the Y2 images |
+| Image | `tools/build/y1_boot.py` (then `y1_first_boot.py`): zImage + DTB, an empty ramdisk, the shared `bootimage.pack()` (the Y1 stock header uses the Y2's load addresses), `bootimg.check()`, ≤ 6 MiB | Same reviewed format as the Y2 images |
 
 Assumptions the test exercises (INFERRED until it runs): LK places the kernel in the first 128 MiB of DRAM
 (true on the Y2's LK); LK's frame buffer is `0x9fc00000` and RGB565 (stock `mtkfb` took that address; the
@@ -114,6 +114,20 @@ sha256 `e7cf5023…`), legible:
 | `mt6577-uart 11005000.serial: probe with driver mt6577-uart failed with error -2` | Upstream `mt6572.dtsi` names only the `baud` clock; 6.18 `8250_mtk` then also requires `bus` (`mtk8250_probe_of`), so the UART driver does not bind. No effect on this test; fix in the board file next |
 
 Not observed in the photo: the rest of the heartbeats and the reboot at 120 s.
+
+## Second-boot result — 2026-11-05
+
+Five runs of the second boot ([plan](../planning/Y1-SECOND-BOOT-PLAN.md) §9–13, photos in
+`evidence-private/2026-11-04-y1-second-boot/`) established on the device:
+
+| Observation | Establishes |
+| --- | --- |
+| The `mt6572-mainline` clock, pinctrl and PMIC-wrapper drivers, backported to 6.18.56, bind; the LK frame buffer stays lit with `clk_ignore_unused` | MT6572 SoC base for the Y1 (CONFIRMED) |
+| `mtk-sd` reads `mmcblk0` (3696 MiB), `mmcblk0boot0`/`boot1` (2 MiB each) and the microSD once each has a fixed 3.3 V `vmmc` description | eMMC and SD host work at 50 MHz, 8/4 bit (CONFIRMED) |
+| Six digests equal the backup at physical = dump − `0x600000` | The read path is correct and the backup is right (CONFIRMED) |
+| `apt32f-wheel 0-0051: firmware 1`; wheel scroll `KEY_UP`/`KEY_DOWN`; reg3 bits 0–3 = bottom `KEY_PLAYPAUSE`, right `KEY_NEXTSONG`, top `KEY_BACK`, left `KEY_PREVIOUSSONG` | APT32F on I2C1 `0x51`, reset GPIO134, EINT2 on GPIO136 (needs `input-schmitt-enable` for the input direction), supply VGP1 3.0 V (CONFIRMED) |
+| `key 28 ENTER (centre)` from `mtk-pmic-keys` | Centre button = MT6323 power key, PMIC interrupt EINT16 level-high (CONFIRMED) |
+| No charging under the test kernels | Charging needs a charger/battery driver; not yet attempted |
 
 ## Stock ROM 3.0.2
 

@@ -1,5 +1,21 @@
 # Roadmap gap audit
 
+## Y1 second boot admission — 2026-11-04
+
+Boundary review on the first boot's physical PASS (same day): mainline 6.18 runs on the Y1 with LK's frame
+buffer, the RAM map and the watchdog confirmed. The owner approved the
+[second boot plan](Y1-SECOND-BOOT-PLAN.md) and its three admission items: the test kernel **reads** the eMMC
+and the SD card (no filesystem, `BLKROSET` before reading, conservative bus modes); it uses the PMIC wrapper
+and the MT6323 for the power key only; it enables exactly **VGP1 at 3.0 V** (stock wheel supply). Also
+admitted: backporting the needed MT6572 drivers from `mt6572-mainline` to 6.18.56 as a Y1 overlay set
+separate from the Y2's, and extending the shared APT32F driver behind a device-tree property that leaves the
+Y2 unchanged. Not admitted: any storage write, other regulators, charger, display driver, audio, USB.
+Phase: source and offline; the physical run stays the owner's act on a reviewed image.
+Result 2026-11-05: **PASS** on the owner's player after five runs (plan §13, [Y1 hardware
+evidence](../knowledge/y1-hardware.md#second-boot-result--2026-11-05)). All three admitted items behaved as
+admitted; no storage was written by Linux. The backup's logical-to-physical mapping is now measured
+(physical = dump − `0x600000`). Next boundary (charging, display, audio, USB or any write) needs its own review.
+
 ## Y1 first device tree and minimal boot test admission — 2026-11-04
 
 Boundary review before the first Y1 source work, on the evidence of the same day: offline 3.0.2 ROM

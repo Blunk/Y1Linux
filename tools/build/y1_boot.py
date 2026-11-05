@@ -1,4 +1,5 @@
-"""Package and check the Innioasis Y1 first-boot BOOTIMG from a fresh build directory; never access a device.
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first or second) from a fresh build directory;
+never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
 the kernel, so the separate ramdisk is an empty archive that only keeps LK's loader satisfied.
@@ -18,8 +19,8 @@ from tools.validation.d08 import require, up
 BOOTIMG_PARTITION = 0x600000  # Y1 PMT: BOOTIMG at 0x3180000, length 0x600000
 ZIMAGE_MAGIC = 0x016f2818
 DTB_LIMIT = 0x10000
-# Every property the first-boot device tree must carry (docs/knowledge/y1-hardware.md).
-DTB_EXPECTED = [
+# Every property both test device trees must carry (docs/knowledge/y1-hardware.md).
+DTB_COMMON = [
     'compatible = "innioasis,y1", "mediatek,mt6572";',
     'reg = <0x80000000 0x1e000000 0x9ea00000 0x1200000>;',
     'framebuffer@9fc00000 {',
@@ -31,6 +32,27 @@ DTB_EXPECTED = [
     'format = "r5g6b5";',
     'stdout-path = "serial0:921600n8";',
 ]
+# Per variant: the additional properties, and how many optional devices may be enabled.
+VARIANTS = {
+    'first': {'expected': [], 'enabled': 1},  # UART0
+    'second': {  # UART0, I2C1, mmc0, mmc1 (docs/planning/Y1-SECOND-BOOT-PLAN.md)
+        'expected': [
+            'clk_ignore_unused',
+            'compatible = "innioasis,apt32f-wheel";',
+            'reg = <0x51>;',
+            'compatible = "mediatek,mt6323";',
+            'compatible = "mediatek,mt6323-keys";',
+            'regulator-name = "vgp1";',
+            'regulator-min-microvolt = <0x2dc6c0>;',
+            'regulator-max-microvolt = <0x2dc6c0>;',
+            'max-frequency = <0x2faf080>;',
+        ],
+        'enabled': 4,
+    },
+}
+# Regulators the second boot may describe: the PMIC's VGP1 (admission 2026-11-04) and the two fixed
+# card-rail descriptions, which switch nothing.
+REGULATOR_NAMES = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";', 'regulator-name = "vgp1";']
 
 
 def empty_ramdisk():
@@ -45,26 +67,31 @@ def empty_ramdisk():
     return gzip.compress(archive, compresslevel=9, mtime=0)
 
 
-def check_dtb(root, dtb):
+def check_dtb(root, dtb, variant):
     require(dtb[:4] == b'\xd0\x0d\xfe\xed', 'DTB magic')
     require(len(dtb) <= DTB_LIMIT, 'DTB size')
     source = subprocess.run([str(root / 'kernel/scripts/dtc/dtc'), '-I', 'dtb', '-O', 'dts', '-q',
                              str(root / 'y1.dtb')], capture_output=True, text=True, check=True).stdout
-    missing = [line for line in DTB_EXPECTED if line not in source]
+    rules = VARIANTS[variant]
+    missing = [line for line in DTB_COMMON + rules['expected'] if line not in source]
     require(not missing, 'DTB lacks: ' + '; '.join(missing))
     enabled = [line for line in source.splitlines() if 'status = "okay"' in line]
-    require(len(enabled) == 1, 'exactly one enabled optional device (UART0)')
+    require(len(enabled) == rules['enabled'], f'exactly {rules["enabled"]} enabled optional devices')
+    regulators = [line.strip() for line in source.splitlines() if 'regulator-name' in line]
+    require(sorted(regulators) in ([], REGULATOR_NAMES), 'no regulator but VGP1 and the fixed card rails')
     return source
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('variant', choices=sorted(VARIANTS))
     parser.add_argument('root', type=Path)
-    root = parser.parse_args().root
+    args = parser.parse_args()
+    variant, root = args.variant, args.root
     zimage = (root / 'kernel/arch/arm/boot/zImage').read_bytes()
     require(struct.unpack_from('<I', zimage, 0x24)[0] == ZIMAGE_MAGIC, 'zImage magic')
     dtb = (root / 'y1.dtb').read_bytes()
-    check_dtb(root, dtb)
+    check_dtb(root, dtb, variant)
     kernel = zimage + dtb + b'\0' * (-len(dtb) % 8)
     ramdisk = empty_ramdisk()
     image = pack(kernel, ramdisk)
@@ -74,8 +101,8 @@ def main():
     result.update({'partition_bytes': BOOTIMG_PARTITION, 'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb),
                    'zimage_dtb_sha256': hashlib.sha256(kernel).hexdigest()})
     (root / 'zImage-dtb').write_bytes(kernel)
-    (root / 'BOOTIMG-y1-first-boot.img').write_bytes(image)
-    (root / 'y1-first-boot.json').write_text(json.dumps(result, indent=2) + '\n')
+    (root / f'BOOTIMG-y1-{variant}-boot.img').write_bytes(image)
+    (root / f'y1-{variant}-boot.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
 
 

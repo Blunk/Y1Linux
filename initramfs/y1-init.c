@@ -98,6 +98,10 @@ static long arm_watchdog(void)
     return fd;
 }
 
+#ifdef Y1_SECOND_BOOT
+#include "y1-second-boot.h"
+#endif
+
 static void observe(void)
 {
     say("\nY1 FIRST BOOT: Linux reached userspace on the Innioasis Y1.\n");
@@ -108,6 +112,9 @@ static void observe(void)
     } else {
         say("proc: mount failed\n");
     }
+#ifdef Y1_SECOND_BOOT
+    second_boot(watchdog);
+#endif
     for (unsigned beat = 1; beat <= HEARTBEATS; ++beat) {
         sleep_seconds(HEARTBEAT_SECONDS);
         if (watchdog >= 0) call5(SYS_WRITE, watchdog, (long)"k", 1, 0, 0);
@@ -120,6 +127,9 @@ static void observe(void)
 void diag_start(long *stack)
 {
     if (is_selftest(stack)) {
+#ifdef Y1_SECOND_BOOT
+        if (!sha256_selftest()) { say("Y1INIT SELFTEST SHA-256 FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+#endif
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);
     }

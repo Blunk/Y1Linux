@@ -14,7 +14,7 @@ REBORN = PROJECT.parent / 'Y2Reborn'
 sys.path.insert(0, str(PROJECT))
 
 
-def prepare_overlay(project, spec):
+def prepare_overlay(project, spec, patches):
     """Publish verified immutable overlay bytes; never rewrite a bound inode."""
     original = (project / '.cache/sources/linux-6.18' / spec['path']).read_bytes()
     if hashlib.sha256(original).hexdigest() != spec['base_sha256']:
@@ -25,7 +25,7 @@ def prepare_overlay(project, spec):
         if hashlib.sha256(overlay.read_bytes()).hexdigest() != spec['result_sha256']:
             raise ValueError('Existing overlay cache mismatch: ' + spec['path'])
         return overlay
-    patch = (project / 'kernel/patches' / spec['patch']).read_bytes()
+    patch = (patches / spec['patch']).read_bytes()
     with tempfile.NamedTemporaryFile(dir=overlay.parent, prefix='.overlay-', delete=False) as f:
         temporary = Path(f.name)
         f.write(original)
@@ -60,9 +60,32 @@ def touch_changed_overlays(output, specs, files):
     os.replace(temporary, state)
 
 
+def verify_added(project, specs):
+    """New upstream-path files (a manifest's "added" list) with their reviewed source hashes."""
+    for spec in specs:
+        if hashlib.sha256((project / spec['source']).read_bytes()).hexdigest() != spec['sha256']:
+            raise ValueError('Reviewed added file mismatch: ' + spec['source'])
+        if (project / '.cache/sources/linux-6.18' / spec['path']).exists():
+            raise ValueError('Added file exists upstream (use an overlay): ' + spec['path'])
+
+
+def expose_directories(source, paths):
+    """bwrap arguments that turn each upstream directory into a private tmpfs listing its original
+    children, so files can be added to it without creating anything in the locked tree. Parents
+    come first: a deeper directory is then laid out inside its already-exposed parent."""
+    arguments = []
+    for directory in sorted({str(Path(path).parent) for path in paths}, key=lambda d: (d.count('/'), d)):
+        arguments += ['--tmpfs', '/src/' + directory]
+        for child in sorted((source / directory).iterdir()):
+            arguments += ['--ro-bind', str(child), f'/src/{directory}/{child.name}']
+    return arguments
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', default='out/build', help='project-relative build directory')
+    parser.add_argument('--manifest', default='kernel/patches/manifest.json',
+                        help='project-relative overlay manifest (the Y2 set by default)')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -81,10 +104,14 @@ def main():
         raise SystemExit('Build output must be below project/out')
     output.mkdir(parents=True, exist_ok=True)
     # Each existing-file overlay requires exact base/result hashes and a zero-fuzz patch.
-    specs = json.loads((PROJECT / 'kernel/patches/manifest.json').read_text())['overlays']
+    manifest_path = PROJECT / args.manifest
+    manifest = json.loads(manifest_path.read_text())
+    specs = manifest['overlays']
+    added = manifest.get('added', [])
+    verify_added(PROJECT, added)
     overlays = []
     for spec in specs:
-        overlays.append((prepare_overlay(PROJECT,spec), spec['path']))
+        overlays.append((prepare_overlay(PROJECT,spec,manifest_path.parent), spec['path']))
     touch_changed_overlays(output, specs, [path for path, _ in overlays])
     env = {
         'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LC_ALL': 'C', 'TZ': 'UTC',
@@ -117,6 +144,12 @@ def main():
     for child in sorted((PROJECT / '.cache/sources/linux-6.18/sound/soc/mediatek').iterdir()):
         invocation += ['--ro-bind', str(child), '/src/sound/soc/mediatek/' + child.name]
     invocation += ['--ro-bind', str(PROJECT / 'kernel/audio'), '/src/sound/soc/mediatek/mt6582']
+    # /src/drivers itself is already a private listing (above); its subdirectories are not.
+    upstream = PROJECT / '.cache/sources/linux-6.18'
+    invocation += expose_directories(upstream, [spec['path'] for spec in added
+                                                if str(Path(spec['path']).parent) != 'drivers'])
+    for spec in added:
+        invocation += ['--ro-bind', str(PROJECT / spec['source']), '/src/' + spec['path']]
     for overlay, path in overlays:
         invocation += ['--ro-bind', str(overlay), '/src/' + path]
     for key, value in env.items():

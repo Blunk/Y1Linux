@@ -1,0 +1,138 @@
+{
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md.",
+  "overlays": [
+    {
+      "path": "drivers/clk/mediatek/Kconfig",
+      "base_sha256": "296fd97da067987c78841e50620f25fddf913d1aa093d08bded4ad47aecce723",
+      "result_sha256": "ca71da8a8d590c532efc3ed35da82be44819b49bd6fbcb41d5d90133654103a4",
+      "patch": "0001-mt6572-clk-kconfig.patch"
+    },
+    {
+      "path": "drivers/clk/mediatek/Makefile",
+      "base_sha256": "d4938ae54d40715d3cec345b5d4b441fcd8c28ea34d9f520a3a5b9b6205b5288",
+      "result_sha256": "b21b631db9d9bdde238d012d93a8e51d67a7031697bed7707ec14a419791017f",
+      "patch": "0002-mt6572-clk-makefile.patch"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/Kconfig",
+      "base_sha256": "358c03715ce2d3351183bff171f663ba7f3ee071425b44c9ef159fd0b8146d1c",
+      "result_sha256": "0e816d0245d023c4865ba9c426fb7e5f6a2ea5d64868d869299fa7c883b02adf",
+      "patch": "0003-mt6572-pinctrl-kconfig.patch"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/Makefile",
+      "base_sha256": "2d8bc4b9137a4c8b4d252f839c22d2a2cefe4cfc8b665e36c039d568954ae9d5",
+      "result_sha256": "b2ef9dfc4203fee29d77c6a63ecdaa0cc859d4fdfc18647cd03cea19b197226c",
+      "patch": "0004-mt6572-pinctrl-makefile.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-pmic-wrap.c",
+      "base_sha256": "80173dd03ba85c5f900d27d35a2b6d0bd60bb5cf4bd801295e9953a0e4eaec12",
+      "result_sha256": "0dd5720f302cf7f8a3af4ca527678328f57ca3b8a7b8d384b3fc243a18c3588b",
+      "patch": "0005-mt6572-pmic-wrap.patch"
+    },
+    {
+      "path": "drivers/i2c/busses/i2c-mt65xx.c",
+      "base_sha256": "fc2cb20be4237685878d9abfa9028a94949d67af62a974dc61d9fff1c5de3072",
+      "result_sha256": "596f4efb141b007b66d79140f73ff1f4da1a5895108de19c5ce31cd2edfaca1e",
+      "patch": "0006-mt6572-i2c.patch"
+    },
+    {
+      "path": "drivers/watchdog/mtk_wdt.c",
+      "base_sha256": "6e8230dff7db590f16bdc83918220da48be57c8a594cd3f0917f4c0e0018da9b",
+      "result_sha256": "8dd10f8e2af6549c05ce779dba03badea559fa87e9e83d44ebeba7c6068d673a",
+      "patch": "0007-mt6572-wdt-resets.patch"
+    },
+    {
+      "path": "include/linux/soc/mediatek/infracfg.h",
+      "base_sha256": "c77c59cc8e8d0e91a5b6d1eb52cb236fda4ae1709bbffc84fe1020d701d112b9",
+      "result_sha256": "e9e78a179f7ea70f20cd92b1fa314672cf579349de845b2dfa9f58ef6f7c1f3c",
+      "patch": "0008-mt6572-infracfg.patch"
+    },
+    {
+      "path": "drivers/input/misc/Kconfig",
+      "base_sha256": "c81b2f53ad46c91be029eab302df0329ecf293e0f51949dc544ad96e7a4b7274",
+      "result_sha256": "7c39e5ad8dbfd0afcdf13ee16496ea9d394601777840a69ac467f5d567f4f886",
+      "patch": "0009-innioasis-apt32f-kconfig.patch"
+    },
+    {
+      "path": "drivers/input/misc/Makefile",
+      "base_sha256": "934c668182ac34aee10aacae504fb0990e50fd53fd9527a2c3603ea0e1b9c17c",
+      "result_sha256": "56b32ad4633c9c6db2b3a982ef3462dd74c045879103fc1527dc2db917771c1c",
+      "patch": "0010-innioasis-apt32f-makefile.patch"
+    },
+    {
+      "path": "arch/arm/mm/Kconfig",
+      "base_sha256": "320a616f70976e6bf1544f4cebccd4f796524d7e856da6d2f053aed581d4a049",
+      "result_sha256": "57ec8dcb3b02cd5c5efc6925b921e69671add7f2db51a9c21ca72df5ec307116",
+      "patch": "0011-arm-allow-explicit-virt-ext-disable.patch"
+    }
+  ],
+  "added": [
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-apmixedsys.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-apmixedsys.c",
+      "sha256": "57c8121c939444af8f63172827ae4b4af0060a9a17dd8f86d0ba1d99e935ded6"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-infracfg.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-infracfg.c",
+      "sha256": "abc2a2d3c2c7660d5021ade6ddea7e1845b506060c6e4bd32ee5b39d002bbeaf"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-mfg.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mfg.c",
+      "sha256": "2f6452bf5a83ac2c91e2469d23ce57c725378dc2f125c48838075a20ff30670d"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-mm.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mm.c",
+      "sha256": "0cdcdb1f24381f248fa881fb78fe2c7c82cfafb9ab257031d74a81e61134d300"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-topckgen.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-topckgen.c",
+      "sha256": "0f70217fc374d71da1574b2cc5ade0785e508aa7fa621b09f46b73dd04c07283"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/pinctrl-mt6572.c",
+      "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mt6572.c",
+      "sha256": "2556c9cf91219ff9acc3075560d4cf3c5384af5f07332170821ccc7b3bb32c6a"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
+      "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
+      "sha256": "5a1644785519c0195a7649abff6fa6c64c96a27f02ab6cd8e7bb66f66188c24c"
+    },
+    {
+      "path": "include/dt-bindings/clock/mediatek,mt6572-clk.h",
+      "source": "kernel/mt6572/include/dt-bindings/clock/mediatek,mt6572-clk.h",
+      "sha256": "7d2a17ec31a3947b4bf905f3038724e0daaa6d91e65db86707c3b27701b438e0"
+    },
+    {
+      "path": "include/dt-bindings/reset/mediatek,mt6572-resets.h",
+      "source": "kernel/mt6572/include/dt-bindings/reset/mediatek,mt6572-resets.h",
+      "sha256": "bbe1d05fea8e8ad579c8647ab29e6430bf9f51630c67f3cf561b4d47a2bbced3"
+    },
+    {
+      "path": "include/dt-bindings/pinctrl/mt6572-pinfunc.h",
+      "source": "kernel/mt6572/include/dt-bindings/pinctrl/mt6572-pinfunc.h",
+      "sha256": "1abdef232370c0c658064486d72363a75cc72e8d9dd40ef10821a3bc36a2d8ac"
+    },
+    {
+      "path": "include/dt-bindings/power/mediatek,mt6572-power-controller.h",
+      "source": "kernel/mt6572/include/dt-bindings/power/mediatek,mt6572-power-controller.h",
+      "sha256": "40247eaba24febb7b8d161808329beece9bee8c6a361ab763471a57294662349"
+    },
+    {
+      "path": "include/dt-bindings/memory/mt6572-larb-port.h",
+      "source": "kernel/mt6572/include/dt-bindings/memory/mt6572-larb-port.h",
+      "sha256": "3d8e11df575742c1a42f66c1e27dd35e97d9c06d4d24b9fc53f31da865e35c05"
+    },
+    {
+      "path": "drivers/input/misc/apt32f-wheel.c",
+      "source": "kernel/platform/apt32f-wheel.c",
+      "sha256": "fc36befb3992273de25a8247d1b46b5853d84bf1aecb74e0ca0c58eaa62aa7e4"
+    }
+  ]
+}
