@@ -4,7 +4,9 @@
  * stage B). The sequences are the stock 3.0.2 HAL's (AudioPlatformDevice::AnalogOpen and
  * AudioMachineDevice::AnalogOpen/Close, stage 0), reached through the MT6323 regmap, so the Y1 PMIC
  * wrapper's write policy bounds every register and value. The DC trim is 0 (stock measures it once into
- * NVRAM); the headphone gain starts at the lowest step. The AW87559 speaker path is stage C.
+ * NVRAM); the headphone gain starts at step 2, stock's power-up value (step 0 was inaudible).
+ * Stage C: the power-up and power-down are a DAPM DAC event, so DAPM powers the codec before the AW87559
+ * speaker amplifier (an aux device fed from HPOUT) and down after it, the stock order.
  */
 #include <linux/delay.h>
 #include <linux/mfd/mt6397/core.h>
@@ -81,50 +83,41 @@ static void y1_codec_power_down(struct y1_codec *c)
 	regmap_write(map, TOP_CKPDN_SET, AUD_CK);
 }
 
-static int y1_codec_prepare(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
+/* DAPM runs this after the AFE's prepare (the ADDA path is on) and before the amplifier's power-up. */
+static int y1_codec_dac_event(struct snd_soc_dapm_widget *w, struct snd_kcontrol *kcontrol, int event)
 {
-	struct y1_codec *c = snd_soc_component_get_drvdata(dai->component);
+	struct y1_codec *c = snd_soc_component_get_drvdata(snd_soc_dapm_to_component(w->dapm));
 	int ret = 0;
 
 	mutex_lock(&c->lock);
-	if (!c->on) {
+	if (event == SND_SOC_DAPM_PRE_PMU && !c->on) {
 		ret = y1_codec_power_up(c);
 		if (ret)
 			y1_codec_power_down(c);
 		else
 			c->on = true;
+	} else if (event == SND_SOC_DAPM_POST_PMD && c->on) {
+		y1_codec_power_down(c);
+		c->on = false;
 	}
 	mutex_unlock(&c->lock);
 	return ret;
 }
 
-static int y1_codec_hw_free(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
-{
-	struct y1_codec *c = snd_soc_component_get_drvdata(dai->component);
+static const struct snd_soc_dapm_widget y1_codec_widgets[] = {
+	SND_SOC_DAPM_DAC_E("HP DAC", "Playback", SND_SOC_NOPM, 0, 0, y1_codec_dac_event,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_OUTPUT("HPOUT"),
+};
 
-	mutex_lock(&c->lock);
-	if (c->on) {
-		y1_codec_power_down(c);
-		c->on = false;
-	}
-	mutex_unlock(&c->lock);
-	return 0;
-}
-
-static void y1_codec_shutdown(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
-{
-	y1_codec_hw_free(substream, dai);
-}
-
-static const struct snd_soc_dai_ops y1_codec_dai_ops = {
-	.prepare = y1_codec_prepare, .hw_free = y1_codec_hw_free, .shutdown = y1_codec_shutdown,
+static const struct snd_soc_dapm_route y1_codec_routes[] = {
+	{ "HPOUT", NULL, "HP DAC" },
 };
 
 static struct snd_soc_dai_driver y1_codec_dai = {
 	.name = "mt6323-hifi",
 	.playback = { .stream_name = "Playback", .channels_min = 2, .channels_max = 2,
 		      .rates = SNDRV_PCM_RATE_44100, .formats = SNDRV_PCM_FMTBIT_S16_LE },
-	.ops = &y1_codec_dai_ops,
 };
 
 static int y1_volume_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_info *uinfo)
@@ -170,6 +163,8 @@ static const struct snd_kcontrol_new y1_codec_controls[] = {
 static const struct snd_soc_component_driver y1_codec_component = {
 	.name = "y1-mt6323-codec",
 	.controls = y1_codec_controls, .num_controls = ARRAY_SIZE(y1_codec_controls),
+	.dapm_widgets = y1_codec_widgets, .num_dapm_widgets = ARRAY_SIZE(y1_codec_widgets),
+	.dapm_routes = y1_codec_routes, .num_dapm_routes = ARRAY_SIZE(y1_codec_routes),
 };
 
 static int y1_codec_probe(struct platform_device *pdev)
@@ -183,6 +178,7 @@ static int y1_codec_probe(struct platform_device *pdev)
 	if (!c)
 		return -ENOMEM;
 	c->map = chip->regmap;
+	c->volume = 2; /* stock's power-up gain */
 	mutex_init(&c->lock);
 	platform_set_drvdata(pdev, c);
 	/* Nothing is written at probe: the codec stays as LK left it until the first playback. */

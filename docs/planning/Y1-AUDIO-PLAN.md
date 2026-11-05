@@ -1,8 +1,9 @@
 # Y1 audio: ALSA playback through the MT6572 AFE and the MT6323 codec
 
 Status: **stage B PASS** (2026-11-05, [§10](#10-stage-b-run-1--headphone-playback-pass--2026-11-05)): ALSA
-headphone playback on the Y1 through the MT6572 AFE and the MT6323 codec. Stage C (speaker) is admitted later
-(§7). The owner chose audio before data and
+headphone playback on the Y1 through the MT6572 AFE and the MT6323 codec. **Stage C PASS** (2026-11-05,
+[§13](#13-stage-c-run-1--2026-11-05)): the speaker through the OCA72559 amplifier, switchable against the
+headphones. The owner chose audio before data and
 power (2026-11-05). Follows the [SMP plan](Y1-SMP-PLAN.md) (PASS) and the [system plan](Y1-SYSTEM-PLAN.md)
 (the Y2's userspace runs; it has `aplay`, `speaker-test`, `amixer`).
 
@@ -161,3 +162,60 @@ first kept away from the ears; the pin mux (GPIO4–6 mode 1, AUD_CLK/MISO/MOSI)
 
 Next: the default gain (step 0 is inaudible; stock starts at 2), volume mapping, the pops (a measured DC trim,
 a ramp), 48 kHz, jack detection, then stage C.
+
+## 11. Stage C plan: the speaker — 2026-11-05
+
+**Stock** (stage 0): the MT6323's own speaker amplifier is never used; the speaker path is the full headphone
+power-up, then the kernel's AW87559 on (GPIO143 high, init table, SYSCTRL `0x78`, 80 ms settle); off is
+SYSCTRL `0x30`, GPIO143 low, then the headphone power-down. The AW87559 is fed from the MT6323's headphone
+outputs (INFERRED from the code; the board wiring is not visible). Stock's ID check accepts `0x5A`
+(AW87559) or `0x09` (OCA72559).
+
+**Design:**
+- The Y2's `kernel/audio/aw87559.c` (shared, unchanged; the same 39-register table as the Y1's stock
+  `aw87559_hw_init`; enable pulse low 10 ms, high, 100 ms; ID check `0x5A`/`0x09`; a DAPM output driver
+  "DRV" that switches it on after power-up and off before power-down, 80 ms settle) on **I2C0 `0x58`,
+  enable GPIO143**, as an aux device with the prefix "PA". I2C0 is enabled for it (the second boot left it
+  off; nothing else is on that bus in the tree).
+- The MT6323 codec's headphone power-up/down moves from `prepare`/`hw_free` into a DAPM DAC event, with an
+  output "HPOUT": DAPM then powers the DAC before the amplifier and the amplifier down before the DAC, the
+  stock order in both directions.
+- `simple-audio-card` widgets "Headphones" and "Speaker", routes `Headphones <- HPOUT`, `PA IN <- HPOUT`,
+  `Speaker <- PA OUT`, and pin switches for both: `amixer cset name="Speaker Switch" off|on` chooses.
+- The default gain becomes step 2 (stock's power-up value; step 0 was inaudible).
+
+**Test:** the headphones unplugged; "Speaker Switch" on, "Headphones Switch" off; the −40 dBFS tone at gain
+step 2, then −30 dBFS; then the speaker off and the headphones as in run 1 (no regression); the AW87559's ID
+read in the kernel log.
+
+**Admission (stage C):**
+
+| Item | Bound |
+| --- | --- |
+| **I2C0 bus** | enabled for the amplifier at `0x58` only |
+| **The AW87559 on and off** (GPIO143, its registers) | the shared driver's stock table and order; only while a stream routes to "Speaker"; low level first (−40 dBFS, gain step 2) |
+| **The codec's power-up moves into DAPM** | the same register sequence and write policy; only its timing relative to the amplifier changes, to stock's order |
+
+## 12. Stage C build — 2026-11-05
+
+- `kernel/y1/mt6323-codec.c`: the headphone power-up/down is the event of a DAPM DAC "HP DAC" (stream
+  "Playback", `PRE_PMU`/`POST_PMD`) with the output "HPOUT"; the DAI has no ops; default gain step 2.
+- The shared `kernel/audio/aw87559.c`, unchanged, added as `sound/soc/mediatek/aw87559.c`;
+  `SND_SOC_Y1_AUDIO` now depends on `I2C` and selects `REGMAP_I2C` (overlays `0028`/`0029`).
+- `innioasis-y1-fourteenth-boot.dts`: I2C0 on (100 kHz) with `amplifier@58` (`awinic,aw87559`,
+  `enable-gpios` GPIO143, prefix "PA"); the card's widgets "Headphones"/"Speaker", routes
+  `Headphones <- HPOUT`, `PA IN <- HPOUT`, `Speaker <- PA OUT`, pin switches for both, the amplifier as aux
+  device. Config: the thirteenth fragment.
+
+Build `out/y1-fourteenth-boot-1`, BOOTIMG sha256
+`42bf0daf5a1fa6832ccf4c37305ca072ee4d5dd4ad28a4b37fec7184815f2507`, no compiler warnings. Physical status
+NOT_RUN.
+
+## 13. Stage C run 1 — 2026-11-05
+
+Build `42bf0daf…`; `evidence-private/2026-11-05-y1-audio-c/`. The amplifier answered on I2C0:
+`aw87559 0-0058: OCA72559 (chip id 0x09)`: the owner's Y1 has the **OCA72559** variant, which the shared
+driver drives with its own table (stock does the same). Controls: "Headphones Switch", "Speaker Switch",
+"Headphone Playback Volume". Speaker only (headphones off, gain step 2): the owner heard both the −40 dBFS and
+the −30 dBFS tone from the speaker. No kernel error; charging continued. Headphone recheck (speaker switch off,
+headphones on, gain step 2, −40 dBFS): heard in the headphones, the speaker silent. **Stage C: PASS.**
