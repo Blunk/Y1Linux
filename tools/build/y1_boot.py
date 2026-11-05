@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to eleventh) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twelfth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -105,6 +105,8 @@ VARIANTS['ninth'] = VARIANTS['eighth']
 VARIANTS['tenth'] = VARIANTS['ninth']
 # USB networking and SSH (docs/planning/Y1-NETWORK-PLAN.md): the tenth tree unchanged.
 VARIANTS['eleventh'] = VARIANTS['tenth']
+# Both CPU cores (docs/planning/Y1-SMP-PLAN.md): the eleventh tree unchanged; SMP is kernel config.
+VARIANTS['twelfth'] = VARIANTS['eleventh']
 
 
 def empty_ramdisk():

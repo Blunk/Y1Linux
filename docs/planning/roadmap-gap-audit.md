@@ -1,5 +1,13 @@
 # Roadmap gap audit
 
+## Y1 second CPU core planning — 2026-11-05
+
+Owner request: use both MT6572 cores ([plan](Y1-SMP-PLAN.md)). Evidence: mainline's `mtk_mt6572_boot` (boot-ROM
+entry and key, IPI); stock additionally powers CPU1 through the SPM, but read-only registers on the owner's
+player show LK leaves CPU1 powered, out of reset and in WFI with the boot registers clear. Bound: the two boot
+registers and an IPI; no SPM write, hotplug, cpufreq or idle. Owner-approved; result **PASS** in one run: two
+CPUs brought up, both loaded under a CPU-bound test, other subsystems unaffected.
+
 ## Y1 USB networking planning — 2026-11-05
 
 Boundary review for system milestone C ([plan](Y1-NETWORK-PLAN.md)): the Y1's first network link. Evidence:
