@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twentieth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-first) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -151,6 +151,11 @@ VARIANTS['nineteenth'] = dict(VARIANTS['eighteenth'], expected=VARIANTS['eightee
 
 # The power daemon (docs/planning/Y1-POWER-PLAN.md, D2): the nineteenth tree unchanged.
 VARIANTS['twentieth'] = VARIANTS['nineteenth']
+
+# Y2DATA (docs/planning/Y1-DATA-PLAN.md, stage B2): the eMMC write guard's window, USRDATA only.
+VARIANTS['twenty-first'] = dict(VARIANTS['twentieth'], expected=VARIANTS['twentieth']['expected'] + [
+    'innioasis,emmc-write-window = <0x267a00 0x400000>;',
+])
 
 
 def empty_ramdisk():

@@ -1,0 +1,54 @@
+#!/bin/sh
+# Innioasis Y1: Y2DATA on USRDATA as /data (docs/planning/Y1-DATA-PLAN.md, stage B2), as the Y2's initramfs and
+# S02y2-data do it. PID1 attached USRDATA writable on a loop (offset 0x4cf40000, 2 GiB) behind the kernel's eMMC
+# guard. Here: the filesystem must be ext4 labelled Y2DATA with the Y1 UUID, e2fsck -p may fix (0/1) but anything
+# else leaves it alone, the schema must be 1; then mounted rw,nosuid,nodev,noatime. Nothing is ever formatted.
+# On any failure Reborn's RAM /data (S90y1-reborn data) takes its place and the reason goes to the kernel log.
+UUID=79314c69-6e75-4801-8000-000000000102
+OFFSET=1291059200
+SIZE=2147483648
+
+log() { echo "y1-data: $*" > /dev/kmsg; }
+
+find_loop() {
+	for d in /sys/block/loop*; do
+		[ "$(cat "$d/loop/offset" 2>/dev/null)" = "$OFFSET" ] &&
+			[ "$(cat "$d/loop/sizelimit" 2>/dev/null)" = "$SIZE" ] &&
+			[ "$(cat "$d/loop/backing_file" 2>/dev/null)" = /dev/mmcblk0 ] &&
+			[ "$(cat "$d/ro")" = 0 ] && { echo "/dev/${d##*/}"; return 0; }
+	done
+	return 1
+}
+
+mount_data() {
+	dev=$(find_loop) || { log "no USRDATA loop"; return 1; }
+	blkid "$dev" | grep -q "LABEL=\"Y2DATA\" UUID=\"$UUID\" .*TYPE=\"ext4\"" ||
+		{ log "$dev is not the Y1's Y2DATA: $(blkid "$dev")"; return 1; }
+	e2fsck -p "$dev" > /dev/kmsg 2>&1
+	status=$?
+	[ "$status" -le 1 ] || { log "e2fsck -p returned $status, not mounted"; return 1; }
+	mount -t ext4 -o rw,nosuid,nodev,noatime "$dev" /data || { log "mount failed"; return 1; }
+	if [ "$(cat /data/.y2data-schema 2>/dev/null)" != 1 ]; then
+		log "schema is not 1, unmounted"
+		umount /data
+		return 1
+	fi
+	mkdir -p -m 0700 /data/music /data/reborn /data/system/platform
+	log "Y2DATA on $dev mounted at /data (e2fsck $status)"
+}
+
+case "$1" in
+	start)
+		printf 'Mounting Y2DATA: '
+		if mount_data; then
+			echo OK
+		else
+			echo "FAIL, RAM /data"
+			/etc/init.d/S90y1-reborn data
+		fi
+		;;
+	stop)
+		sync
+		grep -q ' /data ext4 ' /proc/mounts && { umount /data || mount -o remount,ro /data; }
+		;;
+esac
