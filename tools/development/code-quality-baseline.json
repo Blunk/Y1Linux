@@ -70,7 +70,7 @@
   "Y2Reborn/app/reborn/src/main_loop.rs::run": 545,
   "Y2Reborn/app/reborn/src/main_loop.rs::workers": 171,
   "Y2Reborn/app/reborn/src/playback/decode.rs::crossfade": 179,
-  "Y2Reborn/app/reborn/src/playback/decode.rs::play": 298,
+  "Y2Reborn/app/reborn/src/playback/decode.rs::play": 294,
   "Y2Reborn/app/reborn/src/playback/output.rs::wait_and_commands": 179,
   "Y2Reborn/app/reborn/src/runtime/effects.rs::effect_inner": 302,
   "Y2Reborn/app/reborn/src/runtime/platform.rs::poll_platform": 355,
