@@ -1,0 +1,19 @@
+--- a/drivers/usb/musb/musb_gadget.c
++++ b/drivers/usb/musb/musb_gadget.c
+@@ -1171,6 +1171,16 @@
+ 		txstate(musb, req);
+ 	} else {
+ 		csr = musb_readw(epio, MUSB_RXCSR);
++		/*
++		 * Innioasis Y1 (docs/planning/Y1-MTP-PLAN.md, X2): a packet that arrived before this request was queued
++		 * belongs to it. In PIO mode with the reader on another CPU that happens within microseconds of every
++		 * completed OUT request; flushing it dropped commands and data (MTP). Take it as the RX interrupt
++		 * would; flush only an empty FIFO.
++		 */
++		if (csr & MUSB_RXCSR_RXPKTRDY) {
++			rxstate(musb, req);
++			return;
++		}
+ 		csr |= MUSB_RXCSR_FLUSHFIFO | MUSB_RXCSR_P_WZC_BITS;
+ 		musb_writew(epio, MUSB_RXCSR, csr);
+ 		musb_writew(epio, MUSB_RXCSR, csr);
