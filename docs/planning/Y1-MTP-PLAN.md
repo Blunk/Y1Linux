@@ -175,3 +175,18 @@ SHA-256 identical on the PC, on the Y1 and after the round trip; three deletes O
 `refresh_generation` moved to 3 and Reborn rescanned by itself (3 tracks with the uploaded copy, 2 after the
 deletes). SSH and the serial shell (`sh` on `ttyGS0`, from `getty -n`) unaffected. **MTP uploads: fixed.** Open:
 the owner's file manager (M3/M4: cancel, unplug mid-copy, delete while playing, disk full).
+
+**Why the Y2 is not affected** (checked 2026-11-06): it was. The Y2 found the same mainline bug and fixed it on
+2026-10-05 (`ac34f82f`, `kernel/patches/0065-y2-musb-pio-progress.patch`: `musb_ep_start()` serves a freshly
+queued OUT request from a packet already in the FIFO instead of flushing it, the "late_pio" path; a restart after
+dequeue still flushes). The Y1 overlay set started with none of the Y2's patches and uses mainline's MediaTek glue,
+so the fix was not there. The two fixes are equivalent for this case (0035 flushes only an empty FIFO and writes
+nothing while a packet waits). The earlier explanation "the Y2 avoids it through DMA" was an unchecked inference
+and wrong.
+
+**0035 aligned with the Y2** (the owner's choice, 2026-11-06): `kernel/patches-y1/0035-musb-ep-start.patch` replaces
+the first form (`…-rx-restart-keeps-waiting-packet`, build 1): the Y2's `musb_ep_start()` (from its patch 0065,
+without the Y2's RX event counters), called from `musb_ep_restart_resume_work` for a freshly queued request:
+TX → `txstate`, RX → `rxstate` (serves a waiting packet, never flushes); `musb_ep_restart()` with its flush stays
+for the restarts after a halt (`musb_gadget_ep0.c`, `musb_gadget.c` set-halt), as on the Y2. Build
+`out/y1-twenty-seventh-boot-2`, BOOTIMG sha256 `e9b57b6de17949e7b9125cf32d11be013e0e011dfc6ec0798410da5eac9d8eb8`.
