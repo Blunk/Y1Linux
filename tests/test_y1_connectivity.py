@@ -82,22 +82,25 @@ class Y1ConnectivityFacts(unittest.TestCase):
         # No Y2 modem, Wi-Fi or SPM code in the Y1 driver.
         self.assertFalse(any(re.search(r'md\.c|wifi|domain\.h|spm', s) for s in added.values()))
 
-    def test_only_the_b4_tree_names_the_driver_and_only_with_the_chip_id_limit(self):
-        # B2 built it without a node; B4 admits the chip-id bring-up and nothing more (no PA rail).
+    def test_only_the_b4_and_b5_trees_name_the_driver_each_with_its_limit(self):
+        # B2 built it without a node; B4 admits the chip-id bring-up (no PA rail), B5 the wmt bring-up.
         compatible = re.search(r'compatible="([^"]+)"', (Y1 / 'core.c').read_text()).group(1)
         self.assertEqual(compatible, 'innioasis,y1-mt6572-connectivity')
         naming = [t.name for t in sorted((ROOT / 'kernel/dts').glob('*y1*')) if compatible in t.read_text()]
-        self.assertEqual(naming, ['innioasis-y1-thirty-second-boot.dts'])
-        tree = (ROOT / 'kernel/dts' / naming[0]).read_text()
-        node = tree[tree.index('connectivity@18070000 {'):]
-        node = node[:node.index('};')]
-        self.assertIn('innioasis,bring-up = "chip-id";', node)
-        self.assertNotIn('vcn33', tree)
-        for name in ('vcn18', 'vcn28'):
-            block = tree[tree.index(f'{name}: ldo_{name} {{'):]
-            block = block[:block.index('};')]
-            self.assertNotIn('always-on', block)
-            self.assertNotIn('boot-on', block)
+        limits = {'innioasis-y1-thirty-second-boot.dts': 'chip-id', 'innioasis-y1-thirty-third-boot.dts': 'wmt'}
+        self.assertEqual(naming, sorted(limits))
+        for name, limit in limits.items():
+            tree = (ROOT / 'kernel/dts' / name).read_text()
+            node = tree[tree.index('connectivity@18070000 {'):]
+            node = node[:node.index('};')]
+            self.assertIn(f'innioasis,bring-up = "{limit}";', node)
+            # The PA rails only from B5 on; no supply of the connectivity core ever always-on or boot-on.
+            self.assertEqual('vcn33' in tree, limit == 'wmt', name)
+            for rail in ('vcn18', 'vcn28') + (('vcn33_bt', 'vcn33_wifi') if limit == 'wmt' else ()):
+                block = tree[tree.index(f'{rail}: ldo_{rail} {{'):]
+                block = block[:block.index('};')]
+                self.assertNotIn('always-on', block)
+                self.assertNotIn('boot-on', block)
 
     def test_never_the_jtag_pads_or_gpio_modes(self):
         # B1 §0: stock writes 0x10208000/0x10005300 only behind its JTAG debug flag.
@@ -224,6 +227,8 @@ int main(void){
 ''' + POLICY + r'''
 #define Y2_CONN_FW "mediatek/mt6572/"
 #define GFP_KERNEL 0
+#define dev_err(...) ((void)0)
+#define dev_info(...) ((void)0)
 struct firmware {size_t size; const unsigned char *data;};
 struct y2_conn {void *dev;};
 static struct firmware blob; static unsigned char buffer[2048]; static unsigned released;
@@ -332,14 +337,127 @@ int main(void){
 
 
 # The B4 baseline (evidence-private/2026-11-06-y1-bt-b4/baseline.txt): CONN off, MD1 on from LK.
-BASELINE = {'ctl': 0x1112, 'status': 0x3ffd, 'sleep': 0x080000f9, 'protect': 0, 'protect_sta': 0xf000,
-            'pmic_512': 0, 'pmic_41c': 0}
+BASELINE = {'ctl': 0x1112, 'status': 0x3ffd, 'sleep': 0x080000f9, 'protect': 0, 'pmic_512': 0, 'pmic_41c': 0,
+            'pmic_416': 0x001c, 'pmic_418': 0}
 POWER_PATH = ('y2_conn_rail', 'step', 'domain_on', 'domain_off', 'sleep_wait', 'rails_off', 'power_off',
               'normalise', 'vcn18_on', 'vcn28_on', 'spm_clock', 'chip_id', 'stage', 'stages')
 
 
+def power_path(extra=()):
+    core = (Y1 / 'core.c').read_text().replace('int y2_conn_rail(', 'static int y2_conn_rail(')
+    return '\n'.join(function(core, name) for name in POWER_PATH + tuple(extra))
+
+
+# A register model of SPM, INFRA and the MT6323 seeded with the baseline; the driver's power path runs on it
+# unchanged. Rails: 0 VCN18 (0x512 bit 14), 1 VCN28 (0x41c bit 12), 2 VCN33_BT (0x416 bit 7), 3 VCN33_WIFI
+# (0x418 bit 12). The MCU window may be read only with the domain fully up.
+MODEL = r"""
+/* Each case uses a part of the model's helpers. */
+#pragma clang diagnostic ignored "-Wunused-function"
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <string.h>
+""" + POLICY + r"""
+#define BIT(n) (1u<<(n))
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define WRITE_ONCE(x,v) ((x)=(v))
+#define READ_ONCE(x) (x)
+static unsigned errors,warnings;
+static void dev_info(void *d,const char *f,...){(void)d;(void)f;}
+static void dev_err(void *d,const char *f,...){(void)d;(void)f;errors++;}
+static void dev_warn(void *d,const char *f,...){(void)d;(void)f;warnings++;}
+struct regmap {int which;}; struct clk {int unused;};
+struct regulator {unsigned reg,bit;}; struct regulator_bulk_data {const char *supply; struct regulator *consumer;};
+struct clk_bulk_data {const char *id; struct clk *clk;};
+struct y2_conn {
+ void *dev; struct regmap *pmic,*spm,*infracfg; struct regulator_bulk_data rails[4];
+ struct clk_bulk_data clocks[3]; bool rail_on[4],clock_on,powered,dma_active,abort,calibrated;
+ unsigned char *emi; char *mcu; unsigned chip,hvr,fvr,mode,calibration_size,calibration_status;
+ int failure,lifecycle; unsigned response_size; unsigned char response_data[256];
+};
+static struct regmap PMIC={0},SPM={1},INFRA={2};
+static unsigned ctl,sta,sleep_reg,protect,pmic[0x600],mcu_reads,mcu_value,events[64],nevents;
+static bool sleep_stuck,asleep,ack_missing,ack_missing_when_asleep;
+/* B5 run: once the core slept, 0x228 never acknowledged the protection (0xf000; B4: 0xf011). */
+static bool ack_withheld(void){return ack_missing || (ack_missing_when_asleep && !(sleep_reg&Y1_SPM_CONN_AWAKE));}
+enum {E_VCN18_LP,E_VCN18_ON,E_VCN28_HW,E_VCN28_ON,E_EMI,E_CLOCK,E_DOMAIN,E_CHIP,E_PROTECT,E_VCN18_OFF,
+      E_VCN28_OFF,E_BTIF,E_PA_ON,E_CALIBRATE,E_PA_OFF,E_SLEEP,E_BTIF_STOP};
+static void event(unsigned e){assert(nevents<64);events[nevents++]=e;}
+static bool domain_up(void){return (ctl&0xf)==0xd && !(ctl&0x12) && !protect;}
+static void model(void){
+ bool on=(ctl&(Y1_PWR_ON|Y1_PWR_ON_2ND))==(Y1_PWR_ON|Y1_PWR_ON_2ND);
+ sta=(sta&~2u)|(on?2u:0);
+ if(on && (ctl&1) && !asleep) sleep_reg|=sleep_stuck?Y1_SPM_CONN_AWAKE:0;
+ if(on && (ctl&1) && asleep) sleep_reg&=~Y1_SPM_CONN_AWAKE;
+ if(!on) sleep_reg&=~Y1_SPM_CONN_AWAKE;
+}
+static int regmap_read(struct regmap *m,unsigned reg,unsigned *v){
+ if(m==&SPM){assert(reg==0x280||reg==0x60c||reg==0x610||reg==0x3b4);
+  *v=reg==0x280?ctl:reg==0x3b4?sleep_reg:sta;}
+ else if(m==&INFRA){assert(reg==0x220||reg==0x228);*v=reg==0x220?protect:(0xf000|(ack_withheld()?0:protect));}
+ else {assert(reg==0x512||reg==0x41c);*v=pmic[reg];}
+ return 0;
+}
+static int regmap_write(struct regmap *m,unsigned reg,unsigned v){
+ assert(m==&SPM && reg==0 && v==0x0b160001);return 0;
+}
+static bool pmic_allowed(unsigned reg,unsigned mask);
+static int regmap_update_bits(struct regmap *m,unsigned reg,unsigned mask,unsigned v){
+ if(m==&SPM){assert(reg==0x280);ctl=(ctl&~mask)|v;model();return 0;}
+ if(m==&INFRA){assert(reg==0x220 && mask==0x11);protect=(protect&~mask)|v;if(v)event(E_PROTECT);return 0;}
+ assert(m==&PMIC && pmic_allowed(reg,mask));
+ pmic[reg]=(pmic[reg]&~mask)|v;
+ if(reg==0x512) event(E_VCN18_LP); else if(reg==0x41c && v) event(E_VCN28_HW);
+ return 0;
+}
+static int regmap_set_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,bits);}
+static int regmap_clear_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,0);}
+#define regmap_read_poll_timeout(m,reg,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; \
+ for(unsigned i_=0;i_<5;i_++){ regmap_read(m,reg,&(val)); if(cond){r_=0;break;} } r_; })
+static unsigned mcu_read(void){assert(domain_up());mcu_reads++;event(E_CHIP);return mcu_value;}
+#define readl_poll_timeout(addr,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; (void)(addr); \
+ for(unsigned i_=0;i_<10;i_++){ (val)=mcu_read(); if(cond){r_=0;break;} } r_; })
+static inline void udelay(unsigned us){(void)us;}
+static inline void msleep(unsigned ms){(void)ms;}
+static inline void usleep_range(unsigned a,unsigned b){(void)a;(void)b;}
+static void memset_io(void *p,int v,unsigned n){assert(n==Y1_CONN_EMI_SIZE && !v && p && !(ctl&1));event(E_EMI);}
+static bool clock_enabled;
+static int clk_prepare_enable(struct clk *c){(void)c;assert(!clock_enabled);clock_enabled=true;event(E_CLOCK);return 0;}
+static int regulator_enable(struct regulator *r){
+ pmic[r->reg]|=r->bit;
+ event(r->reg==0x512?E_VCN18_ON:r->reg==0x41c?E_VCN28_ON:E_PA_ON);return 0;
+}
+static int regulator_disable(struct regulator *r){
+ pmic[r->reg]&=~r->bit;
+ event(r->reg==0x512?E_VCN18_OFF:r->reg==0x41c?E_VCN28_OFF:E_PA_OFF);return 0;
+}
+static struct regulator vcn18={0x512,BIT(14)},vcn28={0x41c,BIT(12)},vcn33_bt={0x416,BIT(7)},vcn33_wifi={0x418,BIT(12)};
+static unsigned char emi[1];
+static void seed(struct y2_conn *c,unsigned start_ctl,unsigned chip,bool stuck,unsigned mode,bool pa){
+ ctl=start_ctl;sta=""" + str(BASELINE['status']) + r""";sleep_reg=""" + str(BASELINE['sleep']) + r""";
+ protect=""" + str(BASELINE['protect']) + r""";pmic[0x512]=0;pmic[0x41c]=0;
+ pmic[0x416]=""" + str(BASELINE['pmic_416']) + r""";pmic[0x418]=0;
+ if(start_ctl&1){sta|=2;protect=0;}
+ mcu_value=chip;sleep_stuck=stuck;asleep=false;errors=warnings=mcu_reads=nevents=0;clock_enabled=false;
+ memset(c,0,sizeof(*c));c->pmic=&PMIC;c->spm=&SPM;c->infracfg=&INFRA;c->emi=emi;c->mcu=(char *)emi;c->mode=mode;
+ c->rails[0].consumer=&vcn18;c->rails[1].consumer=&vcn28;
+ if(pa){c->rails[2].consumer=&vcn33_bt;c->rails[3].consumer=&vcn33_wifi;}
+}
+static void back_at_baseline(struct y2_conn *c){
+ /* The baseline control value and status; the bus protection now set, as stock leaves it. */
+ assert(ctl==""" + str(BASELINE['ctl']) + r""" && sta==""" + str(BASELINE['status']) + r""" && protect==0x11);
+ assert(pmic[0x512]==0 && pmic[0x41c]==0 && pmic[0x418]==0 && pmic[0x416]==""" + str(BASELINE['pmic_416']) + r""");
+ assert(!c->powered && !c->rail_on[0] && !c->rail_on[1] && !c->rail_on[2] && !c->rail_on[3]);
+ assert(!c->dma_active && c->clock_on);
+}
+static unsigned position(unsigned e){for(unsigned i=0;i<nevents;i++)if(events[i]==e)return i;assert(0);return 0;}
+static unsigned count(unsigned e){unsigned n=0;for(unsigned i=0;i<nevents;i++)n+=events[i]==e;return n;}
+"""
+
+
 class Y1ChipIdBringUp(unittest.TestCase):
-    def test_stage_lists(self):
+    def test_stage_lists_and_modes(self):
         run_c(r"""
 #include <assert.h>
 #include <string.h>
@@ -352,109 +470,33 @@ int main(void){
  assert(sizeof(y1_conn_full_stages)==sizeof(chip)+1 && !memcmp(y1_conn_full_stages,chip,7));
  assert(y1_conn_full_stages[7]==Y1_STAGE_BTIF && y1_conn_full_stages[8]==Y1_STAGE_WMT);
  for(unsigned i=0;i<sizeof(chip);i++) assert(chip[i]!=Y1_STAGE_BTIF && chip[i]!=Y1_STAGE_WMT);
+ assert(sizeof(y1_conn_stage_names)/sizeof(*y1_conn_stage_names)==Y1_STAGE_OFF+1);
+ assert(!strcmp(y1_conn_stage_names[Y1_STAGE_CHIP_ID],"chip-id") && !strcmp(y1_conn_stage_names[Y1_STAGE_OFF],"off"));
+ assert(y1_conn_mode("chip-id")==Y1_MODE_CHIP_ID && y1_conn_mode("wmt")==Y1_MODE_WMT);
+ assert(y1_conn_mode("")<0 && y1_conn_mode("wm")<0 && y1_conn_mode("wmt ")<0 && y1_conn_mode("full")<0);
 }
 """)
 
     def test_actual_power_path_from_the_b4_baseline(self):
-        core = (Y1 / 'core.c').read_text().replace('int y2_conn_rail(', 'static int y2_conn_rail(')
-        body = '\n'.join(function(core, name) for name in POWER_PATH)
-        b = BASELINE
-        run_c(r"""
-#include <assert.h>
-#include <errno.h>
-#include <stdbool.h>
-#include <string.h>
-""" + POLICY + r"""
-#define BIT(n) (1u<<(n))
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
-#define WRITE_ONCE(x,v) ((x)=(v))
-static unsigned errors,warnings;
-static void dev_info(void *d,const char *f,...){(void)d;(void)f;}
-static void dev_err(void *d,const char *f,...){(void)d;(void)f;errors++;}
-static void dev_warn(void *d,const char *f,...){(void)d;(void)f;warnings++;}
-struct regmap {int which;}; struct clk {int unused;};
-struct regulator {unsigned reg,bit;}; struct regulator_bulk_data {const char *supply; struct regulator *consumer;};
-struct clk_bulk_data {const char *id; struct clk *clk;};
-struct y2_conn {
- void *dev; struct regmap *pmic,*spm,*infracfg; struct regulator_bulk_data rails[4];
- struct clk_bulk_data clocks[3]; bool rail_on[4],clock_on,powered,dma_active;
- unsigned char *emi; char *mcu; unsigned chip; int failure;
-};
-static struct regmap PMIC={0},SPM={1},INFRA={2};
-static unsigned ctl,sta,sleep_reg,protect,pmic[0x600],mcu_reads,mcu_value,events[64],nevents;
-static bool sleep_stuck,emi_cleared,clock_enabled;
-enum {E_VCN18_LP,E_VCN18_ON,E_VCN28_HW,E_VCN28_ON,E_EMI,E_CLOCK,E_DOMAIN,E_CHIP,E_PROTECT,E_VCN18_OFF,E_VCN28_OFF};
-static void event(unsigned e){assert(nevents<64);events[nevents++]=e;}
-static bool domain_up(void){return (ctl&0xf)==0xd && !(ctl&0x12) && !protect;}
-static void model(void){
- bool on=(ctl&(Y1_PWR_ON|Y1_PWR_ON_2ND))==(Y1_PWR_ON|Y1_PWR_ON_2ND);
- sta=(sta&~2u)|(on?2u:0); if(on && (ctl&1)) sleep_reg|=sleep_stuck?Y1_SPM_CONN_AWAKE:0;
- if(!on) sleep_reg&=~Y1_SPM_CONN_AWAKE;
-}
-static int regmap_read(struct regmap *m,unsigned reg,unsigned *v){
- if(m==&SPM){assert(reg==0x280||reg==0x60c||reg==0x610||reg==0x3b4);
-  *v=reg==0x280?ctl:reg==0x3b4?sleep_reg:sta;}
- else if(m==&INFRA){assert(reg==0x220||reg==0x228);*v=reg==0x220?protect:(0xf000|protect);}
- else {assert(reg==0x512||reg==0x41c);*v=pmic[reg];}
- return 0;
-}
-static int regmap_write(struct regmap *m,unsigned reg,unsigned v){
- assert(m==&SPM && reg==0 && v==0x0b160001);return 0;
-}
-static int regmap_update_bits(struct regmap *m,unsigned reg,unsigned mask,unsigned v){
- if(m==&SPM){assert(reg==0x280);ctl=(ctl&~mask)|v;model();return 0;}
- if(m==&INFRA){assert(reg==0x220 && mask==0x11);protect=(protect&~mask)|v;if(v)event(E_PROTECT);return 0;}
- /* Only the two bits the chip-id bring-up owns; never a PA rail or the PMIC init subset. */
- assert(m==&PMIC && ((reg==0x512 && mask==Y1_PMIC_VCN18_LP) || (reg==0x41c && mask==Y1_PMIC_VCN28_HW_MODE)));
- pmic[reg]=(pmic[reg]&~mask)|v;
- if(reg==0x512) event(E_VCN18_LP); else if(v) event(E_VCN28_HW);
- return 0;
-}
-static int regmap_set_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,bits);}
-static int regmap_clear_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,0);}
-#define regmap_read_poll_timeout(m,reg,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; \
- for(unsigned i_=0;i_<5;i_++){ regmap_read(m,reg,&(val)); if(cond){r_=0;break;} } r_; })
-static unsigned mcu_read(void){assert(domain_up());mcu_reads++;event(E_CHIP);return mcu_value;}
-#define readl_poll_timeout(addr,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; (void)(addr); \
- for(unsigned i_=0;i_<10;i_++){ (val)=mcu_read(); if(cond){r_=0;break;} } r_; })
-static void udelay(unsigned us){(void)us;}
-static void usleep_range(unsigned a,unsigned b){(void)a;(void)b;}
-static void memset_io(void *p,int v,unsigned n){assert(n==Y1_CONN_EMI_SIZE && !v && !ctl_on_check(p));}
-static int clk_prepare_enable(struct clk *c){(void)c;assert(!clock_enabled);clock_enabled=true;event(E_CLOCK);return 0;}
-static int regulator_enable(struct regulator *r){
- assert(r->reg==0x512||r->reg==0x41c);pmic[r->reg]|=r->bit;event(r->reg==0x512?E_VCN18_ON:E_VCN28_ON);return 0;
-}
-static int regulator_disable(struct regulator *r){
- pmic[r->reg]&=~r->bit;event(r->reg==0x512?E_VCN18_OFF:E_VCN28_OFF);return 0;
+        run_c(MODEL + r"""
+/* Only the two bits the chip-id bring-up owns; never a PA rail or the PMIC init subset. */
+static bool pmic_allowed(unsigned reg,unsigned mask){
+ return (reg==0x512 && mask==Y1_PMIC_VCN18_LP) || (reg==0x41c && mask==Y1_PMIC_VCN28_HW_MODE);
 }
 static int y2_btif_stop(struct y2_conn *c){assert(!c->dma_active);return 0;}
 static void y2_stp_reset(struct y2_conn *c){(void)c;}
 static int y2_btif_abort(struct y2_conn *c){(void)c;assert(0);return 0;}
 static int y2_btif_start(struct y2_conn *c){(void)c;assert(0);return 0;}
 static int wmt(struct y2_conn *c){(void)c;assert(0);return 0;}
-""".replace('assert(n==Y1_CONN_EMI_SIZE && !v && !ctl_on_check(p));',
-            'assert(n==Y1_CONN_EMI_SIZE && !v && p && !(ctl&1));emi_cleared=true;event(E_EMI);') + body + r"""
-static struct regulator vcn18={0x512,BIT(14)},vcn28={0x41c,BIT(12)};
-static unsigned char emi[1];
-static int run(unsigned start_ctl,unsigned chip,bool stuck,struct y2_conn *c){
- ctl=start_ctl;sta=""" + str(b['status']) + r""";sleep_reg=""" + str(b['sleep']) + r""";protect=""" + str(b['protect']) + r""";
- pmic[0x512]=""" + str(b['pmic_512']) + r""";pmic[0x41c]=""" + str(b['pmic_41c']) + r""";
- if(start_ctl&1){sta|=2;protect=0;}
- mcu_value=chip;sleep_stuck=stuck;errors=warnings=mcu_reads=nevents=0;emi_cleared=clock_enabled=false;
- memset(c,0,sizeof(*c));c->pmic=&PMIC;c->spm=&SPM;c->infracfg=&INFRA;c->emi=emi;c->mcu=(char *)emi;
- c->rails[0].consumer=&vcn18;c->rails[1].consumer=&vcn28; /* rails 2 and 3 not acquired */
+""" + power_path() + r"""
+static int run(unsigned start,unsigned chip,bool stuck,struct y2_conn *c){
+ seed(c,start,chip,stuck,Y1_MODE_CHIP_ID,false);
  return stages(c,y1_conn_chip_id_stages,ARRAY_SIZE(y1_conn_chip_id_stages));
 }
-static void back_at_baseline(struct y2_conn *c){
- /* The baseline control value and status; the bus protection now set, as stock leaves it. */
- assert(ctl==""" + str(b['ctl']) + r""" && sta==""" + str(b['status']) + r""" && protect==0x11);
- assert(pmic[0x512]==""" + str(b['pmic_512']) + r""" && pmic[0x41c]==""" + str(b['pmic_41c']) + r""");
- assert(!c->powered && !c->rail_on[0] && !c->rail_on[1] && !c->dma_active && c->clock_on);
-}
-static unsigned position(unsigned e){for(unsigned i=0;i<nevents;i++)if(events[i]==e)return i;assert(0);return 0;}
 int main(void){
  struct y2_conn c;
- assert(!run(""" + str(b['ctl']) + r""",0x6572,false,&c) && c.chip==0x6572 && mcu_reads==1 && !errors && !warnings);
+ assert(!run(""" + str(BASELINE['ctl']) + r""",0x6572,false,&c) && c.chip==0x6572 && mcu_reads==1);
+ assert(!errors && !warnings);
  back_at_baseline(&c);
  /* Stock order: VCN18 (low power off, on), VCN28 (hardware mode, on), memory, SPM clock, domain, ID;
   * then protection, VCN18 off, VCN28 off. */
@@ -462,16 +504,190 @@ int main(void){
  assert(position(E_VCN28_HW)<position(E_VCN28_ON) && position(E_VCN28_ON)<position(E_EMI));
  assert(position(E_EMI)<position(E_CLOCK) && position(E_CLOCK)<position(E_CHIP));
  assert(position(E_CHIP)<position(E_PROTECT) && position(E_PROTECT)<position(E_VCN18_OFF));
- assert(position(E_VCN18_OFF)<position(E_VCN28_OFF));
+ assert(position(E_VCN18_OFF)<position(E_VCN28_OFF) && !count(E_PA_ON));
  /* No chip ID: still powered off cleanly; the timeout is the result. */
- assert(run(""" + str(b['ctl']) + r""",0,false,&c)==-ETIMEDOUT && mcu_reads==10 && c.chip==0);
+ assert(run(""" + str(BASELINE['ctl']) + r""",0,false,&c)==-ETIMEDOUT && mcu_reads==10 && c.chip==0);
  back_at_baseline(&c);
  /* A core that never sleeps: a warning, then isolation anyway. */
- assert(!run(""" + str(b['ctl']) + r""",0x6572,true,&c) && warnings==1);
+ assert(!run(""" + str(BASELINE['ctl']) + r""",0x6572,true,&c) && warnings==1);
  back_at_baseline(&c);
  /* CONN found on: taken down first (normalise), then the bring-up as usual. */
  assert(!run(0x110d,0x6572,false,&c) && warnings==1 && mcu_reads==1);
  back_at_baseline(&c);
+ /* The protection unacknowledged with the core asleep: logged, isolated, success (stock's WARN path). */
+ ack_missing_when_asleep=true;
+ assert(!run(""" + str(BASELINE['ctl']) + r""",0x6572,false,&c) && !errors);
+ back_at_baseline(&c);
+ /* Unacknowledged and the core never slept: isolated and switched off all the same, but an error. */
+ ack_missing_when_asleep=false;ack_missing=true;
+ assert(run(""" + str(BASELINE['ctl']) + r""",0x6572,true,&c)==-ETIMEDOUT && warnings==1 && errors);
+ back_at_baseline(&c);
+ ack_missing=false;
+}
+""")
+
+
+class Y1WmtBringUp(unittest.TestCase):
+    """B5: one attempt = the PMIC subset, the full stages (BTIF, WMT with the calibration), WMT sleep, OFF."""
+
+    def harness(self, main):
+        wmt_source = (Y1 / 'wmt.c').read_text()
+        run_c(MODEL + r"""
+/* The chip-id bits plus the PA rails' hardware-mode bits (0x416 bit 5, 0x418 bit 14), as the Y2. */
+static bool pmic_allowed(unsigned reg,unsigned mask){
+ return (reg==0x512 && mask==Y1_PMIC_VCN18_LP) || (reg==0x41c && mask==Y1_PMIC_VCN28_HW_MODE) ||
+  (reg==0x416 && mask==BIT(5)) || (reg==0x418 && mask==BIT(14));
+}
+static unsigned cal_size=600,fail_opcode,abort_at_opcode,pmic_prepared,wmt_commands[32],nwmt;
+static int wmt_error;
+static int y2_conn_rail(struct y2_conn *c,unsigned rail,bool enable);
+static int wmt(struct y2_conn *c);
+static void mutex_lock(int *m){assert(!*m);*m=1;}
+static void mutex_unlock(int *m){assert(*m);*m=0;}
+static int pmic_prepare_logged(struct y2_conn *c){(void)c;pmic_prepared++;return 0;}
+static void log_off_state(struct y2_conn *c,const char *mode){(void)c;(void)mode;}
+static int y2_btif_start(struct y2_conn *c){
+ assert(domain_up() && mcu_reads && !c->dma_active);c->dma_active=true;event(E_BTIF);return 0;
+}
+static int y2_btif_stop(struct y2_conn *c){if(c->dma_active)event(E_BTIF_STOP);c->dma_active=false;return 0;}
+static void y2_stp_reset(struct y2_conn *c){(void)c;}
+static int y2_btif_abort(struct y2_conn *c){(void)c;assert(0);return 0;}
+/* The WMT model: every command needs BTIF up and the domain on; the RF calibration needs both PA rails
+ * on (and only then); the reply length of the calibration is cal_size. */
+static int y2_conn_wmt(struct y2_conn *c,const unsigned char *r,unsigned n,const unsigned char *e,unsigned en){
+ (void)n;(void)e;(void)en;
+ assert(c->dma_active && domain_up() && nwmt<32);wmt_commands[nwmt++]=r[1];
+ if(r[1]==abort_at_opcode) c->abort=true;
+ if(c->abort) return -ECANCELED;
+ if(r[1]==fail_opcode) return wmt_error;
+ bool pa=(pmic[0x416]&BIT(7)) && (pmic[0x418]&BIT(12));
+ if(r[1]==0x14){assert(pa && c->rail_on[2] && c->rail_on[3]);event(E_CALIBRATE);
+  c->response_size=cal_size;c->response_data[0]=2;c->response_data[1]=0x14;c->response_data[4]=0;c->response_data[5]=1;}
+ else {assert(!pa && !(pmic[0x416]&BIT(7)) && !(pmic[0x418]&BIT(12)));c->response_size=en;}
+ if(r[1]==3){event(E_SLEEP);asleep=true;model();}
+ return 0;
+}
+""" + function(wmt_source, 'calibrate') + r"""
+static int y1_wmt_boot(struct y2_conn *c){
+ static const unsigned char version[]={1,8,16,0,2},patch[]={1,1,1,0,1},coex[]={1,0x10,2,0,1,1};
+ int ret=y2_conn_wmt(c,version,5,0,16);
+ if(!ret){c->chip=0x6572;c->hvr=0x8a00;c->fvr=0x8a00;ret=y2_conn_wmt(c,patch,5,0,5);}
+ if(!ret) ret=calibrate(c);
+ if(!ret) ret=y2_conn_wmt(c,coex,6,0,5);
+ return ret;
+}
+static int y1_wmt_sleep(struct y2_conn *c){static const unsigned char s[]={1,3,1,0,1};return y2_conn_wmt(c,s,5,0,6);}
+""" + power_path(('wmt', 'bring_up_wmt')) + r"""
+static bool attempt_awake; /* the core stays awake until a WMT sleep is accepted */
+static int attempt(struct y2_conn *c){
+ seed(c,""" + str(BASELINE['ctl']) + r""",0x6572,attempt_awake,Y1_MODE_WMT,true);nwmt=0;
+ return bring_up_wmt(c);
+}
+""" + main)
+
+    def test_order_pa_rails_only_for_the_calibration_and_sleep_before_off(self):
+        self.harness(r"""
+int main(void){
+ struct y2_conn c;
+ assert(!attempt(&c) && pmic_prepared==1 && !errors && !warnings);
+ back_at_baseline(&c);
+ assert(c.calibrated && c.calibration_size==600 && c.calibration_status==0x0001);
+ /* Power-on as B4, then BTIF, the WMT boot, the calibration inside its PA window, sleep, off. */
+ assert(position(E_CLOCK)<position(E_CHIP) && position(E_CHIP)<position(E_BTIF));
+ assert(position(E_BTIF)<position(E_PA_ON) && position(E_PA_ON)<position(E_CALIBRATE));
+ assert(count(E_PA_ON)==2 && count(E_PA_OFF)==2 && count(E_CALIBRATE)==1);
+ for(unsigned i=0;i<nevents;i++) if(events[i]==E_PA_OFF) assert(i>position(E_CALIBRATE) && i<position(E_SLEEP));
+ assert(position(E_SLEEP)<position(E_BTIF_STOP) && position(E_BTIF_STOP)<position(E_PROTECT));
+ assert(position(E_PROTECT)<position(E_VCN18_OFF) && position(E_VCN18_OFF)<position(E_VCN28_OFF));
+ static const unsigned opcodes[]={8,1,0x14,0x10,3};
+ assert(nwmt==5 && !memcmp(wmt_commands,opcodes,sizeof(opcodes)));
+ /* Any calibration length is taken; a retry runs again from the start. */
+ cal_size=6;assert(!attempt(&c) && c.calibration_size==6 && pmic_prepared==2);
+ back_at_baseline(&c);
+ /* The B5 run: after the accepted sleep 0x228 stays 0xf000; the attempt still succeeds. */
+ ack_missing_when_asleep=true;cal_size=630;
+ assert(!attempt(&c) && !errors && !warnings && c.calibration_size==630);
+ assert(position(E_SLEEP)<position(E_PROTECT));
+ back_at_baseline(&c);
+ /* A sleep refused: the 10 s wait expires; an unacknowledged protection is then an error, still off. */
+ fail_opcode=3;wmt_error=-EPROTO;ack_missing=true;attempt_awake=true;
+ assert(attempt(&c)==-ETIMEDOUT && warnings==1 && errors);
+ back_at_baseline(&c);
+}
+""")
+
+    def test_a_failed_step_or_an_abort_powers_off_and_stays_retryable(self):
+        self.harness(r"""
+int main(void){
+ struct y2_conn c;
+ /* A refused patch: power-off right away, no PA rail, no sleep command. */
+ fail_opcode=1;wmt_error=-EPROTO;
+ assert(attempt(&c)==-EPROTO && !count(E_PA_ON) && !count(E_SLEEP) && errors);
+ back_at_baseline(&c);
+ /* A refused calibration: both PA rails off again, then the power-off. */
+ fail_opcode=0x14;
+ assert(attempt(&c)==-EPROTO && count(E_PA_ON)==2 && count(E_PA_OFF)==2);
+ back_at_baseline(&c);
+ /* The abort during the calibration: rails off, no further command, power-off. */
+ fail_opcode=0;abort_at_opcode=0x14;
+ assert(attempt(&c)==-ECANCELED && count(E_PA_OFF)==2 && !count(E_SLEEP));
+ assert(wmt_commands[nwmt-1]==0x14);
+ back_at_baseline(&c);
+ /* An abort already pending stops before the first stage; a later attempt clears it. */
+ abort_at_opcode=0;seed(&c,""" + str(BASELINE['ctl']) + r""",0x6572,false,Y1_MODE_WMT,true);
+ c.abort=true;assert(stages(&c,y1_conn_full_stages,ARRAY_SIZE(y1_conn_full_stages))==-ECANCELED && !nevents);
+ assert(!attempt(&c) && !c.abort);
+ back_at_baseline(&c);
+}
+""")
+
+    def test_any_calibration_length_but_never_a_bad_status(self):
+        run_c('#include <assert.h>\n' + POLICY + r"""
+static unsigned char e[2048];
+static void make(unsigned n,unsigned char status,unsigned char op){
+ e[0]=2;e[1]=0x14;e[2]=(n-4)&0xff;e[3]=(n-4)>>8;e[4]=status;e[5]=op;
+}
+int main(void){
+ const unsigned sizes[]={6,64,256,257,630,1000,2048};
+ for(unsigned i=0;i<7;i++){make(sizes[i],0,1);assert(y1_conn_rf_result(e,sizes[i]));}
+ make(630,1,1);assert(!y1_conn_rf_result(e,630));
+ make(630,0,2);assert(!y1_conn_rf_result(e,630));
+ make(630,0,1);assert(!y1_conn_rf_result(e,629));
+ e[1]=0x10;assert(!y1_conn_rf_result(e,630));
+ make(5,0,1);assert(!y1_conn_rf_result(e,5));
+}
+""")
+
+    def test_btif_registers_only_after_its_clocks(self):
+        source = (ROOT / 'kernel/platform/connectivity/btif.c').read_text()
+        defines = '\n'.join(line for line in source.splitlines() if line.startswith('#define '))
+        body = defines + '\n' + function(source, 'init_dma') + function(
+            source.replace('int y2_btif_start(', 'static int y2_btif_start('), 'y2_btif_start')
+        run_c(r"""
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <string.h>
+#define Y2_CONN_DMA_SIZE 8192
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define WRITE_ONCE(x,v) ((x)=(v))
+#define lower_32_bits(x) ((unsigned)(x))
+#define __iomem
+typedef unsigned long dma_addr_t;
+struct clk_bulk_data {const char *id; void *clk;};
+struct y2_conn {struct clk_bulk_data clocks[3]; bool dma_active,transport_on; unsigned txptr,rxptr;
+ unsigned char txbuf[8192],rxbuf[8192]; dma_addr_t txaddr,rxaddr; char *btif,*txdma,*rxdma; int irq[4];};
+static bool clocks_on; static unsigned writes, irqs;
+static int clk_bulk_prepare_enable(int n,struct clk_bulk_data *c){
+ assert(n==2 && !strcmp(c[0].id,"btif") && !strcmp(c[1].id,"dma"));clocks_on=true;return 0;
+}
+static void writel(unsigned v,void *a){(void)v;(void)a;assert(clocks_on);writes++;}
+static void enable_irq(int irq){(void)irq;assert(clocks_on && writes);irqs++;}
+""" + body + r"""
+int main(void){
+ static struct y2_conn c={.clocks={{"spm",0},{"btif",0},{"dma",0}}};
+ static char window[3][256]; c.btif=window[0];c.txdma=window[1];c.rxdma=window[2];
+ assert(!y2_btif_start(&c) && c.dma_active && c.transport_on && writes>20 && irqs==4);
 }
 """)
 

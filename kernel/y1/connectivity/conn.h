@@ -18,6 +18,8 @@
 #include <linux/skbuff.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+/* The MT6572's calibration-event rule for the shared stp.c (y1-conn-policy.h). */
+#define Y2_CONN_RF_RESULT(c, p, size) y1_conn_rf_result(p, size)
 #include "protocol.h"
 #include "y1-conn-policy.h"
 
@@ -75,6 +77,9 @@ struct y2_conn {
 	unsigned char bt_address[6];
 	unsigned hci_needed;
 	unsigned char bt_factory[Y1_CONN_RECORD_SIZE];
+	/* Bring-up stages (B4/B5): the DT mode, a pending abort, the calibration event seen. */
+	unsigned mode, calibration_size, calibration_status;
+	bool abort;
 };
 int y2_btif_probe(struct platform_device *pdev, struct y2_conn *c);
 int y2_btif_start(struct y2_conn *c);
@@ -92,6 +97,7 @@ int y2_conn_put(struct y2_conn *c, unsigned function);
 int y2_conn_wmt(struct y2_conn *c, const unsigned char *request, unsigned size,
 	       const unsigned char *expected, unsigned expected_size);
 int y1_wmt_boot(struct y2_conn *c);
+int y1_wmt_sleep(struct y2_conn *c);
 int y2_wmt_function(struct y2_conn *c, unsigned function, bool enable);
 int y2_conn_rail(struct y2_conn *c, unsigned rail, bool enable);
 int y2_hci_register(struct y2_conn *c);
