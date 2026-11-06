@@ -40,6 +40,12 @@ static void switch_to_y2(void);
 #ifdef Y1_NINTH_BOOT
 static int root_ready; /* tentative; defined in y1-ninth-boot.h */
 static void prepare_root(void);
+#ifdef Y1_TWENTY_SECOND_BOOT
+static void usb_gadget_setup(void);
+#endif
+#ifdef Y1_TWENTY_THIRD_BOOT
+static void charge_gate(void);
+#endif
 static int root_shell_running(void);
 static int ninth_command(const char *line, const char *argument, long watchdog);
 #endif
@@ -469,6 +475,9 @@ static void third_boot(long watchdog)
     protect_disks();
     each_entry("/sys/bus/iio/devices", find_adc);
     each_entry("/sys/class/udc", find_udc);
+#ifdef Y1_TWENTY_SECOND_BOOT
+    usb_gadget_setup();
+#endif
     say(iio[0] ? "adc: " : "adc: MT6323 AUXADC not found\n");
     if (iio[0]) { say(iio); say("\n"); }
     say(udc[0] ? "usb: " : "usb: no device controller\n");
@@ -479,6 +488,9 @@ static void third_boot(long watchdog)
 #endif
 #ifdef Y1_NINTH_BOOT
     prepare_root();
+#endif
+#ifdef Y1_TWENTY_THIRD_BOOT
+    if (root_ready) charge_gate();
 #endif
 #ifdef Y1_TENTH_BOOT
     if (root_ready) switch_to_y2();
