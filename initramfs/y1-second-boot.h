@@ -230,7 +230,7 @@ static void locate_markers(long fd, long watchdog)
     say("\n");
 }
 
-static void show_disks(long watchdog)
+__attribute__((unused)) static void show_disks(long watchdog)
 {
     say("\nY1 SECOND BOOT: storage (read-only)\n");
     /* Physical eMMC offsets: the 2026-11-04 mtkclient dump is MediaTek's logical space, BOOT0, BOOT1 and
