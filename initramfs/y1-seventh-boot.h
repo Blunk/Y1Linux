@@ -21,7 +21,7 @@ static u32 to_pixel(u32 rgb, unsigned bpp)
     return ((rgb >> 8) & 0xf800) | ((rgb >> 5) & 0x07e0) | ((rgb >> 3) & 0x001f); /* RGB565 */
 }
 
-static void show_bars(long watchdog)
+__attribute__((unused)) static void show_bars(long watchdog)
 {
     u32 var[40], fix[20];
     long fd = call5(SYS_OPEN, (long)"/dev/fb0", O_RDWR, 0, 0, 0);

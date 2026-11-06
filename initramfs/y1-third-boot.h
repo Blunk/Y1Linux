@@ -46,6 +46,10 @@ static void usb_gadget_setup(void);
 #ifdef Y1_TWENTY_THIRD_BOOT
 static void charge_gate(void);
 #endif
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+static void console_to(const char *path);
+static void quiet_wait_disk(long watchdog);
+#endif
 static int root_shell_running(void);
 static int ninth_command(const char *line, const char *argument, long watchdog);
 #endif
@@ -360,7 +364,7 @@ static int contains(const char *haystack, long n, const char *word)
 }
 
 /* The kernel's USB, PHY and gadget lines, on screen: the shell is not there to ask when USB fails. */
-static void show_usb_log(long watchdog)
+__attribute__((unused)) static void show_usb_log(long watchdog)
 {
     static const char *const words[] = { "usb", "USB", "musb", "phy", "udc", "gadget", "ttyGS", "vusb" };
     char record[1024];
@@ -471,7 +475,11 @@ static void third_boot(long watchdog)
 #ifdef Y1_FOURTH_BOOT
     fourth_boot_setup();
 #endif
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    quiet_wait_disk(watchdog);
+#else
     show_disks(watchdog);
+#endif
     protect_disks();
     each_entry("/sys/bus/iio/devices", find_adc);
     each_entry("/sys/class/udc", find_udc);
@@ -482,9 +490,11 @@ static void third_boot(long watchdog)
     if (iio[0]) { say(iio); say("\n"); }
     say(udc[0] ? "usb: " : "usb: no device controller\n");
     if (udc[0]) { say(udc); say("\n"); }
+#ifndef Y1_TWENTY_EIGHTH_BOOT
     show_usb_log(watchdog);
 #ifdef Y1_SEVENTH_BOOT
     show_bars(watchdog);
+#endif
 #endif
 #ifdef Y1_NINTH_BOOT
     prepare_root();
@@ -494,6 +504,11 @@ static void third_boot(long watchdog)
 #endif
 #ifdef Y1_TENTH_BOOT
     if (root_ready) switch_to_y2();
+#endif
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    /* The Y2 system did not start: the screen gets PID1's text again. */
+    console_to("/dev/tty0");
+    say("Y1: the system did not start; PID1's log is on the serial console, its shell on USB\n");
 #endif
     for (unsigned i = 0; i < INPUT_NODES; ++i) {
         path[16] = (char)('0' + i);

@@ -74,6 +74,9 @@ static void set_brightness(const char *value)
 
 static void charge_power_off(const char *why)
 {
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    console_to("/dev/tty0");
+#endif
     put("charge: "); put(why); put(", powering off\n"); send(SCREEN | USB);
     sleep_seconds(3);
     call5(SYS_REBOOT, (long)0xfee1dead, 0x28121969, 0x4321fedc, 0, 0); /* LINUX_REBOOT_CMD_POWER_OFF */
@@ -97,6 +100,9 @@ static void charge_gate(void)
     long len = read_text(path, brightness, sizeof(brightness));
     if (len <= 0) copy(brightness, sizeof(brightness), "32", 0, 0);
     set_brightness("4");
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    console_to("/dev/tty0"); /* the charge-only mode talks on the screen */
+#endif
     put("charge: battery "); put_volts(uv); put(" on a charger: charge-only mode; hold the centre button 2 s to start\n");
     send(SCREEN | USB);
 
@@ -137,5 +143,8 @@ static void charge_gate(void)
     }
     for (unsigned i = 0; i < INPUT_NODES; ++i) if (keys[i] >= 0) call5(SYS_CLOSE, keys[i], 0, 0, 0, 0);
     set_brightness(brightness);
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    console_to("/dev/ttyS0");
+#endif
     put("charge: "); put_volts(uv); put(", starting the system\n"); send(SCREEN | USB);
 }

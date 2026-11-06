@@ -131,9 +131,15 @@ __attribute__((unused)) static long arm_watchdog(void)
 #ifdef Y1_TWENTY_THIRD_BOOT
 #include "y1-twenty-third-boot.h"
 #endif
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+#include "y1-twenty-eighth-boot.h"
+#endif
 
 static void observe(void)
 {
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+    console_to("/dev/ttyS0"); /* a quiet screen until the splash; the list carries the node */
+#endif
     say("\nY1 FIRST BOOT: Linux reached userspace on the Innioasis Y1.\n");
 #ifdef Y1_TENTH_BOOT
     /* Left to the kernel's boot handler, as on the Y2: the Y2's init never feeds it. */
