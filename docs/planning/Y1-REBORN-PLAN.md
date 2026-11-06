@@ -279,3 +279,20 @@ playback: `AUDTOP_CON5` `0x0014` (gain fields 0: **step 0**), `AUDTOP_CON6` `0xf
 the stream the stock power-down state (`0x37e2`) and Reborn's restore of `Master` to the earlier step 2; the
 speaker pin stayed off. **Sound in Reborn (headphones): PASS.** Open: the speaker (needs jack detection), start/stop
 pops, 48 kHz-family sources converted by Reborn (not yet heard).
+
+## 15. Power off from Reborn — 2026-11-06
+
+The owner asked for power-off from Reborn. Reborn (`baseline-220`) turns the player off from a Power hold
+(`crates/reborn-platform/src/input.rs`: Power is `KEY_POWER` from `mtk-pmic-keys` only; a long press at 650 ms
+starts `PowerHold`, `crates/reborn-ui/src/lib.rs` `POWER_HOLD` 1.2 s more → `Effect::PowerOff` through the power
+daemon); its Restart/Power Off rows are on a "service" page no menu links to. The Y1 has no Power key and every
+button already has a Reborn long press (Select's is the context menu). Design: the centre button (the PMIC power
+key, Select) held **3 s** is also Reborn's Power: overlay `0033-mtk-pmic-keys-label-hold.patch` (replaces
+`0033-…-label`; the label part unchanged) adds, with `innioasis,hold-power-ms`, a second input device named
+`mtk-pmic-keys` reporting `KEY_POWER` from a delayed work 3 s after a press until the release (cancelled by an
+earlier release). Total: about 4.9 s from the press to Reborn's turn-off; releasing earlier cancels. A release
+between 3.0 and 3.65 s is a short Power press for Reborn (screen off, or the platform's refused sleep request).
+Build `out/y1-thirtieth-boot-1` (the twenty-ninth plus the hold), BOOTIMG sha256
+`c62483c23d56a78f84e79a5a9f220d7777ced76a430a1843f120dabcf2fb9932`.
+**Run — PASS — 2026-11-06**: on battery, a centre hold of about 5 s in Reborn showed the turn-off ring and the player
+powered off; it came back with the usual hold (owner: "works").
