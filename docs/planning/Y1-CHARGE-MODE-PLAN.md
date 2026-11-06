@@ -106,3 +106,6 @@ charge-only mode**. The owner's 2 s hold started the system (Y2DATA mounted at 1
 no write-policy refusal. **Entry by the held button, charging and the exit: PASS.** Open: unplug in the mode
 (power-off), the automatic entry under 3.6 V (waits for a naturally low battery), C3 (the daemon's critical shutdown
 on a charger lands in the mode).
+
+**Unplug test** (build 2, the same day): charge-only mode entered by the held button, USB unplugged: the player
+**powered off**; switched on again with the centre button and plugged in, it started normally (`run3.txt`).

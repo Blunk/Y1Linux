@@ -57,6 +57,10 @@ static const struct override overrides[] = {
     { "/etc/y2linux/battery-profile.json", 0644 },
     { "/etc/y2linux/power-policy.json", 0644 },
 #endif
+#ifdef Y1_TWENTY_FIFTH_BOOT
+    /* MTP with one storage, /data/music (docs/planning/Y1-MTP-PLAN.md, M2). */
+    { "/etc/init.d/S45y1-mtp", 0755 },
+#endif
 };
 
 static int install_file(const char *path, unsigned mode)

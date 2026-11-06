@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-third) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-fifth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -162,6 +162,12 @@ VARIANTS['twenty-second'] = VARIANTS['twenty-first']
 
 # The charge-only mode (docs/planning/Y1-CHARGE-MODE-PLAN.md, C1): the twenty-first tree unchanged.
 VARIANTS['twenty-third'] = VARIANTS['twenty-first']
+
+# The configfs gadget retried with the charge-only mode (docs/planning/Y1-MTP-PLAN.md): the twenty-third tree.
+VARIANTS['twenty-fourth'] = VARIANTS['twenty-third']
+
+# MTP (docs/planning/Y1-MTP-PLAN.md, M2): the twenty-fourth tree unchanged.
+VARIANTS['twenty-fifth'] = VARIANTS['twenty-fourth']
 
 
 def empty_ramdisk():
