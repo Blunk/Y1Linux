@@ -103,10 +103,27 @@ static const unsigned char y1_conn_full_stages[] = {
 	Y1_STAGE_NORMALISE, Y1_STAGE_VCN18, Y1_STAGE_VCN28, Y1_STAGE_EMI_CLEAR, Y1_STAGE_SPM_CLOCK,
 	Y1_STAGE_DOMAIN_ON, Y1_STAGE_CHIP_ID, Y1_STAGE_BTIF, Y1_STAGE_WMT,
 };
+static const char *const y1_conn_stage_names[] = {
+	"normalise", "vcn18", "vcn28", "emi-clear", "spm-clock", "domain-on", "chip-id", "btif", "wmt", "off",
+};
 static const unsigned char y1_conn_chip_id_stages[] = {
 	Y1_STAGE_NORMALISE, Y1_STAGE_VCN18, Y1_STAGE_VCN28, Y1_STAGE_EMI_CLEAR, Y1_STAGE_SPM_CLOCK,
 	Y1_STAGE_DOMAIN_ON, Y1_STAGE_CHIP_ID, Y1_STAGE_OFF,
 };
+/* DT "innioasis,bring-up": absent = the full driver; "chip-id" = B4 at probe; "wmt" = B5, one
+ * attempt per write to the bring_up attribute: the full stages, WMT sleep, then OFF. */
+enum y1_conn_mode { Y1_MODE_FULL, Y1_MODE_CHIP_ID, Y1_MODE_WMT };
+static inline int y1_conn_mode(const char *name)
+{
+	static const char *const names[] = {"chip-id", "wmt"};
+	for (unsigned i = 0; i < 2; i++) {
+		const char *a = name, *b = names[i];
+		while (*a && *a == *b) { a++; b++; }
+		if (!*a && !*b) return Y1_MODE_CHIP_ID + i;
+	}
+	return -1;
+}
+
 /* MT6323: VCN_1V8 low-power bit (0x512 bit 1, cleared before the enable at bit 14) and VCN28's
  * hardware (SRCLKEN) mode (0x41c bit 14, set before the enable at bit 12: the TCXO path). */
 #define Y1_PMIC_VCN18_CON 0x512
@@ -167,4 +184,19 @@ static inline int y1_conn_record_check(const unsigned char *record, unsigned siz
 	for (unsigned i = 0; i < 32; i++) same |= digest[i] ^ generic[i];
 	return any && same ? 0 : -1;
 }
+/*
+ * The RF calibration event (WMT 01 14 01 00 01). The MT6582's is 630 bytes; the MT6572's length is
+ * not known before B5, so any length is accepted when it is a well-formed calibration event: type 2,
+ * opcode 0x14, its inner length matching, status 0 and operation 1 (stock checks nothing). Only the
+ * first six bytes are ever kept; the length and the status are logged, the results never.
+ */
+static inline int y1_conn_rf_result(const unsigned char *p, unsigned size)
+{
+	return size >= 6 && p[0] == 2 && p[1] == 0x14 && (unsigned)(p[2] | p[3] << 8) == size - 4 &&
+		!p[4] && p[5] == 1;
+}
+/* WMT sleep (stock STP-PSM g_wmt_sleep_cmd/event, INFERRED until B5 observes the reply): the radio
+ * core then signals sleep on SPM 0x100063b4 bit 11 and the power-off's wait ends at once. */
+static const unsigned char y1_conn_wmt_sleep[] = {1, 3, 1, 0, 1};
+static const unsigned char y1_conn_wmt_sleep_reply[] = {2, 3, 2, 0, 0, 1};
 #endif

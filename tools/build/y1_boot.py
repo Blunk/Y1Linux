@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-second) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-third) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -215,6 +215,22 @@ VARIANTS['thirty-second'] = dict(
     ],
     forbidden=VARIANTS['thirty-first'].get('forbidden', []) + ['vcn33', 'regulator-boot-on'],
     regulators=VARIANTS['thirty-first']['regulators'] + ['regulator-name = "vcn18";', 'regulator-name = "vcn28";'])
+
+# Bluetooth B5: the "wmt" bring-up (started from userspace), the PA supplies at 3.3 V (on for the RF calibration
+# only) and the firmware path on Y2DATA.
+VARIANTS['thirty-third'] = dict(
+    VARIANTS['thirty-second'],
+    expected=[line for line in VARIANTS['thirty-second']['expected'] if 'chip-id' not in line] + [
+        'innioasis,bring-up = "wmt";',
+        'firmware_class.path=/data/firmware',
+        'regulator-name = "vcn33-bt";',
+        'regulator-name = "vcn33-wifi";',
+        'regulator-min-microvolt = <0x325aa0>;',
+        'regulator-max-microvolt = <0x325aa0>;',
+    ],
+    forbidden=[t for t in VARIANTS['thirty-second']['forbidden'] if t != 'vcn33'] + ['chip-id'],
+    regulators=VARIANTS['thirty-second']['regulators'] + ['regulator-name = "vcn33-bt";',
+                                                          'regulator-name = "vcn33-wifi";'])
 
 
 def empty_ramdisk():

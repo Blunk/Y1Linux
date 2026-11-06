@@ -18,6 +18,7 @@ int y2_conn_wmt(struct y2_conn *c, const unsigned char *request, unsigned size,
 	int ret;
 	if (size < 5 || request[0] != 1 || y2_conn_le16(request + 2) != size - 4)
 		return -EINVAL;
+	if (READ_ONCE(c->abort)) return -ECANCELED; /* a B5 abort between two commands */
 	mutex_lock(&c->command);
 	reinit_completion(&c->response); c->response_size = 0;
 	WRITE_ONCE(c->wmt_reg_read,request[1]==8 && request[4]==2 && expected_size==16);
@@ -33,7 +34,7 @@ int y2_conn_wmt(struct y2_conn *c, const unsigned char *request, unsigned size,
 	}
 	if (c->failure) { ret = c->failure; goto out; }
 	if (c->wmt_rf_calibrate &&
-	    y2_wmt_rf_result(c->chip, c->hvr, c->fvr, c->response_data, c->response_size))
+	    y1_conn_rf_result(c->response_data, c->response_size))
 		goto out;
 	if (c->response_size != expected_size || c->response_data[1] != request[1] ||
 	    c->response_data[4] || (expected && memcmp(c->response_data, expected, expected_size)))
@@ -43,6 +44,9 @@ out:
 		"WMT opcode=%02x parameter=%02x failed: %d mode=%s request=%u response=%u expected=%u prefix=%*ph\n",
 		request[1], request[4], ret, c->full_stp ? "full" : "mandatory",
 		size, c->response_size, expected_size, min(c->response_size, 6U), c->response_data);
+	/* B5 observes every command but the patch fragments (patch() summarises those). */
+	else if (request[1] != 1) dev_info(c->dev, "WMT opcode=%02x parameter=%02x ok: event %u bytes\n",
+					   request[1], request[4], c->response_size);
 	WRITE_ONCE(c->wmt_reg_read,false);
 	WRITE_ONCE(c->wmt_rf_calibrate,false);
 	mutex_unlock(&c->command);
@@ -69,7 +73,7 @@ static int patch(struct y2_conn *c, const char *name)
 	static const unsigned char patch_reply[] = {2,1,1,0,0};
 	static const unsigned char reset[] = {1,7,1,0,4}, reset_reply[] = {2,7,1,0,0};
 	int ret = y2_conn_request_firmware(c->dev, name, &fw);
-	if (ret) return ret;
+	if (ret) { dev_err(c->dev, "WMT patch unavailable: %d\n", ret); return ret; }
 	if (y1_conn_patch_header(fw->data, fw->size, c->fvr, wire)) {
 		ret = -ENOEXEC; goto out;
 	}
@@ -86,7 +90,8 @@ static int patch(struct y2_conn *c, const char *name)
 		at += count;
 	}
 	if (!ret) ret = y2_conn_wmt(c, reset, sizeof(reset), reset_reply, sizeof(reset_reply));
-	if (!ret) dev_info(c->dev, "WMT patch applied and reset acknowledged\n");
+	if (!ret) dev_info(c->dev, "WMT patch: %zu bytes, %zu fragments, address %4ph; reset acknowledged\n",
+			   fw->size, (fw->size - Y1_CONN_PATCH_PAYLOAD + 999) / 1000, wire);
 out:
 	if (ret) dev_err(c->dev, "WMT patch failed: %d\n", ret);
 	release_firmware(fw);
@@ -97,7 +102,7 @@ static int board_config(struct y2_conn *c)
 	const struct firmware *fw;
 	char *text, *cursor, *line; unsigned seen = 0; int ret;
 	ret = y2_conn_request_firmware(c->dev, Y2_CONN_FW "WMT_SOC.cfg", &fw);
-	if (ret) return ret;
+	if (ret) { dev_err(c->dev, "WMT_SOC.cfg unavailable: %d\n", ret); return ret; }
 	if (!fw->size || fw->size > 1024 || memchr(fw->data, 0, fw->size)) { ret = -EINVAL; goto out; }
 	text = kmemdup_nul(fw->data, fw->size, GFP_KERNEL);
 	if (!text) { ret = -ENOMEM; goto out; }
@@ -114,21 +119,31 @@ static int board_config(struct y2_conn *c)
 	kfree(text);
 out:
 	release_firmware(fw);
+	if (ret) dev_err(c->dev, "WMT_SOC.cfg rejected: %d\n", ret);
+	else dev_info(c->dev, "WMT_SOC.cfg: the Y1 key set\n");
 	return ret;
 }
-/* RF calibration with both PA rails on, as stock (wmt_core_ctrl 23). Unlike stock, the event
- * is checked: the MT6572's full result size is not yet observed (B5), so only the six-byte
- * success event passes and a longer one fails in STP (y2_wmt_rf_result is the MT6582's). */
+/* RF calibration with both PA rails on for its duration only, as stock (wmt_core_ctrl 23). Any
+ * event length passes when the event is well formed with status 0 (y1_conn_rf_result: the MT6572's
+ * length is first seen in B5); stock checks nothing. Length and status are logged, never results. */
 static int calibrate(struct y2_conn *c)
 {
 	static const unsigned char request[] = {1,0x14,1,0,1}, reply[] = {2,0x14,2,0,0,1};
 	int ret = y2_conn_rail(c, 2, true);
 	if (!ret) ret = y2_conn_rail(c, 3, true);
-	if (!ret) ret = y2_conn_wmt(c, request, sizeof(request), reply, sizeof(reply));
-	if (!ret) dev_info(c->dev, "WMT RF calibration succeeded: event=%u bytes\n", c->response_size);
+	if (!ret) dev_info(c->dev, "WMT RF calibration: VCN33_BT and VCN33_WIFI on\n");
+	if (!ret) {
+		ret = y2_conn_wmt(c, request, sizeof(request), reply, sizeof(reply));
+		c->calibration_size = c->response_size;
+		c->calibration_status = c->response_size >= 6 ?
+			c->response_data[4] << 8 | c->response_data[5] : 0xffff;
+		dev_info(c->dev, "WMT RF calibration: event %u bytes, status %02x operation %02x: %d\n",
+			 c->calibration_size, c->calibration_status >> 8, c->calibration_status & 0xff, ret);
+	}
 	int wifi_off = y2_conn_rail(c, 3, false), bt_off = y2_conn_rail(c, 2, false);
 	if (!ret) ret = wifi_off ? wifi_off : bt_off;
 	if (!ret) c->calibrated = true;
+	dev_info(c->dev, "WMT RF calibration: PA rails off (%d, %d)\n", wifi_off, bt_off);
 	return ret;
 }
 int y1_wmt_boot(struct y2_conn *c)
@@ -161,6 +176,13 @@ int y1_wmt_boot(struct y2_conn *c)
 	 * configures only the unused FM interface; added in B5 if the firmware needs it). */
 	if (!ret) ret = y2_conn_wmt(c, coex, sizeof(coex), coex_reply, sizeof(coex_reply));
 	return ret;
+}
+/* Before the B5 power-off: the radio core goes to sleep, so the SPM sleep wait ends. A refused or
+ * missing reply is logged and the power-off isolates anyway (stock's wait then times out). */
+int y1_wmt_sleep(struct y2_conn *c)
+{
+	return y2_conn_wmt(c, y1_conn_wmt_sleep, sizeof(y1_conn_wmt_sleep), y1_conn_wmt_sleep_reply,
+			   sizeof(y1_conn_wmt_sleep_reply));
 }
 int y2_wmt_function(struct y2_conn *c, unsigned function, bool enable)
 {

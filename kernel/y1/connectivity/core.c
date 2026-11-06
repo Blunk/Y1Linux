@@ -41,8 +41,10 @@ int y2_conn_rail(struct y2_conn *c, unsigned rail, bool enable)
 }
 static int pmic_prepare(struct y2_conn *c)
 {
-	/* Stock MT6572 PMIC_INIT_SETTING_V1 carries the Y2's connectivity subset (B1 §1.3).
-	 * Whether LK already applied it is a B4 read; writing it again is idempotent. */
+	/* Stock MT6572 PMIC_INIT_SETTING_V1 (0xc03da084) carries the Y2's connectivity subset (B1 §1.3);
+	 * LK leaves it unapplied (B4 baseline). Stock applies it once in its PMIC init (call 0xc03da760)
+	 * and goes straight on (PMIC_EINT_SETTING at 0xc03da774): no settle. Probe applies it here the
+	 * same way, long before the first power-on; the Y2's 5 s wait is not carried over (B5 fix). */
 	static const unsigned fields[][3] = {
 		{0x102,BIT(6),BIT(6)}, {0x102,BIT(11),0}, {0x102,BIT(15),BIT(15)},
 		{0x120,BIT(4),BIT(4)}, {0x120,BIT(5),BIT(5)},
@@ -55,7 +57,7 @@ static int pmic_prepare(struct y2_conn *c)
 		ret=regmap_update_bits(c->pmic,fields[i][0],fields[i][1],fields[i][2]);
 		if (ret) return ret;
 	}
-	msleep(5000); c->pmic_ready = true;
+	c->pmic_ready = true;
 	return 0;
 }
 static int step(struct y2_conn *c, const struct y1_conn_step *s)
@@ -91,11 +93,26 @@ static int domain_on(struct y2_conn *c)
 }
 /* Every step even after a missing acknowledgement, as stock (WARN and go on): isolation and the
  * switches off are better than a half-on domain. The first error is still reported. */
-static int domain_off(struct y2_conn *c)
+/* Stock spm_mtcmos_ctrl_general_locked (0xc00407c4-0xc004080c): protection set, the 0x228
+ * acknowledgement polled until jiffies+10, and on a timeout a WARN (0xc0040b28) and the isolation
+ * anyway. After the sleep handshake the sleeping core does not acknowledge (B5 run: 0x228 stays
+ * 0xf000; B4, never asleep: 0xf011). The core asleep (SPM 0x100063b4 bit 11 clear) and BTIF/DMA
+ * stopped are the idle guarantee there, so that timeout is logged, not an error. Without the
+ * handshake a missing acknowledgement stays an error (the isolation still goes on, as stock). */
+static int domain_off(struct y2_conn *c, bool asleep)
 {
 	int first = 0;
 	for (unsigned i = 0; i < ARRAY_SIZE(y1_conn_domain_off); i++) {
-		int ret = step(c, y1_conn_domain_off + i);
+		const struct y1_conn_step *s = y1_conn_domain_off + i;
+		int ret = step(c, s);
+		if (s->op == Y1_INFRA_POLL_SET) {
+			unsigned ack = 0;
+			regmap_read(c->infracfg, Y1_INFRA_BUS_PROT_STA, &ack);
+			dev_info(c->dev, "CONN bus protection: 0x228=%#x, %s%s\n", ack,
+				 ret ? "not acknowledged" : "acknowledged",
+				 ret && asleep ? " (core asleep: continuing, as stock)" : "");
+			if (ret && asleep) ret = 0;
+		}
 		if (ret) {
 			dev_err(c->dev, "CONN off step %u (reg %#x) failed: %d\n",
 				i, y1_conn_domain_off[i].reg, ret);
@@ -106,12 +123,15 @@ static int domain_off(struct y2_conn *c)
 }
 /* Stock waits up to 10 s for the radio core to sleep before conn_power_off; a core that never
  * sleeps is still isolated, as stock does after its wait. */
-static void sleep_wait(struct y2_conn *c)
+static bool sleep_wait(struct y2_conn *c)
 {
 	unsigned value;
 	if (regmap_read_poll_timeout(c->spm, Y1_SPM_SLEEP_STATUS, value, !(value & Y1_SPM_CONN_AWAKE),
-				     100000, 10000000))
+				     100000, 10000000)) {
 		dev_warn(c->dev, "CONN did not sleep within 10 s; isolating\n");
+		return false;
+	}
+	return true;
 }
 static int rails_off(struct y2_conn *c)
 {
@@ -137,8 +157,7 @@ static int power_off(struct y2_conn *c)
 	stop_error = y2_btif_stop(c);
 	y2_stp_reset(c);
 	if (c->powered) {
-		sleep_wait(c);
-		domain_error = domain_off(c);
+		domain_error = domain_off(c, sleep_wait(c));
 		/* The DMA channel reset needs both power-off acknowledgements (y2_btif_abort). */
 		if (domain_error && c->dma_active) return domain_error;
 		c->powered = false;
@@ -163,7 +182,7 @@ static int normalise(struct y2_conn *c)
 	if (!(control & (Y1_PWR_ON | Y1_PWR_ON_2ND | Y1_PWR_RST_B)) && !(status & Y1_SPM_CONN_STATUS))
 		return 0;
 	dev_warn(c->dev, "CONN found on (%#x); powering it off first\n", control);
-	return domain_off(c);
+	return domain_off(c, false);
 }
 /* Stock order per rail: VCN_1V8 out of low power, then on; VCN28 under SRCLKEN, then on. */
 static int vcn18_on(struct y2_conn *c)
@@ -225,10 +244,15 @@ static int stage(struct y2_conn *c, enum y1_conn_stage s)
 static int stages(struct y2_conn *c, const unsigned char *list, unsigned count)
 {
 	for (unsigned i = 0; i < count; i++) {
-		int ret = stage(c, list[i]);
+		/* A bring-up abort (power_off attribute) ends the attempt between stages. */
+		int ret = READ_ONCE(c->abort) ? -ECANCELED : 0;
+		if (!ret && c->mode != Y1_MODE_FULL)
+			dev_info(c->dev, "stage %s\n", y1_conn_stage_names[list[i]]);
+		if (!ret) ret = stage(c, list[i]);
 		if (ret) {
 			int stopped = list[i] == Y1_STAGE_OFF ? 0 : power_off(c);
-			dev_err(c->dev, "connectivity stage %u failed: %d (power-off %d)\n", list[i], ret, stopped);
+			dev_err(c->dev, "connectivity stage %s failed: %d (power-off %d)\n",
+				y1_conn_stage_names[list[i]], ret, stopped);
 			return ret;
 		}
 	}
@@ -400,9 +424,9 @@ static ssize_t activate_store(struct device *dev, struct device_attribute *attr,
 static ssize_t status_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct y2_conn *c=dev_get_drvdata(dev);
-	return sysfs_emit(buf,"activated=%u powered=%u functions=%#x calibrated=%u chip=%04x hvr=%04x fvr=%04x error=%d transport_errors=%u recoveries=%u\n",
+	return sysfs_emit(buf,"activated=%u powered=%u functions=%#x calibrated=%u chip=%04x hvr=%04x fvr=%04x error=%d transport_errors=%u recoveries=%u calibration=%u status=%04x\n",
 		c->activated,c->powered,c->functions,c->calibrated,c->chip,c->hvr,c->fvr,
-		c->failure,c->transport_errors,c->recoveries);
+		c->failure,c->transport_errors,c->recoveries,c->calibration_size,c->calibration_status);
 }
 static ssize_t boot_retries_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -432,6 +456,7 @@ static int suspend(struct device *dev)
 {
 	struct y2_conn *c=dev_get_drvdata(dev);
 	if (READ_ONCE(c->functions) || READ_ONCE(c->recovering)) return -EBUSY;
+	if (c->mode!=Y1_MODE_FULL) return READ_ONCE(c->powered) ? -EBUSY : 0;
 	return pm_runtime_force_suspend(dev);
 }
 static const struct dev_pm_ops pm={
@@ -494,52 +519,133 @@ static int probe_suppliers(struct y2_conn *c, bool chip_id_only)
 }
 /* B4 (docs/planning/Y1-BLUETOOTH-PLAN.md): power on to the chip ID, log it, power off, and stay
  * unbound (-ENODEV: nothing held, nothing registered). A missing ID still powers off first. */
-static int bring_up_chip_id(struct y2_conn *c)
+/* SPM and INFRA only (always clocked): never the radio core's or BTIF's windows. */
+static void log_off_state(struct y2_conn *c, const char *mode)
 {
 	unsigned control, status, sleep, bus;
-	int ret;
-	dev_info(c->dev, "bring-up chip-id: CONN on, chip ID, CONN off\n");
-	ret = stages(c, y1_conn_chip_id_stages, ARRAY_SIZE(y1_conn_chip_id_stages));
 	if (!regmap_read(c->spm, Y1_SPM_CONN_PWR_CON, &control) &&
 	    !regmap_read(c->spm, Y1_SPM_PWR_STATUS, &status) &&
 	    !regmap_read(c->spm, Y1_SPM_SLEEP_STATUS, &sleep) &&
 	    !regmap_read(c->infracfg, Y1_INFRA_BUS_PROT, &bus))
-		dev_info(c->dev, "bring-up chip-id: off: ctl=%#x status=%#x sleep=%#x protect=%#x\n",
-			 control, status, sleep, bus);
+		dev_info(c->dev, "bring-up %s: off: ctl=%#x status=%#x sleep=%#x protect=%#x\n",
+			 mode, control, status, sleep, bus);
+}
+static int bring_up_chip_id(struct y2_conn *c)
+{
+	int ret;
+	dev_info(c->dev, "bring-up chip-id: CONN on, chip ID, CONN off\n");
+	ret = stages(c, y1_conn_chip_id_stages, ARRAY_SIZE(y1_conn_chip_id_stages));
+	log_off_state(c, "chip-id");
 	if (ret) return ret;
 	dev_info(c->dev, "bring-up chip-id: done, chip=%04x; HVR/FVR need WMT (B5)\n", c->chip);
 	return -ENODEV;
 }
-/* "innioasis,bring-up" limits the driver to an admitted stage; absent = the full driver. */
-static int bring_up_mode(struct device_node *node, bool *chip_id_only)
+/* The PMIC init subset (stock PMIC_INIT_SETTING_V1, the Y2's pmic_prepare), logged around it:
+ * LK leaves it unapplied (B4 baseline 0x102=0003 0x120=0001 0x148=0004 0x402=8400). */
+static int pmic_prepare_logged(struct y2_conn *c)
 {
-	const char *mode;
-	*chip_id_only = false;
-	if (of_property_read_string(node, "innioasis,bring-up", &mode)) return 0;
-	if (strcmp(mode, "chip-id")) return -EINVAL;
-	*chip_id_only = true;
+	static const unsigned regs[] = {0x102, 0x120, 0x148, 0x402};
+	unsigned before[4], after[4];
+	int ret;
+	if (c->pmic_ready) return 0;
+	for (unsigned i = 0; i < 4; i++) if (regmap_read(c->pmic, regs[i], before + i)) before[i] = ~0u;
+	ret = pmic_prepare(c);
+	for (unsigned i = 0; i < 4; i++) if (regmap_read(c->pmic, regs[i], after + i)) after[i] = ~0u;
+	dev_info(c->dev, "PMIC init subset %d: 0x102 %04x->%04x 0x120 %04x->%04x 0x148 %04x->%04x 0x402 %04x->%04x\n",
+		 ret, before[0], after[0], before[1], after[1], before[2], after[2], before[3], after[3]);
+	return ret;
+}
+/* B5 (docs/planning/Y1-BLUETOOTH-PLAN.md): one attempt per write to bring_up. The full power-on
+ * with BTIF and the WMT boot (patch, RF calibration, coexistence), then WMT sleep and the power-off;
+ * no HCI device, no address, no modem. A failed stage has already powered off; the device stays bound
+ * for the next attempt. */
+static int bring_up_wmt(struct y2_conn *c)
+{
+	int ret;
+	mutex_lock(&c->lifecycle);
+	if (c->powered || c->dma_active) { mutex_unlock(&c->lifecycle); return -EBUSY; }
+	WRITE_ONCE(c->abort, false); WRITE_ONCE(c->failure, 0);
+	c->calibrated = false; c->calibration_size = c->calibration_status = 0;
+	c->chip = c->hvr = c->fvr = 0;
+	dev_info(c->dev, "bring-up wmt: attempt\n");
+	ret = pmic_prepare_logged(c);
+	if (!ret) ret = stages(c, y1_conn_full_stages, ARRAY_SIZE(y1_conn_full_stages));
+	if (!ret) {
+		int sleep = READ_ONCE(c->abort) ? -ECANCELED : y1_wmt_sleep(c);
+		dev_info(c->dev, "bring-up wmt: WMT sleep %d\n", sleep);
+		ret = stage(c, Y1_STAGE_OFF);
+	}
+	log_off_state(c, "wmt");
+	dev_info(c->dev, "bring-up wmt: %s %d: chip=%04x HVR=%04x FVR=%04x calibration=%u bytes status=%04x\n",
+		 ret ? "failed" : "done", ret, c->chip, c->hvr, c->fvr, c->calibration_size,
+		 c->calibration_status);
+	mutex_unlock(&c->lifecycle);
+	return ret;
+}
+static ssize_t bring_up_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t n)
+{
+	struct y2_conn *c=dev_get_drvdata(dev); bool value; int ret;
+	if (kstrtobool(buf,&value) || !value) return -EINVAL;
+	ret=bring_up_wmt(c);
+	return ret ? ret : n;
+}
+/* The abort: ends a running attempt (its WMT wait returns at once) and powers off. */
+static ssize_t power_off_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t n)
+{
+	struct y2_conn *c=dev_get_drvdata(dev); bool value; int ret;
+	if (kstrtobool(buf,&value) || !value) return -EINVAL;
+	WRITE_ONCE(c->abort, true);
+	y2_conn_failed(c, -ECANCELED);
+	mutex_lock(&c->lifecycle);
+	ret=power_off(c);
+	mutex_unlock(&c->lifecycle);
+	dev_info(dev, "bring-up wmt: power-off on request: %d\n", ret);
+	return ret ? ret : n;
+}
+static DEVICE_ATTR_WO(bring_up);
+static DEVICE_ATTR_WO(power_off);
+static struct attribute *bring_up_attrs[]={&dev_attr_bring_up.attr,&dev_attr_power_off.attr,&dev_attr_status.attr,NULL};
+static const struct attribute_group bring_up_group={.attrs=bring_up_attrs};
+/* "innioasis,bring-up" limits the driver to an admitted stage; absent = the full driver. */
+static int bring_up_mode(struct y2_conn *c)
+{
+	const char *name;
+	int mode;
+	c->mode = Y1_MODE_FULL;
+	if (of_property_read_string(c->dev->of_node, "innioasis,bring-up", &name)) return 0;
+	mode = y1_conn_mode(name);
+	if (mode < 0) return -EINVAL;
+	c->mode = mode;
 	return 0;
 }
 static int probe(struct platform_device *pdev)
 {
 	struct device *dev=&pdev->dev;
 	struct y2_conn *c=devm_kzalloc(dev,sizeof(*c),GFP_KERNEL);
-	bool chip_id_only; int ret;
+	int ret;
 	if (!c) return -ENOMEM;
 	ret=validate_resources(pdev); if (ret) return ret;
-	ret=bring_up_mode(dev->of_node,&chip_id_only); if (ret) return ret;
+	c->dev=dev;
+	ret=bring_up_mode(c); if (ret) return ret;
 	c->dev=dev; mutex_init(&c->lifecycle); mutex_init(&c->command);
 	mutex_init(&c->recovery_lock);
 	mutex_init(&c->dma_tx); mutex_init(&c->dma_rx); init_completion(&c->response);
 	y2_stp_init(c); INIT_WORK(&c->recovery_work,recover);
-	ret=probe_suppliers(c,chip_id_only); if (ret) return ret;
+	ret=probe_suppliers(c,c->mode==Y1_MODE_CHIP_ID); if (ret) return ret;
 	c->mcu=devm_platform_ioremap_resource_byname(pdev,"mcu");
 	c->emi=devm_platform_ioremap_resource_byname(pdev,"conn-emi");
 	if (IS_ERR(c->mcu)) return PTR_ERR(c->mcu);
 	if (IS_ERR(c->emi)) return PTR_ERR(c->emi);
-	if (chip_id_only) return bring_up_chip_id(c);
+	if (c->mode==Y1_MODE_CHIP_ID) return bring_up_chip_id(c);
+	ret=pmic_prepare_logged(c); if (ret) return ret;
+	/* BTIF/DMA: mapped, buffers and interrupts (not enabled) only; registers after their clocks. */
 	ret=y2_btif_probe(pdev,c); if (ret) return ret;
 	platform_set_drvdata(pdev,c);
+	if (c->mode==Y1_MODE_WMT) {
+		ret=devm_device_add_group(dev,&bring_up_group);
+		if (!ret) dev_info(dev,"bring-up wmt: ready (bring_up runs one attempt, power_off aborts)\n");
+		return ret;
+	}
 	pm_runtime_set_suspended(dev); pm_runtime_set_autosuspend_delay(dev,1000);
 	pm_suspend_ignore_children(dev,true);
 	pm_runtime_use_autosuspend(dev); pm_runtime_enable(dev);
@@ -551,7 +657,9 @@ static int probe(struct platform_device *pdev)
 static void shutdown(struct platform_device *pdev)
 {
 	struct y2_conn *c=platform_get_drvdata(pdev);
-	c->removing=true; cancel_work_sync(&c->recovery_work);
+	c->removing=true;
+	if (c->mode==Y1_MODE_WMT) { WRITE_ONCE(c->abort,true); y2_conn_failed(c,-ESHUTDOWN); }
+	cancel_work_sync(&c->recovery_work);
 	y2_hci_unregister(c); pm_runtime_disable(c->dev);
 	mutex_lock(&c->lifecycle); power_off(c); mutex_unlock(&c->lifecycle);
 }
