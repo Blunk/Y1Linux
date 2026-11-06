@@ -1,0 +1,92 @@
+--- a/drivers/input/keyboard/mtk-pmic-keys.c
++++ b/drivers/input/keyboard/mtk-pmic-keys.c
+@@ -20,6 +20,8 @@
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
++#include <linux/devm-helpers.h>
++#include <linux/workqueue.h>
+ 
+ #define MTK_PMIC_RST_DU_MASK	GENMASK(9, 8)
+ #define MTK_PMIC_PWRKEY_RST	BIT(6)
+@@ -148,8 +150,26 @@
+ 	struct device *dev;
+ 	struct regmap *regmap;
+ 	struct mtk_pmic_keys_info keys[MTK_PMIC_MAX_KEY_COUNT];
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-REBORN-PLAN.md, power off): with "innioasis,hold-power-ms" a key held that
++	 * long also reports KEY_POWER on a second device named "mtk-pmic-keys", until it is released. The Y1's only
++	 * key (the centre button) is Select for Reborn; a long hold becomes Reborn's Power.
++	 */
++	struct input_dev *hold_dev;
++	struct delayed_work hold_work;
++	unsigned int hold_ms;
++	bool hold_down;
+ };
+ 
++static void mtk_pmic_keys_hold_work(struct work_struct *work)
++{
++	struct mtk_pmic_keys *keys = container_of(to_delayed_work(work), struct mtk_pmic_keys, hold_work);
++
++	keys->hold_down = true;
++	input_report_key(keys->hold_dev, KEY_POWER, 1);
++	input_sync(keys->hold_dev);
++}
++
+ enum mtk_pmic_keys_lp_mode {
+ 	LP_DISABLE,
+ 	LP_ONEKEY,
+@@ -216,6 +236,21 @@
+ 	input_report_key(info->keys->input_dev, info->keycode, pressed);
+ 	input_sync(info->keys->input_dev);
+ 
++	if (info->keys->hold_dev) {
++		struct mtk_pmic_keys *keys = info->keys;
++
++		if (pressed) {
++			mod_delayed_work(system_wq, &keys->hold_work, msecs_to_jiffies(keys->hold_ms));
++		} else {
++			cancel_delayed_work_sync(&keys->hold_work);
++			if (keys->hold_down) {
++				keys->hold_down = false;
++				input_report_key(keys->hold_dev, KEY_POWER, 0);
++				input_sync(keys->hold_dev);
++			}
++		}
++	}
++
+ 	dev_dbg(info->keys->dev, "(%s) key =%d using PMIC\n",
+ 		 pressed ? "pressed" : "released", info->keycode);
+ 
+@@ -351,6 +386,8 @@
+ 	}
+ 
+ 	input_dev->name = "mtk-pmic-keys";
++	/* As gpio-keys: an optional "label" names the input device (Innioasis Y1). */
++	of_property_read_string(node, "label", &input_dev->name);
+ 	input_dev->id.bustype = BUS_HOST;
+ 	input_dev->id.vendor = 0x0001;
+ 	input_dev->id.product = 0x0001;
+@@ -405,6 +442,22 @@
+ 		return error;
+ 	}
+ 
++	if (!of_property_read_u32(node, "innioasis,hold-power-ms", &keys->hold_ms) && keys->hold_ms) {
++		keys->hold_dev = devm_input_allocate_device(keys->dev);
++		if (!keys->hold_dev)
++			return -ENOMEM;
++		keys->hold_dev->name = "mtk-pmic-keys";
++		keys->hold_dev->id.bustype = BUS_HOST;
++		input_set_capability(keys->hold_dev, EV_KEY, KEY_POWER);
++		error = devm_delayed_work_autocancel(keys->dev, &keys->hold_work, mtk_pmic_keys_hold_work);
++		if (error)
++			return error;
++		error = input_register_device(keys->hold_dev);
++		if (error)
++			return error;
++		dev_info(keys->dev, "a %u ms hold also reports KEY_POWER\n", keys->hold_ms);
++	}
++
+ 	mtk_pmic_keys_lp_reset_setup(keys, mtk_pmic_regs);
+ 
+ 	platform_set_drvdata(pdev, keys);
