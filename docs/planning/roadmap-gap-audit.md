@@ -1,5 +1,16 @@
 # Roadmap gap audit
 
+## Y1 Bluetooth planning — 2026-11-06
+
+Owner's question: Bluetooth as on the Y2 ([plan](Y1-BLUETOOTH-PLAN.md)). Evidence: the MT6572 has the Y2's
+connectivity core (the stock Y1 driver is built from the same tree and accepts both chip IDs; the same WMT/STP
+protocol, patch family, power-domain sequence and PMIC rails); the Y1's stock image carries only Bluetooth firmware
+(a one-part patch, its config, the MT6572 modem image), no Wi-Fi; the register map, the patch and config formats and
+the address record differ; the radio core's memory is where the Y1 kernel loads today; whether RF calibration needs
+the modem is unknown. Plan: adapt the Y2's driver, staged from offline decoding and a memory reservation to a
+chip-ID-only power-on, firmware, `hci0` and audio. Repeat this audit before the memory change (B3) and the first
+power-on (B4). Not admitted.
+
 ## Y1 robust charging planning — 2026-11-06
 
 Owner's priority after a flat Y1 looped on the power daemon's voltage guard ([plan](Y1-CHARGE-MODE-PLAN.md)).

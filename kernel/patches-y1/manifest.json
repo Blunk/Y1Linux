@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -210,6 +210,18 @@
       "base_sha256": "c0948905903b9e2998408d01adefbb69195bd493f165c209b350e019760a97a4",
       "result_sha256": "6319fd4408078d74d4d2e9ac2361947faeb8e4ea5421a336351a40c1b4f4cd36",
       "patch": "0035-musb-ep-start.patch"
+    },
+    {
+      "path": "drivers/bluetooth/Kconfig",
+      "base_sha256": "a0b6ea9a78333069406f5e3fb7aa099ebb62917c0a6ffda0e0593f829f14cac7",
+      "result_sha256": "b2607551ff6aeace720692d8bbb51aa852f413417f391755b4721504cec3c22c",
+      "patch": "0036-innioasis-y1-bluetooth-kconfig.patch"
+    },
+    {
+      "path": "drivers/bluetooth/Makefile",
+      "base_sha256": "3029941aefe5ca9b5f588c27a785910490c8b2c0bd825f2ca145d48278468218",
+      "result_sha256": "55a2e0e2626fd52eb70824b92e5636eb6fd793a0791b8af5604a0df084665bea",
+      "patch": "0037-innioasis-y1-bluetooth-makefile.patch"
     }
   ],
   "added": [
@@ -407,6 +419,51 @@
       "path": "drivers/mmc/host/y1-emmc-guard.h",
       "source": "kernel/y1/emmc-guard.h",
       "sha256": "5c4936b4631957ed7ec4af71c1dedf36f459a916799d58daf640850a0a179d66"
+    },
+    {
+      "path": "drivers/bluetooth/conn.h",
+      "source": "kernel/y1/connectivity/conn.h",
+      "sha256": "c67273a8258ce9f672c8ed5460ea6d603564f8d393427396ddb9d2238e62c8c1"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-policy.h",
+      "source": "kernel/y1/connectivity/y1-conn-policy.h",
+      "sha256": "91298d56f0e371365c2e2626719f4f847785f789588f867a49935b7e9c28643b"
+    },
+    {
+      "path": "drivers/bluetooth/protocol.h",
+      "source": "kernel/platform/connectivity/protocol.h",
+      "sha256": "f29c683a080bd239f9f34f32e3380d7920cd51166b58d7b9783725c7251c3968"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-core.c",
+      "source": "kernel/y1/connectivity/core.c",
+      "sha256": "1d049d7436b424b16b6b79e7d3156a08636ae2a8275476ef7f4eb583ac0e928c"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-wmt.c",
+      "source": "kernel/y1/connectivity/wmt.c",
+      "sha256": "938577a5ba15298755daa02d556b1eb9e79b2dcd76fc6ba0e6ecc01a4931bfdd"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-firmware.c",
+      "source": "kernel/platform/connectivity/firmware.c",
+      "sha256": "51db02d62745412ab7686bf1c96483feac260567f2f3d0e2e80425c9baafdbe5"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-btif.c",
+      "source": "kernel/platform/connectivity/btif.c",
+      "sha256": "75fd29bf0837f14b3e24b1ef47afd282a01bbf332b607b9f6a1473fcee40c903"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-stp.c",
+      "source": "kernel/platform/connectivity/stp.c",
+      "sha256": "297fa465ca1066d05c3e63a631e9bd21beff750264576efbeb5665b78cf1d984"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-hci.c",
+      "source": "kernel/platform/connectivity/hci.c",
+      "sha256": "234a52e04c9ae8eae72b82ef7bf7a08a1ee764df1382dfa2c9b2e2044144096c"
     }
   ]
 }
