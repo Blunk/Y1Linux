@@ -435,7 +435,7 @@
     {
       "path": "drivers/bluetooth/conn.h",
       "source": "kernel/y1/connectivity/conn.h",
-      "sha256": "dc65cb1630bd864de40d2a424413da745a9be1eccffec6b2a387126f97f180e9"
+      "sha256": "7cc3658bf9f563ebff487c3065a435625887e5e190b381b9e725386e79ef1df3"
     },
     {
       "path": "drivers/bluetooth/y1-conn-policy.h",
@@ -450,7 +450,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-core.c",
       "source": "kernel/y1/connectivity/core.c",
-      "sha256": "dae8f5aad2f819a293ee6e859d7e1be6f4fb927d8ec7fdafce845f57b1492365"
+      "sha256": "7851a23b4e0ac228c80ac02da745cbcc38f4d241932679ff43efcac99eec52a4"
     },
     {
       "path": "drivers/bluetooth/y1-conn-wmt.c",
@@ -475,7 +475,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-hci.c",
       "source": "kernel/platform/connectivity/hci.c",
-      "sha256": "234a52e04c9ae8eae72b82ef7bf7a08a1ee764df1382dfa2c9b2e2044144096c"
+      "sha256": "cceda8f75410a022bc265220bcf1347c0ece26fa5bf115a53e9347ca7bd79766"
     }
   ]
 }

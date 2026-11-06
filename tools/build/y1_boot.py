@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-third) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-fourth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -231,6 +231,12 @@ VARIANTS['thirty-third'] = dict(
     forbidden=[t for t in VARIANTS['thirty-second']['forbidden'] if t != 'vcn33'] + ['chip-id'],
     regulators=VARIANTS['thirty-second']['regulators'] + ['regulator-name = "vcn33-bt";',
                                                           'regulator-name = "vcn33-wifi";'])
+
+# Bluetooth B6: the full connectivity driver (no bring-up limit), hci0 for BlueZ; the thirty-third tree otherwise.
+VARIANTS['thirty-fourth'] = dict(
+    VARIANTS['thirty-third'],
+    expected=[line for line in VARIANTS['thirty-third']['expected'] if 'bring-up' not in line],
+    forbidden=VARIANTS['thirty-third']['forbidden'] + ['innioasis,bring-up'])
 
 
 def empty_ramdisk():
