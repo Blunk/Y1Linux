@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-seventh) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-eighth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -174,6 +174,12 @@ VARIANTS['twenty-sixth'] = VARIANTS['twenty-fourth']
 
 # MTP with the musb RX restart fix (docs/planning/Y1-MTP-PLAN.md, X2): the twenty-fifth tree unchanged.
 VARIANTS['twenty-seventh'] = VARIANTS['twenty-fifth']
+
+# The quiet boot with the splash (docs/planning/Y1-BOOT-SPLASH-PLAN.md): the twenty-seventh tree with the Y2's
+# console level.
+VARIANTS['twenty-eighth'] = dict(VARIANTS['twenty-seventh'], expected=VARIANTS['twenty-seventh']['expected'] + [
+    'loglevel=3 vt.global_cursor_default=0',
+])
 
 
 def empty_ramdisk():
