@@ -1,6 +1,6 @@
 # Y1 Bluetooth
 
-Status: **B0–B3 done, B4 PASS** (2026-11-06, owner-approved): the chip ID read on the Y1; B5 (firmware) not admitted.
+Status: **B0–B4 done, B5 PASS** (2026-11-06, owner-approved): firmware, WMT boot and RF calibration on the Y1 without the modem; B6 (hci0) not admitted; B7 not needed.
 (its connectivity driver with firmware from the stock system image). New hardware scope (a radio, a new power
 domain, a memory-layout change): each stage has its own admission, and the roadmap audit is repeated before stage
 B3 (memory) and B4 (first power-on).
@@ -300,3 +300,174 @@ only): SPM CONN `0x1112`, MD1 `0x0d`, `PWR_STATUS` `0x3ffd` (both copies), `0x10
 `0xd8cfdaff`, every PMIC register at its baseline, `vcn18` and `vcn28` disabled, the driver unbound, no Bluetooth
 device; Reborn and MTP running. Open for B5: HVR/FVR (WMT), whether the core sleeps after a WMT sleep command, the
 calibration (with VCN33_BT/WIFI for its duration), the modem question.
+
+## 12. B5 build — 2026-11-06
+
+Owner-approved after the B4 run. The WMT boot with the owner's firmware, started from userspace, one attempt per
+write, observed step by step; no HCI device, no address, no modem.
+
+- **Driver** (`kernel/y1/connectivity/`): DT `innioasis,bring-up = "wmt"`: probe claims everything (the SPM, BTIF and
+  APDMA clocks, VCN18/VCN28/VCN33_BT/VCN33_WIFI, the windows, the BTIF/DMA buffers and interrupts, not enabled) and
+  powers nothing; it adds `bring_up`, `power_off` (both write-only) and `status` (read-only). One attempt (`bring_up`,
+  synchronous, the lifecycle lock held): the PMIC init subset once per boot (stock's and the Y2's, values logged
+  before/after; then the Y2's 5 s settle) → the B4 stages → `btif` (the BTIF and APDMA clocks on, then the
+  registers, then the interrupts: the Y2's `y2_btif_start`) → `wmt`: `WMT_SOC.cfg` (the Y1 key set), HVR/FVR/chip,
+  STP to full mode, the single patch (P_ADDRESS `00 00 06 00` in the second command only), RF calibration with
+  VCN33_BT and VCN33_WIFI on for its duration only, coexistence; no co-clock command, no FM strap → WMT sleep
+  (`01 03 01 00 01`, reply `02 03 02 00 00 01`, INFERRED from stock STP-PSM; a refusal is logged and the power-off
+  goes on) → the B4 power-off (sleep wait, domain off, rails off; BTIF stopped and its clocks gated first). Each
+  stage and each WMT command but the patch fragments is logged at info level. A failure powers off at once and
+  leaves the device bound for the next attempt. `power_off` aborts: the running attempt's WMT wait ends, no further
+  stage or command runs, the power-off follows. The calibration event may have **any length** when well formed
+  with status 0 and operation 1 (`y1_conn_rf_result`; only the first six bytes are kept, length and status logged).
+- **Shared Y2 sources**: `protocol.h` gains a default `Y2_CONN_RF_RESULT` (the MT6582 rule) that the Y1's `conn.h`
+  replaces; `stp.c` calls it. Y2 production build after the change (`out/b5-y2-after`): `Image` `a68fdffd…aac21`,
+  `vmlinux` `b5ae438d…eb202` and all seven objects identical to B2's.
+- **Firmware path**: bootargs `firmware_class.path=/data/firmware` (searched before `/lib/firmware`); the driver's
+  size and SHA-256 pins unchanged. `/data` (Y2DATA) is mounted at about 2.3 s; the attempt runs only on request.
+- **Variant thirty-third**: `kernel/config/y1-thirty-third-boot.config` (the thirty-second fragment, LOCALVERSION
+  `-y1-thirty-third-boot`), `kernel/dts/innioasis-y1-thirty-third-boot.dts` (the thirty-second tree with the `wmt`
+  mode, `ldo_vcn33_bt`/`ldo_vcn33_wifi` fixed at 3.3 V without always-on/boot-on, the firmware path),
+  `y1-boot.sh`, `y1_boot.py` (regulators: vgp1, vusb, card rails, vcn18, vcn28, vcn33-bt, vcn33-wifi; `chip-id`
+  forbidden). The two VCN33 LDOs share VOSEL `0x416` [3:2], which LK leaves at 3 (3.6 V): with 3.3 V fixed the
+  regulator core writes it to 0 at boot, both rails off (stock's `hwPowerOn(…, 3300)` would). Build
+  `out/y1-thirty-third-boot-1`: BOOTIMG **`b1baff35662c0d826fa9b081ee61527139ae15dc601879b94b29d39980ac7929`**,
+  `0x384000` bytes (3 686 400), zImage-dtb `45f01610…dcf5`, DTB `285c512a…eb62`, `.config` `8600185b…6ec0`,
+  `y1-init` unchanged; no compiler warning (the driver also clean with `-Werror` and `W=1`), only the fork's known
+  DT warnings.
+- **Tests** (`tests/test_y1_connectivity.py`, 19, sandbox): the B4 model now shared; the B5 attempt runs the driver's
+  real `bring_up_wmt`, stages, power path and `calibrate` against the register model with a WMT model: order (B4
+  power-on, BTIF only after the chip ID, every WMT command with BTIF and the domain up, the calibration only inside
+  the PA window, both PA rails off before the sleep command, sleep before BTIF stop, protection, rails off); a
+  refused patch, a refused calibration, an abort during the calibration and a pending abort: each back at the
+  baseline and retryable; any calibration length accepted, a bad status, operation or inner length refused; the
+  shared `y2_btif_start` writes no register before its two clocks and enables interrupts last.
+
+**Procedure** (owner, over SSH; the Y1 on the thirty-third boot; the device path is
+`/sys/devices/platform/18070000.connectivity`):
+
+1. Copy the owner's provisioned files (`tools/connectivity/provision.py --profile y1` output) and check them:
+
+       ssh root@<y1> 'mkdir -p /data/firmware/mediatek/mt6572'
+       scp WMT_SOC.cfg mt6572_82_patch_e1_0_hdr.bin modem_1_2g_n.img root@<y1>:/data/firmware/mediatek/mt6572/
+       ssh root@<y1> 'cd /data/firmware/mediatek/mt6572 && sha256sum * && sync'
+
+   Expected: `161f18b6…f1e0`, `5c13ebad…bfc1`, `31940b2f…4b79` (the inventory; the modem image is not used).
+2. Baseline read-only (as B4) and `dmesg | grep 18070000` shows `bring-up wmt: ready (bring_up runs one attempt,
+   power_off aborts)`; `cat …/status` shows `powered=0`.
+3. Trigger (blocks until the attempt ends, about 6–10 s the first time, 20 s at most plus 4 s per silent command):
+
+       ssh root@<y1> 'echo 1 > /sys/devices/platform/18070000.connectivity/bring_up; echo rc=$?; dmesg | grep 18070000'
+
+4. Abort, from a second session at any time: `echo 1 > /sys/devices/platform/18070000.connectivity/power_off`
+   (logs `connectivity failure -125` at critical level, then `power-off on request: 0`).
+
+**Expected log** (prefix `y1-connectivity 18070000.connectivity: `; `…` = observed values):
+
+    bring-up wmt: attempt
+    PMIC init subset 0: 0x102 0003->8043 0x120 0001->0031 0x148 0004->000e 0x402 8400->8401
+    stage normalise / stage vcn18 / stage vcn28 / stage emi-clear / stage spm-clock / stage domain-on / stage chip-id
+    CONN chip=6572 (register 0x00006572)
+    stage btif
+    stage wmt
+    WMT_SOC.cfg: the Y1 key set
+    WMT opcode=08 parameter=02 ok: event 16 bytes                       (three times: chip, HVR, FVR)
+    CONSYS chip=6572 HVR=8a0… FVR=…
+    WMT opcode=04 parameter=04 ok: event 10 bytes                       (query, mandatory STP)
+    WMT opcode=04 parameter=03 ok: event 6 bytes                        (set full STP)
+    WMT opcode=04 parameter=04 ok: event 10 bytes
+    WMT full STP mode verified
+    WMT opcode=08 parameter=01 ok: event 8 bytes                        (twice: PATCH_ADDRESS, P_ADDRESS)
+    WMT opcode=07 parameter=04 ok: event 5 bytes                        (reset)
+    WMT patch: 39868 bytes, 40 fragments, address 00 00 06 00; reset acknowledged
+    WMT RF calibration: VCN33_BT and VCN33_WIFI on
+    WMT RF calibration: event … bytes, status 00 operation 01: 0
+    WMT RF calibration: PA rails off (0, 0)
+    WMT opcode=10 parameter=01 ok: event 5 bytes                        (coexistence)
+    WMT opcode=03 parameter=01 ok: event 6 bytes                        (sleep)
+    bring-up wmt: WMT sleep 0
+    bring-up wmt: off: ctl=0x1112 status=0x3ffd sleep=0x… protect=0x11
+    bring-up wmt: done 0: chip=6572 HVR=… FVR=… calibration=… bytes status=0001
+
+`rc=0`. A failure shows `WMT opcode=… failed: …` (or `STP receive failed`, `WMT patch failed`, `WMT_SOC.cfg
+rejected/unavailable`), `connectivity stage … failed: … (power-off 0)`, the `off:` line, `bring-up wmt: failed …`
+and a non-zero `rc`. `CONN did not sleep within 10 s; isolating` means the sleep command did not take (B5 finding).
+Record HVR, FVR, the calibration length and status, and every line in `evidence-private/2026-11-06-y1-bt-b5/`.
+
+**Post-run read-only checks** (never `0x18070000` or BTIF/DMA): SPM `0x10006280` `0x1112`; `0x1000660c`/`0x10006610`
+`0x3ffd`; MD1 `0x10006284` `0x0d`; `0x100063b4` bit 11 clear; INFRA `0x10001220` `0x11`, `0x10001228` `0xf011`;
+TOPCKGEN `0x10000024` `0xd8cfdaff` (BTIF and APDMA gated again); PMIC `0x512` `0000`, `0x41c` `0000`, `0x418`
+`0000`, `0x420` `0000`, `0x41a` `0044`, `0x416` `0010` (VOSEL 3.3 V since boot, bits 5 and 7 clear); the init
+subset **stays applied** (`0x102` `8043`, `0x120` `0031`, `0x148` `000e`, `0x402` `8401`, as stock runs); `status`
+`powered=0`; regulators vcn18, vcn28, vcn33-bt, vcn33-wifi disabled; `/sys/class/bluetooth/` empty; the device
+still bound. Then the usual regression check (splash, Reborn, MTP, Y2DATA, charging) and a second attempt to show
+it repeats (the subset is then skipped).
+
+
+## 13. B5 run — 2026-11-06
+
+`evidence-private/2026-11-06-y1-bt-b5/run1.txt`, thirty-third boot. The owner's three files copied to
+`/data/firmware/mediatek/mt6572/` (SHA-256 identical to the inventory); `firmware_class.path=/data/firmware`. Two
+attempts over SSH, identical:
+
+- PMIC init subset (first attempt only; the Y2's 5 s settle): `0x102 0003→8043`, `0x120 0001→0031`, `0x148
+  0004→000e`, `0x402 8400→8401`; the B4 stages; `CONN chip=6572`; BTIF; WMT with the Y1 key set.
+- **`CONSYS chip=6572 HVR=8a01 FVR=8a00`**; full STP verified; **the patch: 39 868 bytes, 40 fragments, address
+  `00 00 06 00`, reset acknowledged**; **RF calibration: event 630 bytes, status 00, operation 01**, the PA rails on
+  for 0.3 s only; coexistence; **WMT sleep accepted and the core slept** (no 10 s wait). **No modem: B7 not needed.**
+- **The power-off's bus-protection acknowledgement times out** (`CONN off step 2 (reg 0x228) failed: -110`) after
+  the core slept; the rest of the power-off runs (`ctl=0x1112 status=0x3ffd`), the attempt reports `failed -110`.
+  `0x10001228` reads `0xf000` afterwards (B4, without sleep: `0xf011`), `0x10001220` `0x11`: a sleeping core does
+  not acknowledge the protection request (INFERRED). Open: what stock does there (B5 fix).
+- Afterwards: SPM CONN `0x1112`, `PWR_STATUS` `0x3ffd`, MD1 `0x0d`, TOPCKGEN `0xd8cfdaff`, the PMIC init subset values
+  as above, `0x416` `0x0010`, `0x512`/`0x41c`/`0x418`/`0x420` `0000`, the four rails disabled, `calibrated=1`; Reborn and
+  MTP running.
+
+### 13.1 B5 fix — 2026-11-06 (offline, built, not flashed)
+
+- **Stock, decoded** (3.0.2 kernel, `evidence-private/2026-11-04-y1-rom-3.0.2/rea/text.dis`):
+  - `conn_power_off` (`0xc003f73c`) first waits for `spm_is_conn_sleep` (`0xc002e53c`), polling `msleep(100)` up
+    to `(timeout+9)/10` times (`0xc003f790`–`0xc003f7d4`). With or without sleep it then calls `disable_subsys_locked`
+    under the clock lock (`0xc003f7f4`); a non-zero result only WARNs (`0xc003f824`).
+  - `spm_mtcmos_ctrl_general_locked`, off path: if the subsystem has a protection mask (`[r0+0x24]`, `0x11` for
+    CONN), it sets `0x10001220 |= mask` (`0xc00407c4`–`0xc00407dc`). It then polls `(0x10001228 & mask) == mask`
+    until `jiffies + 10` (100 ms; `0xc00407ec`–`0xc0040808`).
+  - **On a timeout it WARNs (`0xc0040b28`, source line `0xc65`) and goes on with the isolation** (`b 0xc004080c`).
+    The final `0x60c`/`0x610` poll is handled the same way (`0xc0040948`).
+  - So stock's order is sleep handshake, protection, acknowledgement poll, isolation, and it never stops on a
+    missing acknowledgement.
+  - The idle guarantee there is the core's sleep handshake, together with the AP side already quiet (BTIF/DMA
+    stopped before `conn_power_off`).
+- **Driver**:
+  - `domain_off` logs the acknowledgement state at info level, e.g. `CONN bus protection: 0x228=0xf000, not
+    acknowledged (core asleep: continuing, as stock)`.
+  - With the core asleep (SPM `0x100063b4` bit 11 clear after the sleep wait), a missing acknowledgement is not an
+    error. The B5 attempt then reports `done 0`.
+  - Without the handshake a missing acknowledgement stays an error. The isolation and the rails still switch off,
+    as stock.
+  - Power is never cut while the core is awake and unacknowledged without that error being reported.
+- **PMIC subset settle**: stock applies `PMIC_INIT_SETTING_V1` (`0xc03da084`) once in its PMIC init (call
+  `0xc03da760`). It continues straight to `PMIC_EINT_SETTING` (`0xc03da774`) with no delay. The driver now applies
+  the subset at probe in the `wmt` and full modes, logged; the attempt no longer waits. The Y2's 5 s settle is
+  dropped.
+- **Tests** (`tests/test_y1_connectivity.py`, 19): the register model can withhold the `0x228` acknowledgement.
+  - With the core asleep, the chip-id bring-up and the WMT attempt succeed (630-byte calibration, as run 1), back
+    at the baseline.
+  - With the core awake (sleep refused), they power off completely and report `-ETIMEDOUT`.
+- **Build** `out/y1-thirty-third-boot-2`, same fragment and tree, only `core.c` changed:
+  - BOOTIMG **`327f577e0221c204b61110efcacf3e494ca4b8063c66438cd370e51063ca7171`**, `0x383800` bytes (3 684 352).
+  - zImage-dtb `48765c16…16c0`; DTB `285c512a…eb62` and `.config` `8600185b…6ec0` unchanged.
+  - No compiler warning.
+- **Expected change in the run log**:
+  - `PMIC init subset 0: …` now appears at boot after `bring-up wmt: ready`, not in the attempt.
+  - The power-off shows `CONN bus protection: 0x228=0xf000, not acknowledged (core asleep: continuing, as stock)`
+    instead of `CONN off step 2 … failed: -110`.
+  - The attempt ends with `bring-up wmt: done 0: … calibration=630 bytes status=0001`.
+- **Expected change in the post-run checks**: none (`0x10001228` `0xf000`, the rest as §13).
+
+**B5 run 2 — PASS — 2026-11-06** (`evidence-private/2026-11-06-y1-bt-b5/run2.txt`, `out/y1-thirty-third-boot-2`,
+`327f577e…`): the PMIC subset at probe (2.4 s, no settle); two attempts, each about 1.05 s: `HVR=8a01 FVR=8a00`, the
+patch (40 fragments, reset acknowledged), calibration 630 bytes status 00, WMT sleep, `CONN bus protection:
+0x228=0xf000, not acknowledged (core asleep: continuing, as stock)`, `off: ctl=0x1112 status=0x3ffd`, **`done 0`**,
+`rc=0`. Afterwards CONN `0x1112`, `PWR_STATUS` `0x3ffd`, `0x10001220` `0x11`, `0x10001228` `0xf000`, `powered=0`,
+`calibrated=1`.
