@@ -134,6 +134,9 @@ __attribute__((unused)) static long arm_watchdog(void)
 #ifdef Y1_TWENTY_EIGHTH_BOOT
 #include "y1-twenty-eighth-boot.h"
 #endif
+#ifdef Y1_TWENTY_NINTH_BOOT
+#include "y1-twenty-ninth-boot.h"
+#endif
 
 static void observe(void)
 {

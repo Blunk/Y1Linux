@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-eighth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to twenty-ninth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -180,6 +180,9 @@ VARIANTS['twenty-seventh'] = VARIANTS['twenty-fifth']
 VARIANTS['twenty-eighth'] = dict(VARIANTS['twenty-seventh'], expected=VARIANTS['twenty-seventh']['expected'] + [
     'loglevel=3 vt.global_cursor_default=0',
 ])
+
+# The Y2's charging screen in the charge-only mode (docs/planning/Y1-CHARGE-MODE-PLAN.md): the twenty-eighth tree.
+VARIANTS['twenty-ninth'] = VARIANTS['twenty-eighth']
 
 
 def empty_ramdisk():

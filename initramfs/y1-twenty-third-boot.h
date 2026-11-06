@@ -12,6 +12,12 @@
 enum { CHARGE_MODE_UV = 3600000, START_UV = 3400000, START_SAMPLES = 3, HOLD_TICKS = 20, UNPLUG_SAMPLES = 3,
        KEY_CENTRE = 28, CHARGE_BACKLIGHT = 4 };
 #define Y1_BATTERY "/sys/class/power_supply/BAT0"
+#ifdef Y1_TWENTY_NINTH_BOOT
+static int charge_screen_open(const char *light);
+static void charge_screen_tick(u32 now, int pressed, int held, int ready);
+static void charge_screen_close(void);
+static void chg_light_on(int on);
+#endif
 #define EVIOCGKEY_96 0x80604518 /* _IOR('E', 0x18, 96 bytes): the keys held now */
 
 /* 1 when the centre button is held right now. A button already down before the key driver probed sends no press,
@@ -74,6 +80,9 @@ static void set_brightness(const char *value)
 
 static void charge_power_off(const char *why)
 {
+#ifdef Y1_TWENTY_NINTH_BOOT
+    chg_light_on(0); /* the charging screen, if shown, goes dark first */
+#endif
 #ifdef Y1_TWENTY_EIGHTH_BOOT
     console_to("/dev/tty0");
 #endif
@@ -99,10 +108,17 @@ static void charge_gate(void)
     copy(path, sizeof(path), backlight_dir, "/brightness", 0);
     long len = read_text(path, brightness, sizeof(brightness));
     if (len <= 0) copy(brightness, sizeof(brightness), "32", 0, 0);
-    set_brightness("4");
-#ifdef Y1_TWENTY_EIGHTH_BOOT
-    console_to("/dev/tty0"); /* the charge-only mode talks on the screen */
+#ifdef Y1_TWENTY_NINTH_BOOT
+    int graphics = charge_screen_open(brightness); /* the Y2's charging screen; text only without it */
+#else
+    int graphics = 0;
 #endif
+    if (!graphics) {
+        set_brightness("4");
+#ifdef Y1_TWENTY_EIGHTH_BOOT
+        console_to("/dev/tty0"); /* the charge-only mode talks on the screen */
+#endif
+    }
     put("charge: battery "); put_volts(uv); put(" on a charger: charge-only mode; hold the centre button 2 s to start\n");
     send(SCREEN | USB);
 
@@ -113,12 +129,16 @@ static void charge_gate(void)
         keys[i] = call5(SYS_OPEN, (long)node, O_RDONLY | O_NONBLOCK, 0, 0, 0);
     }
     unsigned good = 0, unplugged = 0, held_since = 0, holding = 0;
+#ifdef Y1_TWENTY_NINTH_BOOT
+    charge_screen_tick(0, 1, 0, 0);
+#endif
     for (unsigned tick = 1;; ++tick) {
-        int start = 0;
+        int start = 0, pressed = 0;
         for (unsigned i = 0; i < INPUT_NODES; ++i) {
             struct input_event32 e;
             while (keys[i] >= 0 && call5(SYS_READ, keys[i], (long)&e, sizeof(e), 0, 0) == (long)sizeof(e)) {
                 if (e.type != 1 || e.code != KEY_CENTRE) continue;
+                pressed = 1;
                 if (e.value == 1) { holding = 1; held_since = tick; }
                 else if (e.value == 0) {
                     if (holding && tick - held_since >= HOLD_TICKS) start = 1;
@@ -139,9 +159,18 @@ static void charge_gate(void)
             if (good >= START_SAMPLES) break;
             put("charge: "); put_volts(uv); put(" is too low to start (3.400 V needed)\n"); send(SCREEN);
         }
+#ifdef Y1_TWENTY_NINTH_BOOT
+        charge_screen_tick(tick * 100, pressed, holding && tick - held_since >= HOLD_TICKS, good >= START_SAMPLES);
+#else
+        (void)pressed;
+#endif
         sleep_tenths(1);
     }
     for (unsigned i = 0; i < INPUT_NODES; ++i) if (keys[i] >= 0) call5(SYS_CLOSE, keys[i], 0, 0, 0, 0);
+#ifdef Y1_TWENTY_NINTH_BOOT
+    charge_screen_close();
+#endif
+    (void)graphics;
     set_brightness(brightness);
 #ifdef Y1_TWENTY_EIGHTH_BOOT
     console_to("/dev/ttyS0");
