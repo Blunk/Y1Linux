@@ -125,6 +125,12 @@ __attribute__((unused)) static long arm_watchdog(void)
 #ifdef Y1_TENTH_BOOT
 #include "y1-tenth-boot.h"
 #endif
+#ifdef Y1_TWENTY_SECOND_BOOT
+#include "y1-twenty-second-boot.h"
+#endif
+#ifdef Y1_TWENTY_THIRD_BOOT
+#include "y1-twenty-third-boot.h"
+#endif
 
 static void observe(void)
 {
