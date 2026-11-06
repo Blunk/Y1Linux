@@ -1,0 +1,144 @@
+#!/bin/sh
+# Innioasis Y1: music transfer over MTP (docs/planning/Y1-MTP-PLAN.md, stage M2), with the Y2's patched umtprd but
+# not the Y2's service daemon (which also mounts cards read-write, checks updates and writes RECOVERY/MISC). One
+# storage, "Music" = /data/music on Y2DATA, read-write; nothing else is exposed. PID1 built the configfs gadget
+# (ECM + ACM); here MTP joins as the first function and the gadget is bound again. umtprd runs as the child of a
+# small supervisor (it refuses PID 1 as its parent), at most five starts. Its events become the receipt
+# /run/y2/usb-transfer.json that tells Reborn to rescan after a copy. Only with the real Y2DATA mounted.
+G=/sys/kernel/config/usb_gadget/y1
+RUN=/run/y1-mtp
+CONF=$RUN/umtprd.conf
+OFFSET=1291059200
+
+log() { echo "y1-mtp: $*" > /dev/kmsg; }
+
+real_data() {
+	dev=$(awk '$2 == "/data" && $3 == "ext4" { print $1 }' /proc/mounts)
+	[ -n "$dev" ] && [ "$(cat "/sys/block/${dev#/dev/}/loop/offset" 2>/dev/null)" = "$OFFSET" ] &&
+		[ "$(cat /data/.y2data-schema 2>/dev/null)" = 1 ]
+}
+
+udc() { ls /sys/class/udc | head -1; }
+
+link_functions() {
+	rm -f "$G/configs/c.1/ffs.mtp" "$G/configs/c.1/ecm.usb0" "$G/configs/c.1/acm.GS0"
+	for f in "$@"; do ln -s "$G/functions/$f" "$G/configs/c.1/$f" || return 1; done
+}
+
+write_config() {
+	cat > "$CONF" <<CONF
+loop_on_disconnect 1
+manufacturer "Y2Linux"
+product "Y1"
+serial "Y1LINUX-DEV-01"
+interface "MTP"
+firmware_version "Platform 1.0"
+mtp_extensions ""
+usb_class 0x6
+usb_subclass 0x1
+usb_protocol 0x1
+perceived_device_type 0x2
+usb_functionfs_mode 1
+usb_dev_path "/dev/ffs-mtp/ep0"
+usb_epin_path "/dev/ffs-mtp/ep1"
+usb_epout_path "/dev/ffs-mtp/ep2"
+usb_epint_path "/dev/ffs-mtp/ep3"
+usb_max_packet_size 0x200
+usb_max_rd_buffer_size 0x10000
+usb_max_wr_buffer_size 0x10000
+read_buffer_cache_size 0x100000
+sync_when_close 0
+no_inotify 1
+umask 077
+storage "/data/music" "Music" "rw,notmounted"
+CONF
+}
+
+supervise() {
+	n=0
+	while [ "$n" -lt 5 ] && [ ! -e "$RUN/stop" ]; do
+		(ulimit -v 65536; exec /usr/sbin/umtprd -conf "$CONF") > "$RUN/umtprd-$n.log" 2>&1
+		log "umtprd exited $? (start $n)"
+		n=$((n + 1))
+		sleep 2
+	done
+}
+
+# The receipt Reborn reads (org.y2linux.usb-transfer/v1): a rescan whenever umtprd's generation of durable changes
+# moves on, or the computer lets go.
+receipts() {
+	boot=$(cat /proc/sys/kernel/random/boot_id)
+	refresh=0 seen= last_cable= last=
+	while [ ! -e "$RUN/stop" ]; do
+		events=$(cat /run/y2/mtp-events.json 2>/dev/null)
+		generation=$(echo "$events" | grep -o '"generation": *[0-9]*' | grep -o '[0-9]*$')
+		error=$(echo "$events" | grep -o '"error": *-*[0-9]*' | grep -o '\-*[0-9]*$')
+		active=false
+		echo "$events" | grep -q '"active": *true' && active=true
+		cable=$(cat "/sys/class/udc/$(udc)/state" 2>/dev/null)
+		[ -n "$generation" ] && [ "$generation" != "$seen" ] && { [ -n "$seen" ] && refresh=$((refresh + 1)); seen=$generation; }
+		[ "$last_cable" = configured ] && [ "$cable" != configured ] && refresh=$((refresh + 1))
+		last_cable=$cable
+		state=Ready
+		[ "$active" = true ] && state=Copying
+		record="{\"schema\":\"org.y2linux.usb-transfer/v1\",\"boot_id\":\"$boot\",\"state\":\"$state\",\"reason\":null,\"mode\":\"mtp\",\"cable\":\"$cable\",\"functions\":[\"ffs.mtp\",\"ecm.usb0\",\"acm.GS0\"],\"views\":[],\"filesystem_owner\":\"linux\",\"block_export\":false,\"refresh_generation\":$refresh,\"active\":$active,\"error\":${error:-null},\"restarts\":0}"
+		if [ "$record" != "$last" ]; then
+			echo "$record" > /run/y2/usb-transfer.json.tmp && mv /run/y2/usb-transfer.json.tmp /run/y2/usb-transfer.json
+			last=$record
+		fi
+		sleep 1
+	done
+}
+
+start() {
+	real_data || { log "no Y2DATA at /data, MTP not started"; return 1; }
+	mkdir -p -m 0700 "$RUN" /data/music
+	mkdir -p -m 0700 /run/y2
+	rm -f "$RUN/stop"
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+	[ -d "$G" ] || { log "no gadget from PID1"; return 1; }
+	controller=$(udc)
+	echo "" > "$G/UDC" 2>/dev/null
+	mkdir -p "$G/functions/ffs.mtp" && link_functions ffs.mtp ecm.usb0 acm.GS0 ||
+		{ log "functions not linked"; link_functions ecm.usb0 acm.GS0; echo "$controller" > "$G/UDC"; return 1; }
+	mkdir -p /dev/ffs-mtp
+	mountpoint -q /dev/ffs-mtp || mount -t functionfs mtp /dev/ffs-mtp || { log "functionfs mount failed"; return 1; }
+	write_config
+	supervise &
+	echo $! > "$RUN/supervisor.pid"
+	i=0
+	while [ $i -lt 50 ] && ! { [ "$(cat "$G/functions/ffs.mtp/ready" 2>/dev/null)" = 1 ] && [ -e /dev/ffs-mtp/ep3 ]; }; do
+		sleep 0.2
+		i=$((i + 1))
+	done
+	[ -e /dev/ffs-mtp/ep3 ] || log "umtprd's endpoints did not appear"
+	echo "$controller" > "$G/UDC" || { log "bind to $controller failed"; return 1; }
+	/usr/sbin/umtprd -cmd:mount:Music > /dev/null 2>&1
+	i=0
+	while [ $i -lt 30 ] && ! grep -q '"/data/music"' /run/y2/mtp-roots.json 2>/dev/null; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	grep -q '"/data/music"' /run/y2/mtp-roots.json 2>/dev/null && log "MTP on $controller: Music = /data/music" ||
+		log "Music not pinned by umtprd"
+	receipts &
+	echo $! > "$RUN/receipts.pid"
+}
+
+stop() {
+	touch "$RUN/stop"
+	[ -d "$G" ] && echo "" > "$G/UDC" 2>/dev/null
+	for p in supervisor receipts; do [ -f "$RUN/$p.pid" ] && kill "$(cat "$RUN/$p.pid")" 2>/dev/null; done
+	killall umtprd 2>/dev/null
+	i=0
+	while [ $i -lt 30 ] && pidof umtprd > /dev/null; do sleep 0.1; i=$((i + 1)); done
+	mountpoint -q /dev/ffs-mtp && umount /dev/ffs-mtp
+	if [ -d "$G" ]; then
+		link_functions ecm.usb0 acm.GS0 && echo "$(udc)" > "$G/UDC" 2>/dev/null
+	fi
+}
+
+case "$1" in
+	start) printf 'Starting MTP: '; start && echo OK || echo FAIL ;;
+	stop) printf 'Stopping MTP: '; stop; echo OK ;;
+esac
