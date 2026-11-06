@@ -1,12 +1,12 @@
 #!/bin/sh
-# Innioasis Y1 test BOOTIMG, variant "first" to "twenty-fifth" (docs/knowledge/y1-hardware.md,
+# Innioasis Y1 test BOOTIMG, variant "first" to "twenty-seventh" (docs/knowledge/y1-hardware.md,
 # docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-POWER-PLAN.md, Y1-REBORN-PLAN.md, Y1-DATA-PLAN.md, Y1-MTP-PLAN.md, Y1-CHARGE-MODE-PLAN.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --output out/<fresh-dir> -- sh /project/tools/build/y1-boot.sh first
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
-#       -- sh /project/tools/build/y1-boot.sh second   (or third to twenty-fifth)
+#       -- sh /project/tools/build/y1-boot.sh second   (or third to twenty-seventh)
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
-variant=${1:?variant: first to twenty-fifth}
+variant=${1:?variant: first to twenty-seventh}
 case $variant in
 first) defines= ;;
 second) defines=-DY1_SECOND_BOOT ;;
@@ -33,6 +33,8 @@ twenty-second) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_F
 twenty-third) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT -DY1_EIGHTEENTH_BOOT -DY1_NINETEENTH_BOOT -DY1_TWENTIETH_BOOT -DY1_TWENTY_FIRST_BOOT -DY1_TWENTY_THIRD_BOOT" ;;
 twenty-fourth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT -DY1_EIGHTEENTH_BOOT -DY1_NINETEENTH_BOOT -DY1_TWENTIETH_BOOT -DY1_TWENTY_FIRST_BOOT -DY1_TWENTY_THIRD_BOOT -DY1_TWENTY_SECOND_BOOT" ;;
 twenty-fifth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT -DY1_EIGHTEENTH_BOOT -DY1_NINETEENTH_BOOT -DY1_TWENTIETH_BOOT -DY1_TWENTY_FIRST_BOOT -DY1_TWENTY_THIRD_BOOT -DY1_TWENTY_SECOND_BOOT -DY1_TWENTY_FIFTH_BOOT" ;;
+twenty-sixth) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT -DY1_EIGHTEENTH_BOOT -DY1_NINETEENTH_BOOT -DY1_TWENTIETH_BOOT -DY1_TWENTY_FIRST_BOOT -DY1_TWENTY_THIRD_BOOT -DY1_TWENTY_SECOND_BOOT" ;;
+twenty-seventh) defines="-DY1_SECOND_BOOT -DY1_THIRD_BOOT -DY1_FOURTH_BOOT -DY1_FIFTH_BOOT -DY1_SIXTH_BOOT -DY1_SEVENTH_BOOT -DY1_EIGHTH_BOOT -DY1_NINTH_BOOT -DY1_TENTH_BOOT -DY1_ELEVENTH_BOOT -DY1_EIGHTEENTH_BOOT -DY1_NINETEENTH_BOOT -DY1_TWENTIETH_BOOT -DY1_TWENTY_FIRST_BOOT -DY1_TWENTY_THIRD_BOOT -DY1_TWENTY_SECOND_BOOT -DY1_TWENTY_FIFTH_BOOT" ;;
 *) echo "unknown variant $variant" >&2; exit 2 ;;
 esac
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }
