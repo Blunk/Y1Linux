@@ -82,25 +82,52 @@ class Y1ConnectivityFacts(unittest.TestCase):
         # No Y2 modem, Wi-Fi or SPM code in the Y1 driver.
         self.assertFalse(any(re.search(r'md\.c|wifi|domain\.h|spm', s) for s in added.values()))
 
-    def test_only_the_b4_and_b5_trees_name_the_driver_each_with_its_limit(self):
+    def test_only_the_b4_to_b6_trees_name_the_driver_each_with_its_limit(self):
         # B2 built it without a node; B4 admits the chip-id bring-up (no PA rail), B5 the wmt bring-up.
         compatible = re.search(r'compatible="([^"]+)"', (Y1 / 'core.c').read_text()).group(1)
         self.assertEqual(compatible, 'innioasis,y1-mt6572-connectivity')
         naming = [t.name for t in sorted((ROOT / 'kernel/dts').glob('*y1*')) if compatible in t.read_text()]
-        limits = {'innioasis-y1-thirty-second-boot.dts': 'chip-id', 'innioasis-y1-thirty-third-boot.dts': 'wmt'}
+        # B6 (thirty-fourth): the full driver, no limit.
+        limits = {'innioasis-y1-thirty-second-boot.dts': 'chip-id', 'innioasis-y1-thirty-third-boot.dts': 'wmt',
+                  'innioasis-y1-thirty-fourth-boot.dts': None}
         self.assertEqual(naming, sorted(limits))
         for name, limit in limits.items():
             tree = (ROOT / 'kernel/dts' / name).read_text()
             node = tree[tree.index('connectivity@18070000 {'):]
             node = node[:node.index('};')]
-            self.assertIn(f'innioasis,bring-up = "{limit}";', node)
+            if limit:
+                self.assertIn(f'innioasis,bring-up = "{limit}";', node)
+            else:
+                self.assertNotIn('innioasis,bring-up', node)
             # The PA rails only from B5 on; no supply of the connectivity core ever always-on or boot-on.
-            self.assertEqual('vcn33' in tree, limit == 'wmt', name)
-            for rail in ('vcn18', 'vcn28') + (('vcn33_bt', 'vcn33_wifi') if limit == 'wmt' else ()):
+            self.assertEqual('vcn33' in tree, limit != 'chip-id', name)
+            for rail in ('vcn18', 'vcn28') + (('vcn33_bt', 'vcn33_wifi') if limit != 'chip-id' else ()):
                 block = tree[tree.index(f'{rail}: ldo_{rail} {{'):]
                 block = block[:block.index('};')]
                 self.assertNotIn('always-on', block)
                 self.assertNotIn('boot-on', block)
+
+    def test_b6_services_are_bluetooth_only(self):
+        # The Y2's S41 runs y2-factory, MD calibration, wpa_supplicant and connectivity-daemon: none on the Y1.
+        base = ROOT / 'initramfs/y1-bluetooth/etc/init.d'
+        services = (base / 'y1-services').read_text()
+        listed = services.split('Y1_SERVICES="')[1].split('"')[0].split()
+        self.assertTrue({'S30dbus-daemon', 'S41y2-connectivity', 'S03y1-data'} <= set(listed))
+        self.assertLess(listed.index('S03y1-data'), listed.index('S41y2-connectivity'))
+        self.assertNotIn('S40bluetoothd', listed)  # y2-radiod starts bluetoothd itself
+        script = (base / 'S41y2-connectivity').read_text()
+        code = '\n'.join(line for line in script.splitlines() if not line.lstrip().startswith('#'))
+        for absent in ('y2-factory', 'y2-calibration', 'wpa_supplicant', 'connectivity-daemon', 'y2-radio-activate'):
+            self.assertNotIn(absent, code)
+        for present in ('RECORD=/data/connectivity/bt-record', '"$1 $3 $5" = "-rw------- 0 32"',
+                        'cat "$RECORD" > "$C/factory" && echo 1 > "$C/activate"', '-x /usr/sbin/y2-radiod',
+                        'stop-wifi) : ;;', 'mount --bind /data/bluetooth/bluez /var/lib/bluetooth'):
+            self.assertIn(present, script)
+        listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
+        self.assertIn('/y1-system/etc/init.d/S41y2-connectivity /project/initramfs/y1-bluetooth/etc/init.d/'
+                      'S41y2-connectivity 0755', listing)
+        pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
+        self.assertIn('#ifdef Y1_THIRTY_FOURTH_BOOT\n    /* Bluetooth', pid1)
 
     def test_never_the_jtag_pads_or_gpio_modes(self):
         # B1 §0: stock writes 0x10208000/0x10005300 only behind its JTAG debug flag.
@@ -688,6 +715,171 @@ int main(void){
  static struct y2_conn c={.clocks={{"spm",0},{"btif",0},{"dma",0}}};
  static char window[3][256]; c.btif=window[0];c.txdma=window[1];c.rxdma=window[2];
  assert(!y2_btif_start(&c) && c.dma_active && c.transport_on && writes>20 && irqs==4);
+}
+""")
+
+
+
+class Y1HciB6(unittest.TestCase):
+    """B6: the full driver, hci0 through the shared hci.c with the Y1's 32-byte record."""
+
+    def test_actual_setup_injects_the_record_in_stock_order(self):
+        # Synthetic record (never the owner's): an address, then the radio/sleep/TX-power bytes.
+        record = bytes.fromhex('0a1b2c3d4e5f') + bytes(range(6, 32))
+        default = bytes.fromhex('000046657201')
+        other = bytes.fromhex('5e1122334455')
+        digests = {a: hashlib.sha256(a).digest() for a in (record[:6], default, other)}
+        table = '\n'.join(f' {{{c_bytes(a)},{c_bytes(d)}}},' for a, d in digests.items())
+        hci = (ROOT / 'kernel/platform/connectivity/hci.c').read_text()
+        body = '\n'.join(function(hci, n) for n in ('controller_quirks', 'command', 'setup'))
+        quirk_chip = re.search(r'^#define Y2_CONN_EXT_FEATURES_QUIRK_CHIP .*$', (Y1 / 'conn.h').read_text(), re.M)[0]
+        run_c(r"""
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+""" + POLICY + r"""
+#define Y2_CONN_DEFAULT_ADDRESS_SHA256 Y1_CONN_DEFAULT_ADDRESS_SHA256
+""" + quirk_chip + r"""
+typedef unsigned short u16;
+#define HCI_OP_READ_BD_ADDR 0x1009
+#define HCI_OP_RESET 0x0c03
+#define HCI_CMD_TIMEOUT 2000
+#define HCI_QUIRK_BROKEN_LOCAL_EXT_FEATURES_PAGE_2 1
+#define IS_ERR(p) ((unsigned long)(p)>=(unsigned long)-4095)
+#define PTR_ERR(p) ((long)(p))
+static unsigned quirks;
+#define hci_set_quirk(h,q) ((void)(h),quirks|=(q))
+#define dev_info(...) ((void)0)
+#define memzero_explicit(p,n) memset(p,0,n)
+struct sk_buff {unsigned len; unsigned char data[16];};
+struct hci_dev {unsigned max_page; void *drv;};
+struct y2_conn {struct hci_dev *hdev; unsigned chip,hvr,fvr; bool bt_identity_set,bt_controller_address;
+ unsigned char bt_address[6],bt_factory[Y1_CONN_RECORD_SIZE]; void *dev;};
+static const struct {unsigned char a[6],d[32];} digests[]={
+""" + table + r"""
+};
+static void sha256(const unsigned char *p,unsigned n,unsigned char *out){
+ assert(n==6);for(unsigned i=0;i<sizeof(digests)/sizeof(*digests);i++)
+  if(!memcmp(p,digests[i].a,6)){memcpy(out,digests[i].d,32);return;}
+ assert(0);
+}
+static bool is_valid_ether_addr(const unsigned char *a){
+ unsigned any=0;for(int i=0;i<6;i++)any|=a[i];return any && !(a[0]&1);
+}
+static void *hci_get_drvdata(struct hci_dev *h){return h->drv;}
+static unsigned char controller[6]; static unsigned ops[16],lens[16],nops; static unsigned char args[16][8];
+static void kfree_skb(struct sk_buff *s){free(s);}
+static struct sk_buff *__hci_cmd_sync(struct hci_dev *h,unsigned op,unsigned n,const void *data,unsigned t){
+ (void)h;(void)t;struct sk_buff *s=calloc(1,sizeof(*s));assert(nops<16 && n<=8);
+ ops[nops]=op;lens[nops]=n;if(n)memcpy(args[nops],data,n);nops++;
+ if(op==HCI_OP_READ_BD_ADDR){s->len=7;for(int i=0;i<6;i++)s->data[6-i]=controller[i];}
+ else s->len=1;
+ return s;
+}
+""" + body + r"""
+static void run(const unsigned char *ctl,struct y2_conn *c){
+ static const unsigned char record[]=""" + c_bytes(record) + r""";
+ static struct hci_dev h; memset(c,0,sizeof(*c)); h.drv=c; h.max_page=2; c->hdev=&h; c->chip=0x6572;
+ c->hvr=0x8a01; c->fvr=0x8a00; quirks=0;
+ memcpy(c->bt_factory,record,32); memcpy(controller,ctl,6); nops=0;
+ assert(!setup(&h));
+}
+int main(void){
+ struct y2_conn c;
+ static const unsigned char rec[]=""" + c_bytes(record) + r""", def[]=""" + c_bytes(default) + r""",
+  oth[]=""" + c_bytes(other) + r""";
+ /* The controller reports the generic MT6572 default: the record's address is used. */
+ run(def,&c);
+ static const unsigned expect[]={HCI_OP_READ_BD_ADDR,0xfc1a,0xfc79,0xfc93,0xfc7a,HCI_OP_RESET};
+ static const unsigned sizes[]={0,6,6,3,7,0};
+ assert(nops==6 && !memcmp(ops,expect,sizeof(expect)) && !memcmp(lens,sizes,sizeof(sizes)));
+ for(int i=0;i<6;i++) assert(args[1][i]==rec[5-i]); /* address reversed on the wire */
+ assert(!memcmp(args[2],rec+12,6) && !memcmp(args[3],rec+27,3) && !memcmp(args[4],rec+18,7));
+ assert(!c.bt_controller_address && !memcmp(c.bt_address,rec,6));
+ /* B6 run 1: this HVR 8a01/FVR 8a00 firmware rejects extended-features page 2 (status 0x30, -38). */
+ assert(quirks==HCI_QUIRK_BROKEN_LOCAL_EXT_FEATURES_PAGE_2 && c.hdev->max_page==1);
+ /* A valid, non-default controller identity takes precedence (the Y2's shared rule); settings stay the record's. */
+ run(oth,&c);
+ assert(c.bt_controller_address && !memcmp(c.bt_address,oth,6));
+ for(int i=0;i<6;i++) assert(args[1][i]==oth[5-i]);
+ assert(!memcmp(args[2],rec+12,6));
+ /* Identity is chosen once per boot: a second setup reads nothing new. */
+ nops=0; assert(!setup(c.hdev) && ops[0]==0xfc1a && nops==5);
+}
+""")
+
+    def test_the_actual_factory_rule_rejects_default_and_bad_records(self):
+        cases = [(bytes.fromhex('000046657201') + bytes(26), -1), (bytes.fromhex('02aabbccddee') + bytes(26), 0),
+                 (bytes(32), -1), (bytes.fromhex('03aabbccddee') + bytes(26), -1)]
+        checks = '\n'.join(f' {{static const unsigned char r[]={c_bytes(r)},d[]={c_bytes(hashlib.sha256(r[:6]).digest())};'
+                           f'assert(y1_conn_record_check(r,32,d)=={w});assert(y1_conn_record_check(r,31,d)==-1);}}'
+                           for r, w in cases)
+        core = (Y1 / 'core.c').read_text()
+        self.assertIn('if (offset || size!=Y1_CONN_RECORD_SIZE) return -EINVAL;', core)
+        self.assertIn('y1_conn_record_check((const u8 *)data, size, digest)', core)
+        run_c('#include <assert.h>\n' + POLICY + 'int main(void){\n' + checks + '\n}\n')
+
+    def test_actual_open_close_sequence(self):
+        core = (Y1 / 'core.c').read_text().replace('int y2_conn_get(', 'static int y2_conn_get(') \
+            .replace('int y2_conn_put(', 'static int y2_conn_put(')
+        hci = (ROOT / 'kernel/platform/connectivity/hci.c').read_text()
+        body = '\n'.join(function(core, n) for n in ('sleep_then_off', 'runtime_resume', 'runtime_suspend',
+                                                     'y2_conn_get', 'y2_conn_put'))
+        body += '\n'.join(function(hci, n) for n in ('open', 'flush', 'close'))
+        run_c(r"""
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <string.h>
+#define BIT(n) (1u<<(n))
+#define Y2_CONN_BT 0
+#define READ_ONCE(x) (x)
+#define WRITE_ONCE(x,v) ((x)=(v))
+#define dev_warn(...) ((void)0)
+struct device {int unused;};
+struct y2_conn {struct device *dev; int lifecycle,stp_lock,hci_work,hci_tx; void *hci_rx;
+ bool activated,recovering,removing,powered,dma_active,full_stp,hci_open,hci_paused;
+ unsigned functions,wanted; int failure;};
+struct hci_dev {struct y2_conn *c;};
+static struct y2_conn conn; static struct device dev;
+enum {POWER_ON,PA_ON,FUNC_ON,FUNC_OFF,PA_OFF,SLEEP,POWER_OFF};
+static unsigned log_[32],n;
+static void rec(unsigned e){assert(n<32);log_[n++]=e;}
+static void mutex_lock(int *m){assert(!*m);*m=1;}
+static void mutex_unlock(int *m){assert(*m);*m=0;}
+static void *dev_get_drvdata(struct device *d){(void)d;return &conn;}
+static struct y2_conn *hci_get_drvdata(struct hci_dev *h){return h->c;}
+static void cancel_work_sync(int *w){(void)w;}
+static void skb_queue_purge(int *q){(void)q;}
+static void kfree_skb(void *s){(void)s;}
+static int power_on(struct y2_conn *c){rec(POWER_ON);c->powered=c->dma_active=c->full_stp=true;return 0;}
+static int power_off(struct y2_conn *c){rec(POWER_OFF);c->powered=c->dma_active=c->full_stp=false;return 0;}
+static int y1_wmt_sleep(struct y2_conn *c){assert(c->powered && c->dma_active);rec(SLEEP);return 0;}
+static int y2_conn_rail(struct y2_conn *c,unsigned rail,bool on){(void)c;assert(rail==2);rec(on?PA_ON:PA_OFF);return 0;}
+static int y2_wmt_function(struct y2_conn *c,unsigned f,bool on){(void)c;assert(f==Y2_CONN_BT);rec(on?FUNC_ON:FUNC_OFF);return 0;}
+static void y2_conn_failed(struct y2_conn *c,int e){c->failure=e;}
+static int runtime_resume(struct device *d);
+static int runtime_suspend(struct device *d);
+static int pm_runtime_resume_and_get(struct device *d){return runtime_resume(d);}
+static void pm_runtime_put(struct device *d){runtime_suspend(d);}
+static void pm_runtime_mark_last_busy(struct device *d){(void)d;}
+static void pm_runtime_put_autosuspend(struct device *d){runtime_suspend(d);}
+""" + body + r"""
+int main(void){
+ struct hci_dev h={&conn}; conn.dev=&dev; conn.activated=true;
+ /* hci0 up: power-on with the WMT boot, the BT PA rail, WMT function on. */
+ assert(!open(&h) && conn.hci_open && conn.functions==1);
+ /* hci0 down: function off, PA rail off, then (autosuspend) WMT sleep and the power-off. */
+ assert(!close(&h) && !conn.hci_open && !conn.functions && !conn.powered);
+ static const unsigned expect[]={POWER_ON,PA_ON,FUNC_ON,FUNC_OFF,PA_OFF,SLEEP,POWER_OFF};
+ assert(n==7 && !memcmp(log_,expect,sizeof(expect)));
+ /* A failed transport powers off without the sleep command. */
+ n=0; assert(!open(&h)); conn.failure=-EIO; conn.hci_open=false;
+ assert(!close(&h) && log_[n-1]==POWER_OFF && log_[n-2]==PA_OFF);
+ /* Not activated (no factory record): hci never powers anything. */
+ n=0; conn.failure=0; conn.activated=false; assert(open(&h)==-EHOSTDOWN && !n);
 }
 """)
 

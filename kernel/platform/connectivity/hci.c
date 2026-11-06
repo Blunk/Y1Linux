@@ -11,7 +11,7 @@
 
 static void controller_quirks(struct y2_conn *c)
 {
-	if (c->chip != 0x6582 || c->hvr != 0x8a01 || c->fvr != 0x8a00) return;
+	if (c->chip != Y2_CONN_EXT_FEATURES_QUIRK_CHIP || c->hvr != 0x8a01 || c->fvr != 0x8a00) return;
 	/* Own E2 trace: page 1 succeeds with max_page=2, but reading page 2
 	 * returns status 0x30. Use the kernel quirk, as the donor does, without
 	 * masking EDR/LE features or supported commands. Also retire a cached

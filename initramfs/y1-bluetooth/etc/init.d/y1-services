@@ -1,0 +1,6 @@
+# Innioasis Y1: the Y2 boot scripts that are safe on Y1 hardware (docs/planning/Y1-SYSTEM-PLAN.md §2), with
+# USB networking and SSH (docs/planning/Y1-NETWORK-PLAN.md), Reborn (docs/planning/Y1-REBORN-PLAN.md), the Y2's
+# power daemon (docs/planning/Y1-POWER-PLAN.md, D2), Y2DATA (docs/planning/Y1-DATA-PLAN.md), MTP
+# (docs/planning/Y1-MTP-PLAN.md) and Bluetooth (docs/planning/Y1-BLUETOOTH-PLAN.md, B6): the Y2's D-Bus and the Y1's
+# S41y2-connectivity (hci0 from the owner's record, then y2-radiod, which starts bluetoothd and BlueALSA itself).
+Y1_SERVICES="S00y2-runtime S01syslogd S02klogd S02sysctl S03y2-time S03y1-data S04y2-power S11modules S20y2-usb S25y2-display S30dbus-daemon S40network S41y2-connectivity S45y1-mtp S50crond S50y1-dropbear S90y1-reborn"
