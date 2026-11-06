@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirtieth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-second) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -188,6 +188,33 @@ VARIANTS['twenty-ninth'] = VARIANTS['twenty-eighth']
 VARIANTS['thirtieth'] = dict(VARIANTS['twenty-ninth'], expected=VARIANTS['twenty-ninth']['expected'] + [
     'innioasis,hold-power-ms = <0xbb8>;',
 ])
+
+# The connectivity core's memory reserved (docs/planning/Y1-BLUETOOTH-PLAN.md, B3).
+VARIANTS['thirty-first'] = dict(VARIANTS['thirtieth'], expected=VARIANTS['thirtieth']['expected'] + [
+    'reg = <0x80000000 0x100000>;',
+    'no-map;',
+])
+
+# Bluetooth B4 (docs/planning/Y1-BLUETOOTH-PLAN.md): the connectivity owner limited to the chip-id bring-up, with
+# VCN18 and VCN28 (fixed 1.8 V / 2.8 V, off as LK leaves them); never the PA rails in this stage.
+VARIANTS['thirty-second'] = dict(
+    VARIANTS['thirty-first'], enabled=VARIANTS['thirty-first']['enabled'] + 1,
+    expected=VARIANTS['thirty-first']['expected'] + [
+        'compatible = "innioasis,y1-mt6572-connectivity";',
+        'innioasis,bring-up = "chip-id";',
+        'reg-names = "mcu", "conn-emi", "btif", "tx-dma", "rx-dma";',
+        'interrupt-names = "btif", "tx-dma", "rx-dma", "wake";',
+        'clock-names = "spm", "btif", "dma";',
+        'memory-region = <',
+        'regulator-name = "vcn18";',
+        'regulator-min-microvolt = <0x1b7740>;',
+        'regulator-max-microvolt = <0x1b7740>;',
+        'regulator-name = "vcn28";',
+        'regulator-min-microvolt = <0x2ab980>;',
+        'regulator-max-microvolt = <0x2ab980>;',
+    ],
+    forbidden=VARIANTS['thirty-first'].get('forbidden', []) + ['vcn33', 'regulator-boot-on'],
+    regulators=VARIANTS['thirty-first']['regulators'] + ['regulator-name = "vcn18";', 'regulator-name = "vcn28";'])
 
 
 def empty_ramdisk():

@@ -1,5 +1,24 @@
 # Roadmap gap audit
 
+## Y1 Bluetooth B4, first radio power — 2026-11-06
+
+Boundary review before the first power to the Y1's connectivity block ([plan](Y1-BLUETOOTH-PLAN.md), B4;
+owner-approved). Evidence: B3 passed (the kernel at `0x80108000`, `0x80000000`/1 MiB reserved, the owner's
+regression check good). B4 powers the CONN domain with VCN18/VCN28 as stock does (B1 §4), reads the chip ID
+`0x18070008`, and powers it off again: no firmware, no radio transmission, no write to the forbidden JTAG
+registers, read-only baseline first. Gaps unchanged (the platform gate's goldens failure). Proceeding with B4 only.
+
+## Y1 Bluetooth B3, memory layout — 2026-11-06
+
+Boundary review before the Y1's first memory-layout change ([plan](Y1-BLUETOOTH-PLAN.md) §7, B3; owner-approved).
+Evidence since the planning entry: B0–B2 done offline (the Y1 firmware profile; the stock power-on decoded: the
+radio core's memory is fixed at `0x80000000`, 1 MiB, with no remap register; the driver adapted and compiled
+without a device-tree node; the Y2's kernel byte-identical). The Y1 kernel today decompresses to `0x80008000`,
+inside that MiB. B3 moves the kernel to `0x80108000` (`TEXT_OFFSET 0x00108000`, as mainline does for Realtek; stock
+3.0.2 runs its kernel there too) and reserves `0x80000000`/1 MiB `no-map`: 1 MiB less RAM (about 487 → 486 MiB),
+no radio power, no driver node. Gaps unchanged: Bluetooth stays off until B4's admission; the platform gate's
+goldens failure still blocks commits under AGENTS.md. Proceeding with B3 only.
+
 ## Y1 Bluetooth planning — 2026-11-06
 
 Owner's question: Bluetooth as on the Y2 ([plan](Y1-BLUETOOTH-PLAN.md)). Evidence: the MT6572 has the Y2's
