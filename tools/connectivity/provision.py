@@ -5,6 +5,10 @@ The firmware manifest is the completed M5 inventory. Optional stock default
 records are extracted from the exact same product's libcustom_nvram.so. They
 are generic board parameters, not a replacement for device factory records.
 No default address is allowed into the resulting files.
+
+Profile "y1" (Innioasis Y1, docs/planning/Y1-BLUETOOTH-PLAN.md): the Y1's own stock
+files (docs/knowledge/evidence/y1-firmware-inventory.json), one WMT patch part
+(platform "1319"), Bluetooth only, no Y2 default records.
 """
 import argparse
 import hashlib
@@ -16,6 +20,7 @@ import struct
 
 PROJECT = Path(__file__).resolve().parents[2]
 INVENTORY = PROJECT / 'docs/knowledge/evidence/m5-firmware-inventory.json'
+Y1_INVENTORY = PROJECT / 'docs/knowledge/evidence/y1-firmware-inventory.json'
 CUSTOM_SHA = 'c6460e9649f539b56449dc19f8d20771402f539be9e73340a74a9ccf45287397'
 CUSTOM_SIZE = 51224
 DEFAULTS = {
@@ -92,22 +97,29 @@ def defaults(path):
     return {'WIFI.defaults': bytes(wifi), 'BT.defaults': bytes(bt)}
 
 
-def provision(source, destination, custom=None):
-    inventory = json.loads(INVENTORY.read_text())
+def provision(source, destination, custom=None, profile='y2'):
+    y1 = profile == 'y1'
+    if profile not in ('y2', 'y1'):
+        raise ValueError('unknown profile')
+    if y1 and custom:
+        raise ValueError('the Y2 default records do not apply to the Y1')
+    inventory = json.loads((Y1_INVENTORY if y1 else INVENTORY).read_text())
     staged = {}
     for entry in inventory['files']:
         name = entry['filename']
         staged[name] = checked(source / name, entry['bytes'], entry['sha256'])
-    # Validate the actual patch headers, not filename sorting.
+    # Validate the actual patch headers, not filename sorting. The Y2's patch
+    # comes in two parts ("ALPS"); the Y1's in one ("1319").
+    count_expected, platform = (1, b'1319') if y1 else (2, b'ALPS')
     patches = []
     for name, data in staged.items():
         if not name.endswith('_hdr.bin'):
             continue
         count, sequence = data[24] >> 4, data[24] & 15
-        if count != 2 or sequence not in (1, 2) or data[18:20] != b'PS':
+        if count != count_expected or not 1 <= sequence <= count or data[16:20] != platform:
             raise ValueError('patch header/order mismatch')
         patches.append((sequence, name))
-    if sorted(seq for seq, _ in patches) != [1, 2]:
+    if sorted(seq for seq, _ in patches) != list(range(1, count_expected + 1)):
         raise ValueError('incomplete patch set')
     if custom:
         staged.update(defaults(custom))
@@ -115,6 +127,7 @@ def provision(source, destination, custom=None):
         raise ValueError('fresh owner staging directory required')
     destination.mkdir(parents=True, mode=0o700)
     receipt = {'schema': 'org.schulzcode.y2linux.owner-radio-firmware/v1',
+               'profile': profile,
                'redistribution_permission_established': False,
                'owner_supplied': True, 'contains_device_calibration': False,
                'contains_radio_addresses': False,
@@ -143,8 +156,9 @@ def main():
     parser.add_argument('--owner-firmware', type=Path, required=True)
     parser.add_argument('--stock-custom-nvram', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--profile', choices=('y2', 'y1'), default='y2')
     args = parser.parse_args()
-    receipt = provision(args.owner_firmware, args.output, args.stock_custom_nvram)
+    receipt = provision(args.owner_firmware, args.output, args.stock_custom_nvram, args.profile)
     print('Verified owner-local firmware:', len(receipt['files']), 'files')
     print('Redistribution permission is not established; this is an owner-local input.')
 

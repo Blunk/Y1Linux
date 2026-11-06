@@ -32,13 +32,10 @@ static int setup(struct hci_dev *hdev)
 	struct y2_conn *c = hci_get_drvdata(hdev);
 	struct sk_buff *reply; int ret;
 	unsigned char wire[6], candidate[6], digest[32];
-	/* Hash of the generic, non-unique MT6582 address in BOTH this Y2's stock
-	 * libcustom_nvram and libbluetooth_mtk. It is a reject value, never an
-	 * assigned identity. A valid controller identity takes precedence. */
-	static const unsigned char default_hash[32] = {
-		0x8b,0xf9,0xd1,0xe7,0x4e,0xea,0x89,0xe5,0x1c,0xfb,0x4d,0x83,0x22,0x59,0x02,0x12,
-		0xd2,0x7b,0xde,0x6e,0xe8,0x4f,0x49,0x7f,0xb7,0xaf,0x57,0xdf,0xf1,0xa9,0xd9,0xf6,
-	};
+	/* The chip's generic, non-unique default address as a hash (conn.h): a
+	 * reject value, never an assigned identity. A valid controller identity
+	 * takes precedence. */
+	static const unsigned char default_hash[32] = Y2_CONN_DEFAULT_ADDRESS_SHA256;
 	if (!c->bt_identity_set) {
 		reply = __hci_cmd_sync(hdev, HCI_OP_READ_BD_ADDR, 0, NULL, HCI_CMD_TIMEOUT);
 		if (IS_ERR(reply)) return PTR_ERR(reply);
