@@ -1,0 +1,58 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's S41y2-connectivity (docs/planning/Y1-BLUETOOTH-PLAN.md, B6): Bluetooth only.
+# The Y2's factory provider, MD calibration, wpa_supplicant and connectivity-daemon are MT6582 and Wi-Fi only.
+# Here: the Y2's /data/bluetooth layout (S02y2-data), the owner's 32-byte BT_Addr record
+# (/data/connectivity/bt-record, root 0600, from tools/connectivity/y1_bt_record.py) handed to the driver, hci0
+# activated, then y2-radiod, which powers Bluetooth through BlueZ and starts bluetoothd and BlueALSA itself.
+# The power daemon's shutdown calls stop-wifi, stop-bluetooth and stop-daemon one by one, as on the Y2.
+C=/sys/devices/platform/18070000.connectivity
+RECORD=/data/connectivity/bt-record
+
+layout() {
+	umask 077
+	for dir in bluetooth bluetooth/bluez bluetooth/bluealsa connectivity system system/platform; do
+		[ ! -L "/data/$dir" ] || return 1
+		mkdir -p "/data/$dir" || return 1
+	done
+	chmod 700 /data/bluetooth /data/bluetooth/bluez /data/bluetooth/bluealsa /data/connectivity
+	[ -e /data/bluetooth/enabled ] || printf '0\n' > /data/bluetooth/enabled
+	# SBC and the build's qualified codecs only: no owner-private codec experiments on the MT6572.
+	[ -e /data/bluetooth/codec-policy.json ] ||
+		printf '{"schema":1,"experimental":false}\n' > /data/bluetooth/codec-policy.json
+	mkdir -p /var/lib/bluetooth /var/lib/bluealsa
+	mountpoint -q /var/lib/bluetooth || mount --bind /data/bluetooth/bluez /var/lib/bluetooth
+	mountpoint -q /var/lib/bluealsa || mount --bind /data/bluetooth/bluealsa /var/lib/bluealsa
+}
+
+# The driver checks the record again (32 bytes, unicast, not the generic default) and refuses a second write.
+activate() {
+	case "$(cat "$C/status")" in activated=1*) return 0;; esac
+	[ -f "$RECORD" ] && [ ! -L "$RECORD" ] || { echo "S41y2-connectivity: no $RECORD" >&2; return 1; }
+	# busybox has no stat(1) here: mode, owner and size from ls -ln.
+	set -- $(ls -ln "$RECORD")
+	[ "$1 $3 $5" = "-rw------- 0 32" ] || { echo "S41y2-connectivity: $RECORD not root 0600 32 bytes" >&2; return 1; }
+	cat "$RECORD" > "$C/factory" && echo 1 > "$C/activate"
+}
+
+case "$1" in
+ start)
+	[ -d "$C" ] || exit 0
+	grep -q '^[^ ]* /data ext4 ' /proc/mounts || exit 0
+	[ ! -e /data/system/platform/maintenance-pending ] || exit 1
+	layout || exit 1
+	activate || exit 1
+	mkdir -p /run/y2
+	start-stop-daemon -S -b -m -p /run/y2/radiod.pid -x /usr/sbin/y2-radiod
+	;;
+ stop)
+	"$0" stop-bluetooth; "$0" stop-daemon
+	;;
+ stop-wifi) : ;;
+ stop-bluetooth) y2-radio bluetooth off-runtime 2>/dev/null || : ;;
+ stop-daemon)
+	start-stop-daemon -K -p /run/y2/radiod.pid 2>/dev/null || :
+	start-stop-daemon -K -p /run/y2/bluealsa.pid 2>/dev/null || :
+	;;
+ restart) "$0" stop; "$0" start;;
+esac
+exit 0

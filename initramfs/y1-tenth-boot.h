@@ -61,6 +61,10 @@ static const struct override overrides[] = {
     /* MTP with one storage, /data/music (docs/planning/Y1-MTP-PLAN.md, M2). */
     { "/etc/init.d/S45y1-mtp", 0755 },
 #endif
+#ifdef Y1_THIRTY_FOURTH_BOOT
+    /* Bluetooth: hci0 from the owner's record, then y2-radiod (docs/planning/Y1-BLUETOOTH-PLAN.md, B6). */
+    { "/etc/init.d/S41y2-connectivity", 0755 },
+#endif
 };
 
 static int install_file(const char *path, unsigned mode)

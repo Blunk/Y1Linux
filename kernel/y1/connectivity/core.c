@@ -290,11 +290,22 @@ static int runtime_resume(struct device *dev)
 	mutex_unlock(&c->lifecycle);
 	return ret;
 }
+/* Before a regular power-off: the radio core to sleep (WMT sleep; B5 run 2: it then sleeps at once and
+ * the power-off needs no 10 s wait). Only over a healthy, booted transport; otherwise the power-off
+ * isolates without it (sleep wait, then the stock rule for the protection acknowledgement). */
+static int sleep_then_off(struct y2_conn *c)
+{
+	if (c->powered && c->dma_active && c->full_stp && !READ_ONCE(c->failure)) {
+		int ret = y1_wmt_sleep(c);
+		if (ret) dev_warn(c->dev, "WMT sleep before power-off: %d\n", ret);
+	}
+	return power_off(c);
+}
 static int runtime_suspend(struct device *dev)
 {
 	struct y2_conn *c=dev_get_drvdata(dev); int ret;
 	mutex_lock(&c->lifecycle);
-	ret=c->functions ? -EBUSY : power_off(c);
+	ret=c->functions ? -EBUSY : sleep_then_off(c);
 	mutex_unlock(&c->lifecycle);
 	return ret;
 }
@@ -661,7 +672,7 @@ static void shutdown(struct platform_device *pdev)
 	if (c->mode==Y1_MODE_WMT) { WRITE_ONCE(c->abort,true); y2_conn_failed(c,-ESHUTDOWN); }
 	cancel_work_sync(&c->recovery_work);
 	y2_hci_unregister(c); pm_runtime_disable(c->dev);
-	mutex_lock(&c->lifecycle); power_off(c); mutex_unlock(&c->lifecycle);
+	mutex_lock(&c->lifecycle); sleep_then_off(c); mutex_unlock(&c->lifecycle);
 }
 static const struct of_device_id match[]={ {.compatible="innioasis,y1-mt6572-connectivity"}, {} };
 static struct platform_driver y1_conn_driver={ .probe=probe,.shutdown=shutdown,

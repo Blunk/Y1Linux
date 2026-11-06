@@ -471,3 +471,150 @@ patch (40 fragments, reset acknowledged), calibration 630 bytes status 00, WMT s
 0x228=0xf000, not acknowledged (core asleep: continuing, as stock)`, `off: ctl=0x1112 status=0x3ffd`, **`done 0`**,
 `rc=0`. Afterwards CONN `0x1112`, `PWR_STATUS` `0x3ffd`, `0x10001220` `0x11`, `0x10001228` `0xf000`, `powered=0`,
 `calibrated=1`.
+
+## 14. B6 build — 2026-11-06
+
+Owner-approved after the B5 run. hci0 as on the Y2, the owner's own address record, BlueZ, BlueALSA and Reborn.
+Nothing flashed or sent to the Y1; the record is in no repository file.
+
+- **The address record**:
+  - **Source:** the owner's backup (`evidence-private/2026-11-04-y1-backup/read1/emmc_user.bin`). USRDATA is at logical
+    `0x4d540000` (ext4 magic checked there). The record is `/nvram/APCFG/APRDEB/BT_Addr`: 32 bytes, written
+    2022-08-01.
+  - **What it holds:** address `xx:xx:xx:xx:72:75`, unicast and locally administered. It is **not** the generic
+    MT6572 default `00:00:46:65:72:01` (stock generated it once). The radio, sleep and TX-power bytes 6–29 equal
+    stock's defaults; bytes 30–31 are unused.
+  - **Tool:** `tools/connectivity/y1_bt_record.py` reads it with debugfs straight from the dump (`image?offset=`, no
+    partition copy). It applies the driver's rule, writes a 0600 file and prints only the last two bytes. The
+    driver checks the record again on the `factory` write and refuses a second write.
+- **Kernel** (`kernel/y1/connectivity/core.c`): the full mode (no `innioasis,bring-up`) is the Y2 driver's model.
+  - **Probe:** checks the wiring, claims everything, applies the PMIC subset (as stock's PMIC init) and exposes
+    `factory` (32 bytes, write-only), `activate`, `status` and `recover`. `bring_up`/`power_off` exist only in the
+    `wmt` mode.
+  - **`activate`:** registers hci0 and powers nothing.
+  - **hci0 up** (BlueZ powering the adapter): runs the B5 boot, then WMT BT function on and the VCN33_BT rail on.
+  - **hci0 setup** (shared `hci.c`): reads the controller address. If it is the generic default or invalid, the
+    record's address is used. The commands are `0xfc1a` (address, reversed), `0xfc79` (record 12–17), `0xfc93`
+    (27–29), `0xfc7a` (18–24), then Reset; these are stock's `bt_init_script_6572` offsets and order.
+  - **hci0 down:** function off and PA rail off. After the 1 s autosuspend: **WMT sleep, then the power-off** (new
+    `sleep_then_off`, also used at shutdown), so the core sleeps as in B5 run 2. A failed transport powers off
+    without the sleep command.
+- **Userspace** (Y2ROOT unchanged; Y1 overrides in `initramfs/y1-bluetooth/`, PID1 `Y1_THIRTY_FOURTH_BOOT`, list
+  `y1-thirty-fourth-boot.list`):
+  - **Service list:** gains the Y2's `S30dbus-daemon` and `S41y2-connectivity`. S40bluetoothd is left out because
+    y2-radiod starts bluetoothd (and `bluealsad -p a2dp-source`) itself.
+  - **The Y1's `S41y2-connectivity`** (it replaces the Y2's; the power daemon's shutdown calls its
+    `stop-wifi`/`stop-bluetooth`/`stop-daemon`):
+    1. the Y2's `/data/bluetooth` layout and the `/var/lib/bluetooth` and `/var/lib/bluealsa` binds, so pairings live
+       on Y2DATA;
+    2. seeds `enabled` = 0 and `codec-policy.json` with `experimental:false` if they are missing;
+    3. checks `/data/connectivity/bt-record` (root, 0600, 32 bytes), writes it to `factory`, then `activate`;
+    4. starts `y2-radiod`.
+  - **Not run on the Y1:** y2-factory, y2-calibration, wpa_supplicant and connectivity-daemon (MT6582 or Wi-Fi only).
+    radiod needs no Wi-Fi: with no wlan rfkill entry, Wi-Fi simply reads as off.
+  - Reborn's Bluetooth screens and its `bluealsa:DEV=…,PROFILE=a2dp` output are unchanged.
+- **Kernel config:** the thirty-third fragment plus the Y2's remaining Bluetooth lines: `RFKILL`, `BT_RFCOMM` (TTY,
+  HIDP and BNEP off), `HID_SUPPORT`, `HID`, `UHID` and `CRYPTO_SHA256/AES/CCM` (SMP's `cmac(aes)` needs AES). The
+  initramfs is the new list. Wi-Fi stays off.
+- **Proof the Y2 is unchanged:** no Y2 file changed in B6. The Y2 production rebuild (`out/b6-y2-after`) is again
+  `Image` `a68fdffd…aac21`, `vmlinux` `b5ae438d…eb202` and the same seven objects. The thirtieth PID1 rebuilt with
+  its own defines is still `699cd02e…`.
+- **Build** `out/y1-thirty-fourth-boot-1`:
+  - BOOTIMG **`9f82ecf35390ada2c98cae082542259a63fac8c84085a333358a4c876ccc9fcc`**, `0x39c800` bytes (3 786 752).
+  - zImage-dtb `a36e2e37…f1ed`, DTB `7aed6b94…c23a`, `y1-init` `828f272e…c676`, `.config` `ddd1ff8b…218d`.
+  - No compiler warning; the driver is also clean with `-Werror` and `W=1`.
+- **Tests:**
+  - `tests/test_y1_connectivity.py` (23):
+    - the shared `hci.c` `setup` with a synthetic record: the command order, lengths and record offsets, the reversed
+      address, the default rejected in favour of the record, a valid controller identity preferred, and the
+      identity chosen once;
+    - the factory rule;
+    - the actual open/close sequence (power-on, PA, function on … function off, PA off, WMT sleep, power-off; no
+      sleep after a failure; nothing without activation);
+    - the B6 service files.
+  - `tests/test_y1_bt_record.py` (2): the rule, and an extraction from a synthetic dump at an offset (needs
+    e2fsprogs; it ran on the host).
+
+**Owner procedure** (`<y1>` = its USB-network address; the B5 firmware stays in `/data/firmware/mediatek/mt6572/`):
+
+1. On the host, extract into a private directory outside the repository:
+
+       python3 tools/connectivity/y1_bt_record.py \
+           --backup evidence-private/2026-11-04-y1-backup/read1/emmc_user.bin --output ~/y1-private
+
+   Expected: `bt-record: 32 bytes, address xx:xx:xx:xx:72:75, written 0600 …`.
+2. Flash the thirty-fourth BOOTIMG (owner), boot, then copy the record:
+
+       ssh root@<y1> 'mkdir -p -m 700 /data/connectivity'
+       scp ~/y1-private/bt-record root@<y1>:/data/connectivity/bt-record
+       ssh root@<y1> 'chown root:root /data/connectivity/bt-record && chmod 600 /data/connectivity/bt-record && sync && /etc/init.d/S41y2-connectivity start'
+
+   From the next boot on, S41 does this itself.
+3. Expected `dmesg | grep -i '18070000\|hci0\|Bluetooth'`:
+   - at boot: `PMIC init subset 0: …` and `MT6572 connectivity owner ready (Bluetooth); radio awaits the factory record`;
+   - after activation: hci0 registered, `status` = `activated=1 powered=0`;
+   - on enabling Bluetooth in Reborn:
+     - `CONN chip=6572 (register 0x00006572)`;
+     - the B5 WMT lines (`CONSYS chip=6572 HVR=8a01 FVR=8a00`, the patch line, `RF calibration: event 630 bytes,
+       status 00 operation 01: 0`, coexistence);
+     - `WMT opcode=06 parameter=00 ok` (function on);
+     - `Bluetooth identity: persistent per-device Y2DATA fallback` (the controller reports the default) or `valid
+       controller identity`;
+   - on disabling: `WMT opcode=06 …` (off), `WMT opcode=03 … ok`, the protection line, `status` `powered=0`.
+4. Tests (SSH; there is no `hciconfig` in Y2ROOT):
+   - `cat /sys/devices/platform/18070000.connectivity/status`.
+   - `bluetoothctl show`: the address ends in `72:75` (when the controller reports the default), Powered: yes once
+     enabled in Reborn.
+   - `bluetoothctl --timeout 20 scan on` lists nearby devices.
+   - In Reborn: enable Bluetooth, pair the headphones, play music. `bluealsactl list-pcms` (or `ps` for `bluealsad`)
+     shows the A2DP PCM.
+   - Pause/next on the headphones.
+   - Disable Bluetooth: `powered=0`, all four rails off, SPM `0x10006280` = `0x1112`, `PWR_STATUS` bit 1 clear.
+   - Power off from Reborn, boot again: hci0 is activated by S41, `bluetoothctl devices` still lists the headphones
+     (pairing on Y2DATA), and they reconnect from Reborn.
+   - Keep `dmesg`, `/run/y2/radiod-state.json` and
+     `/data/system/platform/bluetooth-journal.jsonl` into `evidence-private/2026-11-06-y1-bt-b6/`.
+
+**Owner decisions:**
+1. The identity: the stock record's address (recommended, the unit's own since 2022). The shared Y2 rule prefers a
+   valid controller address when the controller reports one that is not the default.
+2. Codecs: SBC plus whatever the build's inventory qualifies (AAC is eligible only when qualified and without CPU
+   pressure). Reborn's codec preference "SBC" pins SBC on the MT6572.
+3. The PMIC subset at probe in the full mode (stock's PMIC init applies it at every boot).
+
+## 15. B6 run 1 and the extended-features fix — 2026-11-06
+
+**Run 1** (`evidence-private/2026-11-06-y1-bt-b6/run1.txt`, BOOTIMG `9f82ecf3…`): activation, the B5 boot, the
+calibration (630 bytes, status 00), function on and the record's identity all as expected. Then BlueZ's init failed
+with **`hci0: Opcode 0x1004 failed: -38`** (Read Local Extended Features), and the adapter went down cleanly
+(function off, WMT sleep, power-off; `status` `powered=0 error=0 transport_errors=0`).
+
+**Cause:** the firmware's HVR `8a01`/FVR `8a00` is the one the Y2 already traced (E2): page 1 reports `max_page=2`,
+and page 2 is rejected with status `0x30`. `bt_to_errno` has no entry for `0x30`, so that becomes `ENOSYS` (-38). The
+Y2's `controller_quirks` sets `HCI_QUIRK_BROKEN_LOCAL_EXT_FEATURES_PAGE_2`, but only for chip `0x6582`.
+
+**Fix:** the chip in that check is now `Y2_CONN_EXT_FEATURES_QUIRK_CHIP`, defined per SoC in `conn.h` (`0x6582` in
+the Y2's, `0x6572` in the Y1's). Nothing else changes: same HVR/FVR condition, same quirk, `max_page` 1.
+
+- **Tests:** the shared `setup` test now runs with the Y1's chip and HVR/FVR, and checks the quirk and `max_page==1`
+  (`tests/test_y1_connectivity.py`; 25 run, 1 skipped, in the build userspace).
+- **Build** `out/y1-thirty-fourth-boot-3`: BOOTIMG **`727315aa2eaa09256bcb366e7a087d1416ccca14e2b6ba2b75e7da331325bb49`**,
+  `0x39c800` bytes, zImage-dtb `da509978…43ae`. DTB, `y1-init` and `.config` are identical to build 1. No compiler
+  warning. (`out/y1-thirty-fourth-boot-2` was interrupted and is not a candidate.)
+- **Owner procedure:** unchanged from §14 (the record is already in `/data/connectivity/`). Expected after enabling
+  in Reborn: no `0x1004` failure, and `bluetoothctl show` reports `Powered: yes`.
+
+**Run 3** (BOOTIMG `727315aa…` read back from physical `0x2b80000`; `run3-boot.txt`): `hci0: broken local ext
+features page 2`, then `MGMT ver 1.23`. BlueZ lists the controller with the record's address (`…72:75`). With
+`y2-radiod ctl bluetooth on`: `Powered: yes`, `powered=1 functions=0x1`, `vcn33-bt` on at 3.3 V. Inquiry finds the
+host's adapter and the owner's headset. A bare `bluetoothctl pair` reported `Pairing successful`, but no bond was kept
+(the adapter was not pairable); see below for the next attempt.
+
+**Reborn's "Bluetooth Needs the Radio Firmware":** `y2-platform firmware status` (`radiofw::files::present`) checks
+the Y2's five MT6582 files plus two defaults in `/data/firmware/mt6582` by name and size only. The Y1 has none of
+them; its radio runs on the MT6572 set in `/data/firmware/mediatek/mt6572`. **Owner workaround (2026-11-06, on the
+Y1's Y2DATA only):** seven zero-filled sparse placeholders with the reviewed names and sizes in `/data/firmware/mt6582`
+and a note in `/data/firmware/Y1-MT6582-PLACEHOLDERS.txt`; the status is then `Ready`. Nothing on the Y1 reads their
+bytes: the Y1 driver loads the MT6572 set, `y2-factory` (the only reader of `/lib/firmware/mediatek/mt6582`) is not
+run, and the hash-checking scan/install runs only while the state is `Missing`. Still open: a Y1-aware firmware
+state in the platform.
