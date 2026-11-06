@@ -222,6 +222,18 @@
       "base_sha256": "3029941aefe5ca9b5f588c27a785910490c8b2c0bd825f2ca145d48278468218",
       "result_sha256": "55a2e0e2626fd52eb70824b92e5636eb6fd793a0791b8af5604a0df084665bea",
       "patch": "0037-innioasis-y1-bluetooth-makefile.patch"
+    },
+    {
+      "path": "arch/arm/mach-mediatek/Kconfig",
+      "base_sha256": "61790e35f9fbdb5dd524c658f041739b4cf52d8393962622d6cdb4a0f497506b",
+      "result_sha256": "70762ea9649df6493fd268510f26da9825113c25539419f565b78a3bf921f038",
+      "patch": "0038-mt6572-reserve-conn-kconfig.patch"
+    },
+    {
+      "path": "arch/arm/Makefile",
+      "base_sha256": "3d3d11ad9dcf46e500b815249ac3a29c90b1f882c2e59e7e7c5e217256171d5e",
+      "result_sha256": "0208b65da851b3c6ee3433381475a4faefada3acc46869e1db21d6649bc21125",
+      "patch": "0039-mt6572-reserve-conn-textofs.patch"
     }
   ],
   "added": [
@@ -428,7 +440,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-policy.h",
       "source": "kernel/y1/connectivity/y1-conn-policy.h",
-      "sha256": "91298d56f0e371365c2e2626719f4f847785f789588f867a49935b7e9c28643b"
+      "sha256": "d6e9fd9aa5705f295246612cd1776f1ed655e1d86dcfffd8649e42732b9f703e"
     },
     {
       "path": "drivers/bluetooth/protocol.h",
@@ -438,7 +450,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-core.c",
       "source": "kernel/y1/connectivity/core.c",
-      "sha256": "1d049d7436b424b16b6b79e7d3156a08636ae2a8275476ef7f4eb583ac0e928c"
+      "sha256": "2cf7f6d1d7047f33829fea77f3382a70cb58f573ea07f8ba3c044bcde34ad915"
     },
     {
       "path": "drivers/bluetooth/y1-conn-wmt.c",

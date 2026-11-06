@@ -19,10 +19,6 @@
 #include <net/bluetooth/hci_core.h>
 #include "conn.h"
 
-#define PMIC_VCN_1V8_LP 0x512
-#define PMIC_VCN28_CON 0x41c
-#define PMIC_VCN28_HW_MODE BIT(14)
-
 /* As the Y2: rails 2 and 3 are the PA LDOs with their ON_CTRL bits (the same MT6323 bits as
  * stock MT6572). VCN28's hardware mode is switched in power_on/power_off, in stock's order. */
 int y2_conn_rail(struct y2_conn *c, unsigned rail, bool enable)
@@ -81,17 +77,32 @@ static int step(struct y2_conn *c, const struct y1_conn_step *s)
 }
 /* Stock acknowledges with a WARN and goes on; here a missing acknowledgement stops the
  * sequence and the caller isolates (the Y2's rule: live-domain timeouts propagate). */
-static int domain(struct y2_conn *c, const struct y1_conn_step *steps, unsigned count)
+static int domain_on(struct y2_conn *c)
 {
-	for (unsigned i = 0; i < count; i++) {
-		int ret = step(c, steps + i);
+	for (unsigned i = 0; i < ARRAY_SIZE(y1_conn_domain_on); i++) {
+		int ret = step(c, y1_conn_domain_on + i);
 		if (ret) {
-			dev_err(c->dev, "CONN domain step %u (op %u reg %#x) failed: %d\n",
-				i, steps[i].op, steps[i].reg, ret);
+			dev_err(c->dev, "CONN on step %u (reg %#x) failed: %d\n",
+				i, y1_conn_domain_on[i].reg, ret);
 			return ret;
 		}
 	}
 	return 0;
+}
+/* Every step even after a missing acknowledgement, as stock (WARN and go on): isolation and the
+ * switches off are better than a half-on domain. The first error is still reported. */
+static int domain_off(struct y2_conn *c)
+{
+	int first = 0;
+	for (unsigned i = 0; i < ARRAY_SIZE(y1_conn_domain_off); i++) {
+		int ret = step(c, y1_conn_domain_off + i);
+		if (ret) {
+			dev_err(c->dev, "CONN off step %u (reg %#x) failed: %d\n",
+				i, y1_conn_domain_off[i].reg, ret);
+			if (!first) first = ret;
+		}
+	}
+	return first;
 }
 /* Stock waits up to 10 s for the radio core to sleep before conn_power_off; a core that never
  * sleeps is still isolated, as stock does after its wait. */
@@ -105,26 +116,31 @@ static void sleep_wait(struct y2_conn *c)
 static int rails_off(struct y2_conn *c)
 {
 	int ret = 0, result;
-	for (int i = 3; i >= 2; i--) { result = y2_conn_rail(c, i, false); if (!ret) ret = result; }
-	result = regmap_update_bits(c->pmic, PMIC_VCN_1V8_LP, BIT(1), 0);
+	/* The PA rails only if acquired: the chip-id bring-up never touches them. */
+	for (int i = 3; i >= 2; i--) {
+		if (!c->rails[i].consumer) continue;
+		result = y2_conn_rail(c, i, false); if (!ret) ret = result;
+	}
+	result = regmap_update_bits(c->pmic, Y1_PMIC_VCN18_CON, Y1_PMIC_VCN18_LP, 0);
 	if (!ret) ret = result;
 	result = y2_conn_rail(c, 0, false); if (!ret) ret = result;
-	result = regmap_update_bits(c->pmic, PMIC_VCN28_CON, PMIC_VCN28_HW_MODE, 0);
+	result = regmap_update_bits(c->pmic, Y1_PMIC_VCN28_CON, Y1_PMIC_VCN28_HW_MODE, 0);
 	if (!ret) ret = result;
 	result = y2_conn_rail(c, 1, false); if (!ret) ret = result;
 	return ret;
 }
 static int power_off(struct y2_conn *c)
 {
-	int ret, result, stop_error;
+	int ret, result, stop_error, domain_error = 0;
 	if (!c->powered && !c->dma_active &&
 	    !c->rail_on[0] && !c->rail_on[1] && !c->rail_on[2] && !c->rail_on[3]) return 0;
 	stop_error = y2_btif_stop(c);
 	y2_stp_reset(c);
 	if (c->powered) {
 		sleep_wait(c);
-		result = domain(c, y1_conn_domain_off, ARRAY_SIZE(y1_conn_domain_off));
-		if (result) return result;
+		domain_error = domain_off(c);
+		/* The DMA channel reset needs both power-off acknowledgements (y2_btif_abort). */
+		if (domain_error && c->dma_active) return domain_error;
 		c->powered = false;
 	}
 	if (c->dma_active) {
@@ -134,10 +150,10 @@ static int power_off(struct y2_conn *c)
 		stop_error = 0;
 	}
 	ret = rails_off(c);
-	return stop_error ? stop_error : ret;
+	return domain_error ? domain_error : stop_error ? stop_error : ret;
 }
-/* LK is expected to leave CONN off (a B4 read). Should it be on, take it down first, without
- * the sleep wait: nothing of ours runs there yet. */
+/* LK leaves CONN off (B4 baseline: 0x10006280 = 0x1112, PWR_STATUS bit 1 clear). Should it be on,
+ * take it down first, without the sleep wait: nothing of ours runs there yet. */
 static int normalise(struct y2_conn *c)
 {
 	unsigned control, status;
@@ -147,53 +163,85 @@ static int normalise(struct y2_conn *c)
 	if (!(control & (Y1_PWR_ON | Y1_PWR_ON_2ND | Y1_PWR_RST_B)) && !(status & Y1_SPM_CONN_STATUS))
 		return 0;
 	dev_warn(c->dev, "CONN found on (%#x); powering it off first\n", control);
-	return domain(c, y1_conn_domain_off, ARRAY_SIZE(y1_conn_domain_off));
+	return domain_off(c);
 }
-static int rails_on(struct y2_conn *c)
+/* Stock order per rail: VCN_1V8 out of low power, then on; VCN28 under SRCLKEN, then on. */
+static int vcn18_on(struct y2_conn *c)
 {
-	/* Stock order: VCN_1V8 out of low power and on, then VCN28 under SRCLKEN and on. */
-	int ret = regmap_update_bits(c->pmic, PMIC_VCN_1V8_LP, BIT(1), 0);
-	if (!ret) ret = y2_conn_rail(c, 0, true);
-	if (!ret) ret = regmap_update_bits(c->pmic, PMIC_VCN28_CON, PMIC_VCN28_HW_MODE,
-					   PMIC_VCN28_HW_MODE);
+	int ret = regmap_update_bits(c->pmic, Y1_PMIC_VCN18_CON, Y1_PMIC_VCN18_LP, 0);
+	return ret ? ret : y2_conn_rail(c, 0, true);
+}
+static int vcn28_on(struct y2_conn *c)
+{
+	int ret = regmap_update_bits(c->pmic, Y1_PMIC_VCN28_CON, Y1_PMIC_VCN28_HW_MODE,
+				     Y1_PMIC_VCN28_HW_MODE);
 	if (!ret) ret = y2_conn_rail(c, 1, true);
+	if (!ret) usleep_range(150, 250); /* the Y2's settle before the domain; stock has none */
 	return ret;
+}
+static int spm_clock(struct y2_conn *c)
+{
+	/* TOPCKGEN CG_CTRL1 bit 26 also serves the SPM itself: never gated again (stock). */
+	int ret = c->clock_on ? 0 : clk_prepare_enable(c->clocks[0].clk);
+	if (!ret) c->clock_on = true;
+	return ret;
+}
+/* 0x18070008 is read only here: after DOMAIN_ON has released RST_B and the bus protection. */
+static int chip_id(struct y2_conn *c)
+{
+	unsigned id;
+	int ret;
+	udelay(10);
+	ret = readl_poll_timeout(c->mcu + 8, id, (id & 0xffff) == Y1_CONN_CHIP, 20000, 200000);
+	c->chip = id & 0xffff;
+	if (ret) dev_err(c->dev, "CONN chip ID absent: %#010x after 200 ms\n", id);
+	else dev_info(c->dev, "CONN chip=%04x (register %#010x)\n", c->chip, id);
+	return ret;
+}
+static int wmt(struct y2_conn *c)
+{
+	msleep(5);
+	WRITE_ONCE(c->failure,0);
+	return y1_wmt_boot(c);
+}
+static int stage(struct y2_conn *c, enum y1_conn_stage s)
+{
+	switch (s) {
+	case Y1_STAGE_NORMALISE: return normalise(c);
+	case Y1_STAGE_VCN18: return vcn18_on(c);
+	case Y1_STAGE_VCN28: return vcn28_on(c);
+	case Y1_STAGE_EMI_CLEAR: memset_io(c->emi, 0, Y1_CONN_EMI_SIZE); return 0;
+	case Y1_STAGE_SPM_CLOCK: return spm_clock(c);
+	/* From here the domain may be partly on: power_off must run its sequence. */
+	case Y1_STAGE_DOMAIN_ON: c->powered = true; return domain_on(c);
+	case Y1_STAGE_CHIP_ID: return chip_id(c);
+	case Y1_STAGE_BTIF: return y2_btif_start(c);
+	case Y1_STAGE_WMT: return wmt(c);
+	case Y1_STAGE_OFF: return power_off(c);
+	}
+	return -EINVAL;
+}
+/* Runs the stages; on a failure powers off and reports the first error. */
+static int stages(struct y2_conn *c, const unsigned char *list, unsigned count)
+{
+	for (unsigned i = 0; i < count; i++) {
+		int ret = stage(c, list[i]);
+		if (ret) {
+			int stopped = list[i] == Y1_STAGE_OFF ? 0 : power_off(c);
+			dev_err(c->dev, "connectivity stage %u failed: %d (power-off %d)\n", list[i], ret, stopped);
+			return ret;
+		}
+	}
+	return 0;
 }
 static int power_on_once(struct y2_conn *c)
 {
-	unsigned id; int ret;
+	int ret;
 	if (!c->factory_ready || c->removing) return -EHOSTDOWN;
 	ret = pmic_prepare(c);
 	if (ret) return ret;
 	if (READ_ONCE(c->removing)) return -ESHUTDOWN;
-	ret = normalise(c);
-	if (!ret) ret = rails_on(c);
-	if (ret) goto fail;
-	usleep_range(150,250);
-	memset_io(c->emi, 0, Y1_CONN_EMI_SIZE);
-	/* The SPM clock (TOPCKGEN CG_CTRL1 bit 26) also serves the SPM itself: never gated again. */
-	if (!c->clock_on) {
-		ret = clk_prepare_enable(c->clocks[0].clk);
-		if (ret) goto fail;
-		c->clock_on = true;
-	}
-	/* From here the domain may be partly on: power_off must run its sequence. */
-	c->powered = true;
-	ret = domain(c, y1_conn_domain_on, ARRAY_SIZE(y1_conn_domain_on));
-	if (ret) goto fail;
-	udelay(10);
-	ret = readl_poll_timeout(c->mcu+8, id, (id & 0xffff) == Y1_CONN_CHIP, 20000, 200000);
-	if (!ret) dev_info(c->dev,"CONN chip=%04x; starting BTIF transport\n",id & 0xffff);
-	if (!ret) ret = y2_btif_start(c);
-	if (ret) goto fail;
-	msleep(5);
-	WRITE_ONCE(c->failure,0);
-	ret = y1_wmt_boot(c);
-	if (!ret) return 0;
-fail:
-	dev_err(c->dev,"connectivity start failed: %d\n",ret);
-	int stopped = power_off(c);
-	return stopped ? stopped : ret;
+	return stages(c, y1_conn_full_stages, ARRAY_SIZE(y1_conn_full_stages));
 }
 /* The Y2's bounded retry (its mandatory-STP opcode 08 receipt): once, only fully isolated. */
 static unsigned boot_retries;
@@ -423,14 +471,15 @@ static int validate_resources(struct platform_device *pdev)
 	if (ret || memory.start!=Y1_CONN_EMI_START || resource_size(&memory)!=Y1_CONN_EMI_SIZE) return -EINVAL;
 	return 0;
 }
-static int probe_suppliers(struct y2_conn *c)
+/* The chip-id bring-up takes only the SPM clock and VCN18/VCN28 (clocks[0], rails[0..1]). */
+static int probe_suppliers(struct y2_conn *c, bool chip_id_only)
 {
 	struct device *dev=c->dev; struct device_node *node; struct platform_device *supplier; int ret;
 	c->clocks[0].id="spm"; c->clocks[1].id="btif"; c->clocks[2].id="dma";
-	ret=devm_clk_bulk_get(dev,3,c->clocks); if (ret) return ret;
+	ret=devm_clk_bulk_get(dev,chip_id_only ? 1 : 3,c->clocks); if (ret) return ret;
 	c->rails[0].supply="vcn18"; c->rails[1].supply="vcn28";
 	c->rails[2].supply="vcn33-bt"; c->rails[3].supply="vcn33-wifi";
-	ret=devm_regulator_bulk_get(dev,4,c->rails); if (ret) return ret;
+	ret=devm_regulator_bulk_get(dev,chip_id_only ? 2 : 4,c->rails); if (ret) return ret;
 	c->spm=syscon_regmap_lookup_by_phandle(dev->of_node,"innioasis,scpsys");
 	if (IS_ERR(c->spm)) return PTR_ERR(c->spm);
 	c->infracfg=syscon_regmap_lookup_by_phandle(dev->of_node,"mediatek,infracfg");
@@ -443,22 +492,52 @@ static int probe_suppliers(struct y2_conn *c)
 	put_device(&supplier->dev);
 	return c->pmic ? 0 : -EPROBE_DEFER;
 }
+/* B4 (docs/planning/Y1-BLUETOOTH-PLAN.md): power on to the chip ID, log it, power off, and stay
+ * unbound (-ENODEV: nothing held, nothing registered). A missing ID still powers off first. */
+static int bring_up_chip_id(struct y2_conn *c)
+{
+	unsigned control, status, sleep, bus;
+	int ret;
+	dev_info(c->dev, "bring-up chip-id: CONN on, chip ID, CONN off\n");
+	ret = stages(c, y1_conn_chip_id_stages, ARRAY_SIZE(y1_conn_chip_id_stages));
+	if (!regmap_read(c->spm, Y1_SPM_CONN_PWR_CON, &control) &&
+	    !regmap_read(c->spm, Y1_SPM_PWR_STATUS, &status) &&
+	    !regmap_read(c->spm, Y1_SPM_SLEEP_STATUS, &sleep) &&
+	    !regmap_read(c->infracfg, Y1_INFRA_BUS_PROT, &bus))
+		dev_info(c->dev, "bring-up chip-id: off: ctl=%#x status=%#x sleep=%#x protect=%#x\n",
+			 control, status, sleep, bus);
+	if (ret) return ret;
+	dev_info(c->dev, "bring-up chip-id: done, chip=%04x; HVR/FVR need WMT (B5)\n", c->chip);
+	return -ENODEV;
+}
+/* "innioasis,bring-up" limits the driver to an admitted stage; absent = the full driver. */
+static int bring_up_mode(struct device_node *node, bool *chip_id_only)
+{
+	const char *mode;
+	*chip_id_only = false;
+	if (of_property_read_string(node, "innioasis,bring-up", &mode)) return 0;
+	if (strcmp(mode, "chip-id")) return -EINVAL;
+	*chip_id_only = true;
+	return 0;
+}
 static int probe(struct platform_device *pdev)
 {
 	struct device *dev=&pdev->dev;
 	struct y2_conn *c=devm_kzalloc(dev,sizeof(*c),GFP_KERNEL);
-	int ret;
+	bool chip_id_only; int ret;
 	if (!c) return -ENOMEM;
 	ret=validate_resources(pdev); if (ret) return ret;
+	ret=bring_up_mode(dev->of_node,&chip_id_only); if (ret) return ret;
 	c->dev=dev; mutex_init(&c->lifecycle); mutex_init(&c->command);
 	mutex_init(&c->recovery_lock);
 	mutex_init(&c->dma_tx); mutex_init(&c->dma_rx); init_completion(&c->response);
 	y2_stp_init(c); INIT_WORK(&c->recovery_work,recover);
-	ret=probe_suppliers(c); if (ret) return ret;
+	ret=probe_suppliers(c,chip_id_only); if (ret) return ret;
 	c->mcu=devm_platform_ioremap_resource_byname(pdev,"mcu");
 	c->emi=devm_platform_ioremap_resource_byname(pdev,"conn-emi");
 	if (IS_ERR(c->mcu)) return PTR_ERR(c->mcu);
 	if (IS_ERR(c->emi)) return PTR_ERR(c->emi);
+	if (chip_id_only) return bring_up_chip_id(c);
 	ret=y2_btif_probe(pdev,c); if (ret) return ret;
 	platform_set_drvdata(pdev,c);
 	pm_runtime_set_suspended(dev); pm_runtime_set_autosuspend_delay(dev,1000);
@@ -478,5 +557,7 @@ static void shutdown(struct platform_device *pdev)
 }
 static const struct of_device_id match[]={ {.compatible="innioasis,y1-mt6572-connectivity"}, {} };
 static struct platform_driver y1_conn_driver={ .probe=probe,.shutdown=shutdown,
-	.driver={.name="y1-connectivity",.of_match_table=match,.pm=&pm,.suppress_bind_attrs=true} };
+	.driver={.name="y1-connectivity",.of_match_table=match,.pm=&pm,.suppress_bind_attrs=true,
+		 /* The power-off's sleep wait may take 10 s: never in the boot's critical path. */
+		 .probe_type=PROBE_PREFER_ASYNCHRONOUS} };
 builtin_platform_driver(y1_conn_driver);

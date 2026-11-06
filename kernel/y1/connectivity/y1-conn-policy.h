@@ -89,6 +89,31 @@ static const struct y1_conn_step y1_conn_domain_off[] = {
 	{Y1_SPM_POLL_CLEAR, Y1_SPM_PWR_STATUS_2ND, Y1_SPM_CONN_STATUS},
 };
 
+/*
+ * The power-on as named stages, run in order by core.c (stock mtk_wcn_consys_hw_pwr_on, B1 §1.1): the
+ * MCU window is read only after DOMAIN_ON has released RST_B; BTIF opens only after the chip ID. The
+ * chip-id bring-up (B4, DT "innioasis,bring-up = \"chip-id\"") stops there and powers off: no PMIC
+ * init subset, no BTIF or DMA, no firmware, no HCI. OFF = sleep wait, domain off, rails off.
+ */
+enum y1_conn_stage {
+	Y1_STAGE_NORMALISE, Y1_STAGE_VCN18, Y1_STAGE_VCN28, Y1_STAGE_EMI_CLEAR, Y1_STAGE_SPM_CLOCK,
+	Y1_STAGE_DOMAIN_ON, Y1_STAGE_CHIP_ID, Y1_STAGE_BTIF, Y1_STAGE_WMT, Y1_STAGE_OFF,
+};
+static const unsigned char y1_conn_full_stages[] = {
+	Y1_STAGE_NORMALISE, Y1_STAGE_VCN18, Y1_STAGE_VCN28, Y1_STAGE_EMI_CLEAR, Y1_STAGE_SPM_CLOCK,
+	Y1_STAGE_DOMAIN_ON, Y1_STAGE_CHIP_ID, Y1_STAGE_BTIF, Y1_STAGE_WMT,
+};
+static const unsigned char y1_conn_chip_id_stages[] = {
+	Y1_STAGE_NORMALISE, Y1_STAGE_VCN18, Y1_STAGE_VCN28, Y1_STAGE_EMI_CLEAR, Y1_STAGE_SPM_CLOCK,
+	Y1_STAGE_DOMAIN_ON, Y1_STAGE_CHIP_ID, Y1_STAGE_OFF,
+};
+/* MT6323: VCN_1V8 low-power bit (0x512 bit 1, cleared before the enable at bit 14) and VCN28's
+ * hardware (SRCLKEN) mode (0x41c bit 14, set before the enable at bit 12: the TCXO path). */
+#define Y1_PMIC_VCN18_CON 0x512
+#define Y1_PMIC_VCN18_LP (1u << 1)
+#define Y1_PMIC_VCN28_CON 0x41c
+#define Y1_PMIC_VCN28_HW_MODE (1u << 14)
+
 /* The Y1's WMT_SOC.cfg: exactly these lines, each once. No co_clock_flag: the Y1 runs
  * the TCXO path (VCN28 its own, no WMT co-clock command); sdio_driving_cfg is read by
  * stock but unused on BTIF. Returns the line's bit, or 0 for anything else. */

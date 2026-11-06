@@ -1,0 +1,18 @@
+--- a/arch/arm/mach-mediatek/Kconfig
++++ b/arch/arm/mach-mediatek/Kconfig
+@@ -19,6 +19,15 @@
+ 	bool "MediaTek MT6572 SoCs support"
+ 	default ARCH_MEDIATEK
+ 
++config MACH_MT6572_RESERVE_CONN
++	bool "Reserve the MT6572 connectivity memory at the beginning of RAM"
++	depends on MACH_MT6572
++	help
++	  The MT6572's connectivity core uses the first MiB of RAM, with no
++	  remap register to move it. Load the kernel 1 MiB higher, where the
++	  stock kernel runs (Innioasis Y1, docs/planning/Y1-BLUETOOTH-PLAN.md);
++	  the device tree reserves the MiB.
++
+ config MACH_MT6589
+ 	bool "MediaTek MT6589 SoCs support"
+ 	default ARCH_MEDIATEK

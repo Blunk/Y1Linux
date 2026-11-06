@@ -1,6 +1,6 @@
 # Y1 Bluetooth
 
-Status: **B0, B1 done; B2 built, not loaded** (2026-11-06, owner-approved B0–B2; B3 not started). The owner asked whether the Y1 can get Bluetooth the way the Y2 did
+Status: **B0–B3 done, B4 PASS** (2026-11-06, owner-approved): the chip ID read on the Y1; B5 (firmware) not admitted.
 (its connectivity driver with firmware from the stock system image). New hardware scope (a radio, a new power
 domain, a memory-layout change): each stage has its own admission, and the roadmap audit is repeated before stage
 B3 (memory) and B4 (first power-on).
@@ -197,3 +197,106 @@ nothing powers on); no memory reservation, no `TEXT_OFFSET` change (both B3); no
   and INFERRED until B4/B5: whether the sleep bit clears without a WMT sleep command; the BTIF/DMA interrupt
   polarity; the 5 s PMIC settle carried from the Y2; the calibration event length (a longer event fails).
 
+
+## 9. B3 build — 2026-11-06
+
+Owner-approved; roadmap audit repeated first (`roadmap-gap-audit.md`, "Y1 Bluetooth B3, memory layout").
+Overlays `0038-mt6572-reserve-conn-kconfig.patch` (`MACH_MT6572_RESERVE_CONN`, under `MACH_MT6572`) and
+`0039-mt6572-reserve-conn-textofs.patch` (`textofs-$(CONFIG_MACH_MT6572_RESERVE_CONN) := 0x00108000`, beside
+mainline's Realtek line). Device tree `innioasis-y1-thirty-first-boot.dts`: `reserved-memory` with
+`connsys@80000000` (1 MiB, `no-map`). Config: the thirtieth fragment plus `MACH_MT6572_RESERVE_CONN`
+(`AUTO_ZRELADDR` as before, `ARM_PATCH_PHYS_VIRT` off, so `PHYS_OFFSET` stays `0x80000000`): `_text` at `0xc0108000`
+(physical `0x80108000`, stock's). No Bluetooth driver, no radio power. Build `out/y1-thirty-first-boot-1`, BOOTIMG
+sha256 `dcaa1fcdbc7b815929a6f93f6216c7f22ebf2480d86bf3d3a7b63358bcd9e6ed`.
+
+**B3 run** (`evidence-private/2026-11-06-y1-bt-b3/run1.txt`): the thirty-first boot came up normally (the splash,
+Reborn, MTP, Y2DATA, charging CC at 450 mA, no new warning). `OF: reserved mem: 0x80000000..0x800fffff (1024 KiB)
+nomap non-reusable connsys@80000000`; memory nodes `0x80000000–0x801fffff` and `0x80200000–0x9dffffff`; MemTotal
+497 320 kB (`free` 486 MiB, was 487): 1 MiB to the radio core as planned. `/proc/iomem` lists System RAM from
+`0x80200000` and no "Kernel code" line: the first 2 MiB section holding the reservation and the kernel's text is not
+listed as a resource (cosmetic; the kernel runs from it). Owner's regression check pending.
+
+## 10. B4 build — 2026-11-06
+
+Owner-approved after B3 passed; roadmap audit for B4 written first. Read-only baseline
+(`evidence-private/2026-11-06-y1-bt-b4/baseline.txt`): CONN `0x10006280` = `0x1112` (off), PWR_STATUS `0x3ffd`
+(CONN bit 1 clear; MD1 on from LK, `0x284` = `0x0d`), `0x100063b4` = `0x080000f9` (bit 11 clear), INFRA `0x1220` = 0,
+`0x1228` = `0xf000`, `0x1300`–`0x1310` = 0 (no remap), TOPCKGEN `0x10000024` = `0xd8cfdaff` (SPM bit 26 ungated,
+BTIF bit 12 and APDMA bit 2 gated), EMI MPU 0, PMIC `0x102` = `0003`, `0x120` = `0001`, `0x148` = `0004`, `0x402` =
+`8400`, `0x512` = 0, `0x41c` = 0, `0x41a` = `0044`, `0x416` = `001c`, `0x418` = `0420` = 0.
+
+- **Driver** (`kernel/y1/connectivity/core.c`, `y1-conn-policy.h`): the power-on is a list of named stages
+  (`y1_conn_full_stages`, `y1_conn_chip_id_stages`). DT `innioasis,bring-up = "chip-id"` (absent: the full driver;
+  any other value: probe refuses) runs, at probe and asynchronously: the resource check (windows, interrupts,
+  `no-map` memory) → normalise (CONN off if found on) → VCN18 (`0x512` bit 1 = 0, on) → VCN28 (`0x41c` bit 14 = 1,
+  on, 150–250 µs) → clear the 1 MiB radio memory → SPM clock → key and the CONN domain sequence with the bus
+  protection released → 10 µs, poll `0x18070008` for `0x6572` (20 ms steps, 200 ms) → power-off: the sleep wait
+  (`0x100063b4` bit 11, 100 ms steps, 10 s, then isolation anyway), the reverse domain sequence (every step even
+  after a missing acknowledgement, as stock), VCN18 off, `0x41c` bit 14 = 0, VCN28 off. It then returns `-ENODEV`
+  (silent; the device stays unbound, holding nothing). It takes only the SPM clock and VCN18/VCN28: no PA rail,
+  no BTIF/DMA mapping, clock or register, no interrupt, no firmware, no HCI, no sysfs. Not done in this mode:
+  the PMIC init subset (`pmic_prepare`; the baseline shows LK has not applied it: a B5 decision, as it touches
+  the 26 MHz/TCXO policy). HVR/FVR are WMT register reads (BTIF + firmware): B5. Never `0x10208000`/`0x10005300`.
+  The SPM clock stays enabled (stock never gates it again).
+- **Tests** (`tests/test_y1_connectivity.py`, 15, sandbox): the stage lists; and the driver's actual power path
+  (14 functions extracted from `core.c`) against a register model seeded with the baseline above: stock order
+  of rails, memory, clock, domain, ID, protection, rails off; the MCU window read only with the domain fully up;
+  PMIC writes only to `0x512` bit 1 and `0x41c` bit 14; no BTIF, no WMT, no PA rail; back to the baseline values
+  after a found ID, a missing ID (`-ETIMEDOUT`, still off), a core that never sleeps (one warning) and a CONN
+  found on.
+- **Variant thirty-second**: `kernel/config/y1-thirty-second-boot.config` (the thirty-first fragment plus
+  `CONFIG_BT`, `BT_BREDR`, `BT_LE`, `BT_INNIOASIS_Y1`; LOCALVERSION `-y1-thirty-second-boot`),
+  `kernel/dts/innioasis-y1-thirty-second-boot.dts` (the thirty-first tree plus `connectivity@18070000` with the
+  chip-id limit, `memory-region = <&connsys_memory>`, and `ldo_vcn18` 1.8 V / `ldo_vcn28` 2.8 V without
+  always-on or boot-on: both fixed LDOs, off as LK leaves them, so `regulator_late_cleanup` has nothing to switch
+  off and no voltage is written; no VCN33 node), `tools/build/y1-boot.sh`, `tools/build/y1_boot.py` (one more
+  enabled device, the node's lines, regulators exactly vgp1, vusb, the card rails, vcn18, vcn28; `vcn33` and
+  `regulator-boot-on` forbidden). Build `out/y1-thirty-second-boot-1`: BOOTIMG
+  `1c52a754b9cd8184203b17d16990b015c88215d5bbecd30df1917fdfa8799cbb`, `0x383800` bytes (3 684 352), zImage-dtb
+  `78b8021a…d596`, DTB `497d3209…3d95`, `.config` `30c30ea4…b76a`, `y1-init` unchanged (`699cd02e…`); no compiler
+  warning, only the fork's two known DT warnings.
+
+**Expected dmesg** (`dev_info`, below the console's loglevel 3: `dmesg | grep -i 18070000`):
+
+    y1-connectivity 18070000.connectivity: bring-up chip-id: CONN on, chip ID, CONN off
+    y1-connectivity 18070000.connectivity: CONN chip=6572 (register 0x....6572)
+    [possible] y1-connectivity 18070000.connectivity: CONN did not sleep within 10 s; isolating
+    y1-connectivity 18070000.connectivity: bring-up chip-id: off: ctl=0x1112 status=0x3ffd sleep=0x... protect=0x11
+    y1-connectivity 18070000.connectivity: bring-up chip-id: done, chip=6572; HVR/FVR need WMT (B5)
+
+No "probe … failed" line on success. Without the ID: `CONN chip ID absent: 0x… after 200 ms`, `connectivity
+stage 6 failed: -110 (power-off 0)`, the `off:` line and `probe with driver y1-connectivity failed with error
+-110`. Any `CONN on step` / `CONN off step … failed` line names the register whose acknowledgement was missing.
+The sleep warning is possible (whether the ROM sleeps unprompted is unknown) and harmless.
+
+**Post-boot read-only checks** (as the baseline; never read `0x18070000` or BTIF/DMA from userspace):
+
+| Register | Expected | Note |
+| --- | --- | --- |
+| SPM `0x10006280` | `0x1112` | CONN back to the baseline |
+| SPM `0x1000660c` / `0x10006610` | `0x3ffd`; bit 1 clear in both | MD1 bit 0 still set |
+| SPM `0x10006284` | `0x0d` | MD1 untouched |
+| SPM `0x100063b4` | bit 11 clear | |
+| INFRA `0x10001220` / `0x10001228` | `0x11` / `0xf011` | **differs from baseline (0 / `0xf000`)**: stock's power-off leaves the CONN bus protection set |
+| TOPCKGEN `0x10000024` | `0xd8cfdaff` | SPM ungated; BTIF and APDMA still gated (never touched) |
+| PMIC `0x512`, `0x41c` | `0000`, `0000` | VCN18, VCN28 off, hardware mode cleared |
+| PMIC `0x416`, `0x418`, `0x420`, `0x41a` | `001c`, `0000`, `0000`, `0044` | PA rails and VOSEL untouched |
+| PMIC `0x102`, `0x120`, `0x148`, `0x402` | `0003`, `0001`, `0004`, `8400` | init subset not applied |
+| `/sys/bus/platform/drivers/y1-connectivity/` | no `18070000.connectivity` link | unbound after the bring-up |
+| `/sys/class/bluetooth/` | empty | no hci0 |
+| `/sys/class/regulator/*/name` vcn18, vcn28 | `state` disabled | |
+
+Then the thirty-first's regression check (splash, Reborn, MTP, Y2DATA, charging) unchanged.
+
+
+## 11. B4 run — PASS — 2026-11-06
+
+`evidence-private/2026-11-06-y1-bt-b4/run1.txt`, thirty-second boot: `bring-up chip-id: CONN on, chip ID, CONN off`
+at 1.56 s; **`CONN chip=6572 (register 0x00006572)`** at 1.66 s; `CONN did not sleep within 10 s; isolating` (expected
+without firmware: nothing sends the core to sleep; the probe is asynchronous, the boot is not delayed); `off:
+ctl=0x1112 status=0x3ffd sleep=0x80000f9 protect=0x11`; `done, chip=6572; HVR/FVR need WMT (B5)`. Afterwards (read
+only): SPM CONN `0x1112`, MD1 `0x0d`, `PWR_STATUS` `0x3ffd` (both copies), `0x100063b4` `0x080000f9`, INFRA
+`0x10001220` `0x11` and `0x10001228` `0xf011` (the CONN bus protection left set, as stock's power-off), TOPCKGEN
+`0xd8cfdaff`, every PMIC register at its baseline, `vcn18` and `vcn28` disabled, the driver unbound, no Bluetooth
+device; Reborn and MTP running. Open for B5: HVR/FVR (WMT), whether the core sleeps after a WMT sleep command, the
+calibration (with VCN33_BT/WIFI for its duration), the modem question.

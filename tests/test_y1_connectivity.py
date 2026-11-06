@@ -82,11 +82,22 @@ class Y1ConnectivityFacts(unittest.TestCase):
         # No Y2 modem, Wi-Fi or SPM code in the Y1 driver.
         self.assertFalse(any(re.search(r'md\.c|wifi|domain\.h|spm', s) for s in added.values()))
 
-    def test_built_not_loaded_no_y1_tree_names_the_driver(self):
+    def test_only_the_b4_tree_names_the_driver_and_only_with_the_chip_id_limit(self):
+        # B2 built it without a node; B4 admits the chip-id bring-up and nothing more (no PA rail).
         compatible = re.search(r'compatible="([^"]+)"', (Y1 / 'core.c').read_text()).group(1)
         self.assertEqual(compatible, 'innioasis,y1-mt6572-connectivity')
-        for tree in sorted((ROOT / 'kernel/dts').glob('*y1*')):
-            self.assertNotIn(compatible, tree.read_text(), tree.name)
+        naming = [t.name for t in sorted((ROOT / 'kernel/dts').glob('*y1*')) if compatible in t.read_text()]
+        self.assertEqual(naming, ['innioasis-y1-thirty-second-boot.dts'])
+        tree = (ROOT / 'kernel/dts' / naming[0]).read_text()
+        node = tree[tree.index('connectivity@18070000 {'):]
+        node = node[:node.index('};')]
+        self.assertIn('innioasis,bring-up = "chip-id";', node)
+        self.assertNotIn('vcn33', tree)
+        for name in ('vcn18', 'vcn28'):
+            block = tree[tree.index(f'{name}: ldo_{name} {{'):]
+            block = block[:block.index('};')]
+            self.assertNotIn('always-on', block)
+            self.assertNotIn('boot-on', block)
 
     def test_never_the_jtag_pads_or_gpio_modes(self):
         # B1 §0: stock writes 0x10208000/0x10005300 only behind its JTAG debug flag.
@@ -318,6 +329,151 @@ int main(void){
             f'assert(y1_conn_record_check(r,{len(record)},d)=={want});}}'
             for record, want in cases)
         run_c('#include <assert.h>\n' + POLICY + 'int main(void){\n' + checks + '\n}\n')
+
+
+# The B4 baseline (evidence-private/2026-11-06-y1-bt-b4/baseline.txt): CONN off, MD1 on from LK.
+BASELINE = {'ctl': 0x1112, 'status': 0x3ffd, 'sleep': 0x080000f9, 'protect': 0, 'protect_sta': 0xf000,
+            'pmic_512': 0, 'pmic_41c': 0}
+POWER_PATH = ('y2_conn_rail', 'step', 'domain_on', 'domain_off', 'sleep_wait', 'rails_off', 'power_off',
+              'normalise', 'vcn18_on', 'vcn28_on', 'spm_clock', 'chip_id', 'stage', 'stages')
+
+
+class Y1ChipIdBringUp(unittest.TestCase):
+    def test_stage_lists(self):
+        run_c(r"""
+#include <assert.h>
+#include <string.h>
+""" + POLICY + r"""
+int main(void){
+ static const unsigned char chip[]={Y1_STAGE_NORMALISE,Y1_STAGE_VCN18,Y1_STAGE_VCN28,Y1_STAGE_EMI_CLEAR,
+  Y1_STAGE_SPM_CLOCK,Y1_STAGE_DOMAIN_ON,Y1_STAGE_CHIP_ID,Y1_STAGE_OFF};
+ assert(sizeof(chip)==sizeof(y1_conn_chip_id_stages) && !memcmp(chip,y1_conn_chip_id_stages,sizeof(chip)));
+ /* The full driver: the same power-on, then BTIF and WMT, never OFF on success. */
+ assert(sizeof(y1_conn_full_stages)==sizeof(chip)+1 && !memcmp(y1_conn_full_stages,chip,7));
+ assert(y1_conn_full_stages[7]==Y1_STAGE_BTIF && y1_conn_full_stages[8]==Y1_STAGE_WMT);
+ for(unsigned i=0;i<sizeof(chip);i++) assert(chip[i]!=Y1_STAGE_BTIF && chip[i]!=Y1_STAGE_WMT);
+}
+""")
+
+    def test_actual_power_path_from_the_b4_baseline(self):
+        core = (Y1 / 'core.c').read_text().replace('int y2_conn_rail(', 'static int y2_conn_rail(')
+        body = '\n'.join(function(core, name) for name in POWER_PATH)
+        b = BASELINE
+        run_c(r"""
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <string.h>
+""" + POLICY + r"""
+#define BIT(n) (1u<<(n))
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define WRITE_ONCE(x,v) ((x)=(v))
+static unsigned errors,warnings;
+static void dev_info(void *d,const char *f,...){(void)d;(void)f;}
+static void dev_err(void *d,const char *f,...){(void)d;(void)f;errors++;}
+static void dev_warn(void *d,const char *f,...){(void)d;(void)f;warnings++;}
+struct regmap {int which;}; struct clk {int unused;};
+struct regulator {unsigned reg,bit;}; struct regulator_bulk_data {const char *supply; struct regulator *consumer;};
+struct clk_bulk_data {const char *id; struct clk *clk;};
+struct y2_conn {
+ void *dev; struct regmap *pmic,*spm,*infracfg; struct regulator_bulk_data rails[4];
+ struct clk_bulk_data clocks[3]; bool rail_on[4],clock_on,powered,dma_active;
+ unsigned char *emi; char *mcu; unsigned chip; int failure;
+};
+static struct regmap PMIC={0},SPM={1},INFRA={2};
+static unsigned ctl,sta,sleep_reg,protect,pmic[0x600],mcu_reads,mcu_value,events[64],nevents;
+static bool sleep_stuck,emi_cleared,clock_enabled;
+enum {E_VCN18_LP,E_VCN18_ON,E_VCN28_HW,E_VCN28_ON,E_EMI,E_CLOCK,E_DOMAIN,E_CHIP,E_PROTECT,E_VCN18_OFF,E_VCN28_OFF};
+static void event(unsigned e){assert(nevents<64);events[nevents++]=e;}
+static bool domain_up(void){return (ctl&0xf)==0xd && !(ctl&0x12) && !protect;}
+static void model(void){
+ bool on=(ctl&(Y1_PWR_ON|Y1_PWR_ON_2ND))==(Y1_PWR_ON|Y1_PWR_ON_2ND);
+ sta=(sta&~2u)|(on?2u:0); if(on && (ctl&1)) sleep_reg|=sleep_stuck?Y1_SPM_CONN_AWAKE:0;
+ if(!on) sleep_reg&=~Y1_SPM_CONN_AWAKE;
+}
+static int regmap_read(struct regmap *m,unsigned reg,unsigned *v){
+ if(m==&SPM){assert(reg==0x280||reg==0x60c||reg==0x610||reg==0x3b4);
+  *v=reg==0x280?ctl:reg==0x3b4?sleep_reg:sta;}
+ else if(m==&INFRA){assert(reg==0x220||reg==0x228);*v=reg==0x220?protect:(0xf000|protect);}
+ else {assert(reg==0x512||reg==0x41c);*v=pmic[reg];}
+ return 0;
+}
+static int regmap_write(struct regmap *m,unsigned reg,unsigned v){
+ assert(m==&SPM && reg==0 && v==0x0b160001);return 0;
+}
+static int regmap_update_bits(struct regmap *m,unsigned reg,unsigned mask,unsigned v){
+ if(m==&SPM){assert(reg==0x280);ctl=(ctl&~mask)|v;model();return 0;}
+ if(m==&INFRA){assert(reg==0x220 && mask==0x11);protect=(protect&~mask)|v;if(v)event(E_PROTECT);return 0;}
+ /* Only the two bits the chip-id bring-up owns; never a PA rail or the PMIC init subset. */
+ assert(m==&PMIC && ((reg==0x512 && mask==Y1_PMIC_VCN18_LP) || (reg==0x41c && mask==Y1_PMIC_VCN28_HW_MODE)));
+ pmic[reg]=(pmic[reg]&~mask)|v;
+ if(reg==0x512) event(E_VCN18_LP); else if(v) event(E_VCN28_HW);
+ return 0;
+}
+static int regmap_set_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,bits);}
+static int regmap_clear_bits(struct regmap *m,unsigned reg,unsigned bits){return regmap_update_bits(m,reg,bits,0);}
+#define regmap_read_poll_timeout(m,reg,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; \
+ for(unsigned i_=0;i_<5;i_++){ regmap_read(m,reg,&(val)); if(cond){r_=0;break;} } r_; })
+static unsigned mcu_read(void){assert(domain_up());mcu_reads++;event(E_CHIP);return mcu_value;}
+#define readl_poll_timeout(addr,val,cond,sleep_us,timeout_us) ({ int r_=-ETIMEDOUT; (void)(addr); \
+ for(unsigned i_=0;i_<10;i_++){ (val)=mcu_read(); if(cond){r_=0;break;} } r_; })
+static void udelay(unsigned us){(void)us;}
+static void usleep_range(unsigned a,unsigned b){(void)a;(void)b;}
+static void memset_io(void *p,int v,unsigned n){assert(n==Y1_CONN_EMI_SIZE && !v && !ctl_on_check(p));}
+static int clk_prepare_enable(struct clk *c){(void)c;assert(!clock_enabled);clock_enabled=true;event(E_CLOCK);return 0;}
+static int regulator_enable(struct regulator *r){
+ assert(r->reg==0x512||r->reg==0x41c);pmic[r->reg]|=r->bit;event(r->reg==0x512?E_VCN18_ON:E_VCN28_ON);return 0;
+}
+static int regulator_disable(struct regulator *r){
+ pmic[r->reg]&=~r->bit;event(r->reg==0x512?E_VCN18_OFF:E_VCN28_OFF);return 0;
+}
+static int y2_btif_stop(struct y2_conn *c){assert(!c->dma_active);return 0;}
+static void y2_stp_reset(struct y2_conn *c){(void)c;}
+static int y2_btif_abort(struct y2_conn *c){(void)c;assert(0);return 0;}
+static int y2_btif_start(struct y2_conn *c){(void)c;assert(0);return 0;}
+static int wmt(struct y2_conn *c){(void)c;assert(0);return 0;}
+""".replace('assert(n==Y1_CONN_EMI_SIZE && !v && !ctl_on_check(p));',
+            'assert(n==Y1_CONN_EMI_SIZE && !v && p && !(ctl&1));emi_cleared=true;event(E_EMI);') + body + r"""
+static struct regulator vcn18={0x512,BIT(14)},vcn28={0x41c,BIT(12)};
+static unsigned char emi[1];
+static int run(unsigned start_ctl,unsigned chip,bool stuck,struct y2_conn *c){
+ ctl=start_ctl;sta=""" + str(b['status']) + r""";sleep_reg=""" + str(b['sleep']) + r""";protect=""" + str(b['protect']) + r""";
+ pmic[0x512]=""" + str(b['pmic_512']) + r""";pmic[0x41c]=""" + str(b['pmic_41c']) + r""";
+ if(start_ctl&1){sta|=2;protect=0;}
+ mcu_value=chip;sleep_stuck=stuck;errors=warnings=mcu_reads=nevents=0;emi_cleared=clock_enabled=false;
+ memset(c,0,sizeof(*c));c->pmic=&PMIC;c->spm=&SPM;c->infracfg=&INFRA;c->emi=emi;c->mcu=(char *)emi;
+ c->rails[0].consumer=&vcn18;c->rails[1].consumer=&vcn28; /* rails 2 and 3 not acquired */
+ return stages(c,y1_conn_chip_id_stages,ARRAY_SIZE(y1_conn_chip_id_stages));
+}
+static void back_at_baseline(struct y2_conn *c){
+ /* The baseline control value and status; the bus protection now set, as stock leaves it. */
+ assert(ctl==""" + str(b['ctl']) + r""" && sta==""" + str(b['status']) + r""" && protect==0x11);
+ assert(pmic[0x512]==""" + str(b['pmic_512']) + r""" && pmic[0x41c]==""" + str(b['pmic_41c']) + r""");
+ assert(!c->powered && !c->rail_on[0] && !c->rail_on[1] && !c->dma_active && c->clock_on);
+}
+static unsigned position(unsigned e){for(unsigned i=0;i<nevents;i++)if(events[i]==e)return i;assert(0);return 0;}
+int main(void){
+ struct y2_conn c;
+ assert(!run(""" + str(b['ctl']) + r""",0x6572,false,&c) && c.chip==0x6572 && mcu_reads==1 && !errors && !warnings);
+ back_at_baseline(&c);
+ /* Stock order: VCN18 (low power off, on), VCN28 (hardware mode, on), memory, SPM clock, domain, ID;
+  * then protection, VCN18 off, VCN28 off. */
+ assert(position(E_VCN18_LP)<position(E_VCN18_ON) && position(E_VCN18_ON)<position(E_VCN28_HW));
+ assert(position(E_VCN28_HW)<position(E_VCN28_ON) && position(E_VCN28_ON)<position(E_EMI));
+ assert(position(E_EMI)<position(E_CLOCK) && position(E_CLOCK)<position(E_CHIP));
+ assert(position(E_CHIP)<position(E_PROTECT) && position(E_PROTECT)<position(E_VCN18_OFF));
+ assert(position(E_VCN18_OFF)<position(E_VCN28_OFF));
+ /* No chip ID: still powered off cleanly; the timeout is the result. */
+ assert(run(""" + str(b['ctl']) + r""",0,false,&c)==-ETIMEDOUT && mcu_reads==10 && c.chip==0);
+ back_at_baseline(&c);
+ /* A core that never sleeps: a warning, then isolation anyway. */
+ assert(!run(""" + str(b['ctl']) + r""",0x6572,true,&c) && warnings==1);
+ back_at_baseline(&c);
+ /* CONN found on: taken down first (normalise), then the bring-up as usual. */
+ assert(!run(0x110d,0x6572,false,&c) && warnings==1 && mcu_reads==1);
+ back_at_baseline(&c);
+}
+""")
 
 
 if __name__ == '__main__':
