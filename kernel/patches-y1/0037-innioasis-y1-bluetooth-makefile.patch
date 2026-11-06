@@ -1,0 +1,12 @@
+--- a/drivers/bluetooth/Makefile
++++ b/drivers/bluetooth/Makefile
+@@ -3,6 +3,9 @@
+ # Makefile for the Linux Bluetooth HCI device drivers.
+ #
+ 
++obj-$(CONFIG_BT_INNIOASIS_Y1)	+= y1-conn.o
++y1-conn-y := y1-conn-core.o y1-conn-firmware.o y1-conn-btif.o y1-conn-stp.o \
++	y1-conn-wmt.o y1-conn-hci.o
+ obj-$(CONFIG_BT_HCIVHCI)	+= hci_vhci.o
+ obj-$(CONFIG_BT_HCIUART)	+= hci_uart.o
+ obj-$(CONFIG_BT_HCIBCM203X)	+= bcm203x.o
