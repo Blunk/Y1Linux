@@ -28,7 +28,7 @@
     {
       "path": "drivers/soc/mediatek/mtk-pmic-wrap.c",
       "base_sha256": "80173dd03ba85c5f900d27d35a2b6d0bd60bb5cf4bd801295e9953a0e4eaec12",
-      "result_sha256": "8df257db1c93b01cf45cafb24aa2dc8d079b8262ed6cdf1a989b979a2f8d59bc",
+      "result_sha256": "cf229eb906e6f51f7503e813f578f28fcb1fb764480df7df6111e3d2d8a14292",
       "patch": "0005-mt6572-pmic-wrap.patch"
     },
     {

@@ -1,5 +1,22 @@
 # Roadmap gap audit
 
+## Y1 robust charging planning — 2026-11-06
+
+Owner's priority after a flat Y1 looped on the power daemon's voltage guard ([plan](Y1-CHARGE-MODE-PLAN.md)).
+Evidence: the Y2 avoids the loop with a charge-only boot and a "charger" watchdog reset that LK turns into its
+charging mode; the Y1 has neither, Linux does not see the Y1 LK's boot mode, no PMIC register latches the power-on
+cause; wall chargers and power banks get only the 70 mA floor (no BC1.1); a write-policy refusal once latched a
+charger fault. The MTP gadget work (M1) is paused until charging is robust. Not admitted.
+
+## Y1 MTP planning (milestone B3) — 2026-11-05
+
+Owner request: music transfer over MTP as on the Y2 ([plan](Y1-MTP-PLAN.md)). Evidence: the Y2's patched umtprd is
+on the Y1's rootfs; the Y2 builds its configfs gadget inside the platform service daemon, which must stay off on
+the Y1; the Y1 kernel uses the legacy g_cdc and lacks configfs gadgets, FunctionFS and POSIX message queues; PID1
+depends on the ACM serial port; the MT6572 musb endpoints beyond the four g_cdc used are untested. Staged: the
+gadget through configfs alone, then MTP with one storage (`/data/music` on Y2DATA), edge cases, host coverage.
+Not admitted.
+
 ## Y1 persistent data planning (milestone B) — 2026-11-05
 
 Owner's choice: Y2DATA after the power daemon ([plan](Y1-DATA-PLAN.md)). Evidence: `/data` is RAM-only today;

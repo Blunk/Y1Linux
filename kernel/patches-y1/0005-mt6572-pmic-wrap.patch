@@ -137,7 +137,7 @@
  };
  
  struct pmic_wrapper_type {
-@@ -1582,6 +1684,27 @@
+@@ -1582,7 +1684,34 @@
  
  static int pwrap_regmap_write(void *context, u32 adr, u32 wdata)
  {
@@ -150,22 +150,29 @@
 +		if (ret)
 +			return ret;
 +		if (!y1_pmic_audio_allowed(adr, wdata, old))
-+			return -EPERM;
++			goto refused;
 +	} else if (wrp->charger_policy && (adr <= Y2_PMIC_CHARGER_LAST ||
 +				    (adr >= Y2_PMIC_ISINK_FIRST && adr <= Y2_PMIC_ISINK_LAST))) {
 +		mask = y2_pmic_write_mask(adr);
++		old = 0;
 +		if (!mask || !y2_pmic_value_allowed(adr, wdata))
-+			return -EPERM;
++			goto refused;
 +		ret = pwrap_read(wrp, adr, &old);
 +		if (ret)
 +			return ret;
 +		if ((old ^ wdata) & ~mask)
-+			return -EPERM;
++			goto refused;
 +	}
  	return pwrap_write(context, adr, wdata);
++
++refused:
++	/* Which write the policy refused (docs/planning/Y1-CHARGE-MODE-PLAN.md, C0). */
++	dev_warn_ratelimited(wrp->dev, "write policy refused 0x%03x = 0x%04x (now 0x%04x)\n", adr, wdata, old);
++	return -EPERM;
  }
  
-@@ -1733,6 +1856,11 @@
+ static bool pwrap_pmic_read_test(struct pmic_wrapper *wrp, const u32 *dew_regs,
+@@ -1733,6 +1862,11 @@
  static int pwrap_common_init_reg_clock(struct pmic_wrapper *wrp)
  {
  	switch (wrp->master->type) {
@@ -177,7 +184,7 @@
  	case PWRAP_MT6795:
  		if (wrp->slave->type == PMIC_MT6331) {
  			const u32 *dew_regs = wrp->slave->dew_regs;
-@@ -1839,6 +1967,7 @@
+@@ -1839,6 +1973,7 @@
  		pwrap_writel(wrp, 1, PWRAP_CIPHER_START);
  		break;
  	case PWRAP_MT2701:
@@ -185,7 +192,7 @@
  	case PWRAP_MT6765:
  	case PWRAP_MT6779:
  	case PWRAP_MT6795:
-@@ -2061,6 +2190,10 @@
+@@ -2061,6 +2196,10 @@
  		reset_control_reset(wrp->rstc_bridge);
  
  	switch (wrp->master->type) {
@@ -196,7 +203,7 @@
  	case PWRAP_MT6795:
  		fallthrough;
  	case PWRAP_MT8173:
-@@ -2277,6 +2410,19 @@
+@@ -2277,6 +2416,19 @@
  	.init_soc_specific = pwrap_mt2701_init_soc_specific,
  };
  
@@ -216,7 +223,7 @@
  static const struct pmic_wrapper_type pwrap_mt6765 = {
  	.regs = mt6765_regs,
  	.type = PWRAP_MT6765,
-@@ -2446,6 +2592,7 @@
+@@ -2446,6 +2598,7 @@
  
  static const struct of_device_id of_pwrap_match_tbl[] = {
  	{ .compatible = "mediatek,mt2701-pwrap", .data = &pwrap_mt2701 },
@@ -224,7 +231,7 @@
  	{ .compatible = "mediatek,mt6765-pwrap", .data = &pwrap_mt6765 },
  	{ .compatible = "mediatek,mt6779-pwrap", .data = &pwrap_mt6779 },
  	{ .compatible = "mediatek,mt6795-pwrap", .data = &pwrap_mt6795 },
-@@ -2487,6 +2634,7 @@
+@@ -2487,6 +2640,7 @@
  	platform_set_drvdata(pdev, wrp);
  
  	wrp->master = of_device_get_match_data(&pdev->dev);
