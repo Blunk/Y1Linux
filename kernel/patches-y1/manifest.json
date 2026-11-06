@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device), Y1-DATA-PLAN.md (0034: the eMMC write guard).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: musb RX restart keeps a waiting packet).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -204,6 +204,12 @@
       "base_sha256": "8fd10e3a6f6d60e37216de79b2d7a8b8f766c7d7e5cdd5851cccfe375e2536d1",
       "result_sha256": "03984d52468d01b99d09947b3d63d9efc25ee664f00e6a93f522488f11ca7b78",
       "patch": "0034-y1-emmc-write-guard.patch"
+    },
+    {
+      "path": "drivers/usb/musb/musb_gadget.c",
+      "base_sha256": "c0948905903b9e2998408d01adefbb69195bd493f165c209b350e019760a97a4",
+      "result_sha256": "e6f7ae717644042f9ed51377a66f5582624b42fde4f6821e1225f0740192927f",
+      "patch": "0035-musb-rx-restart-keeps-waiting-packet.patch"
     }
   ],
   "added": [

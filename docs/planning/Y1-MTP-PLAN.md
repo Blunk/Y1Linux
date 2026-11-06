@@ -131,3 +131,47 @@ its data in the endpoint, which `umtprd` then reads as commands (`0x2005`, odd c
 - Next: a debug kernel (musb RX path logging, or one CPU) to settle it, then a fix in a Y1 overlay of
   `musb_gadget.c`. Until then music goes over `scp` (19 MB in about 6 s); the twenty-fifth image (MTP at boot) is
   not for use.
+
+## 10. X1 — the tracing image — 2026-11-06
+
+Owner-approved (diagnosis only). `kernel/config/y1-twenty-sixth-boot.config`: the twenty-fourth fragment plus
+`FTRACE` and `ENABLE_DEFAULT_TRACERS` (resolved: `TRACING`, `EVENT_TRACING`, `TRACEPOINTS`), for the musb trace
+events (`musb_req_enq`, `_start`, `_rx`, `_gb`, `musb_log` with the driver's `musb_dbg` lines, `musb_isr`); PID1,
+tree and initramfs as the twenty-fourth. Build `out/y1-twenty-sixth-boot-1`, BOOTIMG sha256
+`932add281f3de431318a2d26ccce98ecd2372293efd1f3fb3d73e9416a45ff5f` (`0x392800` bytes). Plan: MTP started by hand,
+the events on, one 66 000-byte upload from the PC, the trace read over SSH.
+
+**X1 result — the cause, CONFIRMED — 2026-11-06** (`evidence-private/2026-11-06-y1-mtp-x1/`):
+
+- `trace1.txt` (request events, one 66 000-byte upload): the 64 KiB OUT request on `ep1` completed with **65 500**
+  bytes: 127 full packets (each step +512) and the final 476, 128 RX interrupts for 128 + 1 packets sent: one full
+  packet never reached the request; the reply `0x2005` (umtprd read mid-data as a command) fits the data's first
+  packet being the lost one.
+- `trace2.txt` (with register access): `umtprd`'s thread queues the next OUT request on CPU 1;
+  `musb_ep_restart` reads `RXCSR` = `0x0003` (**a packet already waiting**) and writes `0x0057`, i.e.
+  `MUSB_RXCSR_FLUSHFIFO`: the waiting packet is discarded, and the session stalls.
+- Mainline 6.18 `musb_ep_restart()` (`drivers/usb/musb/musb_gadget.c:1163`) flushes the RX FIFO unconditionally
+  whenever a request is queued on an idle OUT endpoint. On the Y1 (PIO, the reader on the second core, a few µs
+  behind the packets) that drops a packet whenever one arrives before the next read is queued: commands, data
+  headers, mid-transfer packets. ECM rarely hits it (its OUT requests are usually queued in advance).
+- **Proposed fix (X2)**: a `patches-y1` overlay of `musb_gadget.c`: when `RXCSR` shows `RXPKTRDY` at restart, read
+  that packet into the new request (`rxstate`, as the RX interrupt would) instead of flushing; flush only an empty
+  FIFO, as now. Called under the musb lock as before.
+
+## 11. X2 build — 2026-11-06
+
+Owner-approved. `kernel/patches-y1/0035-musb-rx-restart-keeps-waiting-packet.patch`: in `musb_ep_restart()`, an OUT
+endpoint whose `RXCSR` shows `RXPKTRDY` when a request is queued is served by `rxstate()` (as the RX interrupt would),
+not flushed; an empty FIFO is flushed as before (manifest hashes added). Image `out/y1-twenty-seventh-boot-1`: the
+twenty-fifth (MTP at boot) with the fix, BOOTIMG sha256
+`e59ea7f21db119e48466c687a2412c5d4b31092365ecfb0accbcbe7eb29605a8` (`0x341000` bytes).
+
+## 12. X2 run — PASS (client) — 2026-11-06
+
+`evidence-private/2026-11-06-y1-mtp-x2/run1.txt`, twenty-seventh boot: PID1's gadget at 3.9 s, `S45y1-mtp` at 16.3 s
+(`Music = /data/music`), the charger in CC at 450 mA. From the PC (the minimal client): uploads of 66 000 and
+529 244 bytes **OK** (both failed before), a 9 MB song **OK in 2.3 s (about 3.9 MB/s)**, the download of it OK;
+SHA-256 identical on the PC, on the Y1 and after the round trip; three deletes OK; the receipt's
+`refresh_generation` moved to 3 and Reborn rescanned by itself (3 tracks with the uploaded copy, 2 after the
+deletes). SSH and the serial shell (`sh` on `ttyGS0`, from `getty -n`) unaffected. **MTP uploads: fixed.** Open:
+the owner's file manager (M3/M4: cancel, unplug mid-copy, delete while playing, disk full).
