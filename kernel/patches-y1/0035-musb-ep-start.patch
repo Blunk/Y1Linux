@@ -1,0 +1,32 @@
+--- a/drivers/usb/musb/musb_gadget.c
++++ b/drivers/usb/musb/musb_gadget.c
+@@ -1177,11 +1177,28 @@
+ 	}
+ }
+ 
++/* Start a freshly queued request on an idle endpoint. Unlike a restart after
++ * dequeue, an OUT FIFO may legitimately hold a packet the host was already
++ * ACKed for: flushing it silently dropped that packet (and re-writing the
++ * sampled RXCSR could re-assert RXPKTRDY and leave the endpoint NAKing
++ * forever). Service the FIFO instead. (The Y2's kernel/patches/0065
++ * musb_ep_start, without its diagnostics; Innioasis Y1: MTP uploads lost
++ * packets, docs/planning/Y1-MTP-PLAN.md.) */
++static void musb_ep_start(struct musb *musb, struct musb_request *req)
++{
++	trace_musb_req_start(req);
++	musb_ep_select(musb->mregs, req->epnum);
++	if (req->tx)
++		txstate(musb, req);
++	else
++		rxstate(musb, req);
++}
++
+ static int musb_ep_restart_resume_work(struct musb *musb, void *data)
+ {
+ 	struct musb_request *req = data;
+ 
+-	musb_ep_restart(musb, req);
++	musb_ep_start(musb, req);
+ 
+ 	return 0;
+ }
