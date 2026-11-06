@@ -109,3 +109,22 @@ on a charger lands in the mode).
 
 **Unplug test** (build 2, the same day): charge-only mode entered by the held button, USB unplugged: the player
 **powered off**; switched on again with the centre button and plugged in, it started normally (`run3.txt`).
+
+## 9. The Y2's charging screen — 2026-11-06
+
+The owner asked for the Y2's charging screen instead of text. The Y2's `tools/production/offline-charge.c` runs from
+its initramfs and is not on the Y1's rootfs; the Y1's PID1 is freestanding (no libc, no soft-float). Ported into
+the charge-only mode (`initramfs/y1-twenty-ninth-boot.h`, `Y1_TWENTY_NINTH_BOOT`): the same artwork rendered by
+Reborn (`tools/graphics/offline-charge-art.h`), layout, colours, title (Charging / Charged / Charging paused) and
+hint (Hold Power to turn on / Release to start / Battery too low to start) logic, the ring sweeping at 2 frames a
+second while charging and full when charged, the screen dark (backlight 0, `FBIOBLANK` power-down) 8 s after the
+last press and lit by a press, the console in `KD_GRAPHICS` while it owns `/dev/fb0` (DRM, XRGB8888 480x360,
+checked at open; text mode otherwise). The Y1's own logic stays: the centre button (the Y1's power key), the 2 s
+hold, three samples at 3.4 V, power-off on unplug. The ring's coverage uses integer sixths of a pixel and 30-degree
+sectors instead of floats: compared with the Y2's float code on the PC over all 12 positions, 4 pixels differ, by
+at most 19/255 in one channel (samples on a sector edge). Build `out/y1-twenty-ninth-boot-1`, BOOTIMG sha256
+`03784841d957d6a553b983eaf5161baf13c4a5327f900585baa10b8a47869ae4`; the twenty-eighth's PID1 recompiled byte-identical.
+The hint says "Power": on the Y1 the centre button is the PMIC power key.
+
+**Run — PASS — 2026-11-06** (twenty-ninth boot, on the PC, entered by holding the centre button): the owner sees the
+Y2's charging screen in the charge-only mode ("works, shows nice image now while charging").
