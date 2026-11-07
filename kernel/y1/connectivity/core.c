@@ -5,7 +5,9 @@
  * from stock in B1 (out/y1-bluetooth-b1-notes.md §1, §6). Separate from the Y2's core.c because
  * almost every power step differs: no modem calibration, no RGU reset, no EMI remap, no CONNMCU
  * clock, VCN28 on (TCXO path), the SPM clock, the CONN domain sequence of y1-conn-policy.h, the
- * MCU running from RST_B before BTIF opens, and a sleep handshake before power-off. */
+ * MCU running from RST_B before BTIF opens, and a sleep handshake before power-off. Wi-Fi
+ * (docs/planning/Y1-WIFI-PLAN.md W2): the Y2's fullmac as a child device, VCN33_WIFI in hardware mode
+ * while it runs (MediaTek's MT6572 HifAhbProbe) and no WMT function command (its wmt_func_wifi_on). */
 #include <crypto/sha2.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
@@ -15,6 +17,7 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/pm_runtime.h>
+#include <linux/slab.h>
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 #include "conn.h"
@@ -309,10 +312,21 @@ static int runtime_suspend(struct device *dev)
 	mutex_unlock(&c->lifecycle);
 	return ret;
 }
+/* The PA rail of a function: VCN33_BT (rail 2) or VCN33_WIFI (rail 3), each with its ON_CTRL bit. */
+static unsigned function_rail(unsigned function)
+{
+	return function==Y2_CONN_BT ? 2 : 3;
+}
+/* MediaTek's MT6572 switches Wi-Fi by its probe alone (y1-conn-policy.h); Bluetooth by WMT. */
+static int function_switch(struct y2_conn *c, unsigned function, bool enable)
+{
+	if (function==Y2_CONN_WIFI && !Y1_CONN_WIFI_WMT_FUNCTION) return 0;
+	return y2_wmt_function(c,function,enable);
+}
 int y2_conn_get(struct y2_conn *c, unsigned function)
 {
 	int ret;
-	if (function!=Y2_CONN_BT) return -EINVAL;
+	if (function!=Y2_CONN_BT && function!=Y2_CONN_WIFI) return -EINVAL;
 	if (!READ_ONCE(c->activated) || READ_ONCE(c->recovering) || c->removing) return -EHOSTDOWN;
 	ret=pm_runtime_resume_and_get(c->dev);
 	if (ret<0) { y2_conn_failed(c,ret); return ret; }
@@ -322,9 +336,9 @@ int y2_conn_get(struct y2_conn *c, unsigned function)
 		if (ret) { WRITE_ONCE(c->failure,ret); goto unused; }
 	}
 	if (c->functions & BIT(function)) { ret=0; goto unused; }
-	ret=c->failure ? c->failure : y2_conn_rail(c,2,true);
-	if (!ret) ret=y2_wmt_function(c,function,true);
-	if (ret) { y2_conn_rail(c,2,false); goto unused; }
+	ret=c->failure ? c->failure : y2_conn_rail(c,function_rail(function),true);
+	if (!ret) ret=function_switch(c,function,true);
+	if (ret) { y2_conn_rail(c,function_rail(function),false); goto unused; }
 	c->functions |= BIT(function); c->wanted |= BIT(function);
 	mutex_unlock(&c->lifecycle);
 	return 0;
@@ -335,12 +349,12 @@ unused:
 int y2_conn_put(struct y2_conn *c, unsigned function)
 {
 	int ret=0, rail;
-	if (function!=Y2_CONN_BT) return -EINVAL;
+	if (function!=Y2_CONN_BT && function!=Y2_CONN_WIFI) return -EINVAL;
 	mutex_lock(&c->lifecycle);
 	c->wanted &= ~BIT(function);
 	if (!(c->functions & BIT(function))) { mutex_unlock(&c->lifecycle); return 0; }
-	if (!c->failure && c->powered) ret=y2_wmt_function(c,function,false);
-	rail=y2_conn_rail(c,2,false);
+	if (!c->failure && c->powered) ret=function_switch(c,function,false);
+	rail=y2_conn_rail(c,function_rail(function),false);
 	if (!ret) ret=rail;
 	c->functions &= ~BIT(function);
 	mutex_unlock(&c->lifecycle);
@@ -358,6 +372,9 @@ static int recover_locked(struct y2_conn *c)
 	c->last_recovery=jiffies; c->recovering=true;
 	WRITE_ONCE(c->hci_paused,true);
 	mutex_unlock(&c->lifecycle);
+	/* As the Y2: quiesce consumers outside the lifecycle lock (their remove/close callbacks release
+	 * function references through this owner); the Wi-Fi driver is bound again afterwards. */
+	if (c->wifi) device_release_driver(&c->wifi->dev);
 	if (c->hdev) cancel_work_sync(&c->hci_work);
 	pm_runtime_disable(c->dev);
 	mutex_lock(&c->lifecycle);
@@ -367,6 +384,10 @@ static int recover_locked(struct y2_conn *c)
 	pm_runtime_enable(c->dev);
 	c->recovering=false;
 	mutex_unlock(&c->lifecycle);
+	if (!ret && c->wifi) {
+		int attached=device_attach(&c->wifi->dev);
+		if (attached<0) dev_warn(c->dev,"Wi-Fi recovery rebind: %d\n",attached);
+	}
 	return ret;
 }
 static void recover(struct work_struct *work)
@@ -420,6 +441,44 @@ static ssize_t factory_write(struct file *file, struct kobject *kobj, const stru
 static const struct bin_attribute bin_attr_factory = {
 	.attr={.name="factory",.mode=0200}, .size=Y1_CONN_RECORD_SIZE, .write=factory_write,
 };
+/* The Wi-Fi record (y1-conn-policy.h): the Y1's stock default with a MAC, after the Bluetooth record and
+ * before activation. Without it activation registers Bluetooth only. */
+static ssize_t wifi_factory_write(struct file *file, struct kobject *kobj, const struct bin_attribute *attr,
+				  char *data, loff_t offset, size_t size)
+{
+	struct y2_conn *c=dev_get_drvdata(kobj_to_dev(kobj)); int ret=size;
+	unsigned char digest[32], *copy;
+	if (offset || size!=Y1_CONN_WIFI_RECORD_SIZE) return -EINVAL;
+	copy=kmemdup(data,size,GFP_KERNEL);
+	if (!copy) return -ENOMEM;
+	memset(copy+Y1_CONN_WIFI_MAC,0,6);
+	sha256(copy,size,digest);
+	kfree(copy);
+	mutex_lock(&c->lifecycle);
+	if (c->activated) ret=-EBUSY;
+	else if (!c->factory_ready) ret=-ENODATA;
+	else if (y1_conn_wifi_record_check((const u8 *)data,size,digest,c->bt_factory)) ret=-EINVAL;
+	else { memcpy(c->wifi_factory,data,size); c->wifi_ready=true; }
+	mutex_unlock(&c->lifecycle);
+	memzero_explicit(digest,sizeof(digest));
+	return ret;
+}
+static const struct bin_attribute bin_attr_wifi_factory = {
+	.attr={.name="wifi_factory",.mode=0200}, .size=Y1_CONN_WIFI_RECORD_SIZE, .write=wifi_factory_write,
+};
+/* The Y2's child device (wifi/ahb.c binds "y2-mt6582-wifi" and reads the parent's "wifi" window and
+ * interrupt), only with the Wi-Fi build, the record and both resources in the node. */
+static int register_wifi(struct y2_conn *c)
+{
+	struct platform_device *pdev=to_platform_device(c->dev);
+	struct platform_device_info info={.parent=c->dev,.name="y2-mt6582-wifi",.id=PLATFORM_DEVID_NONE,
+		.data=&c,.size_data=sizeof(c)};
+	if (!IS_ENABLED(CONFIG_BT_INNIOASIS_Y1_WIFI) || !c->wifi_ready ||
+	    !platform_get_resource_byname(pdev,IORESOURCE_MEM,"wifi")) return 0;
+	c->wifi=platform_device_register_full(&info);
+	if (IS_ERR(c->wifi)) { int ret=PTR_ERR(c->wifi); c->wifi=NULL; return ret; }
+	return 0;
+}
 static ssize_t activate_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t n)
 {
 	struct y2_conn *c=dev_get_drvdata(dev); bool value; int ret;
@@ -430,6 +489,8 @@ static ssize_t activate_store(struct device *dev, struct device_attribute *attr,
 	c->activated=true; mutex_unlock(&c->lifecycle);
 	ret=y2_hci_register(c);
 	if (ret) { c->activated=false; return ret; }
+	ret=register_wifi(c);
+	if (ret) { y2_hci_unregister(c); c->activated=false; return ret; }
 	return n;
 }
 static ssize_t status_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -461,7 +522,7 @@ static ssize_t recover_store(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_WO(recover);
 static struct attribute *attrs[]={&dev_attr_activate.attr,&dev_attr_status.attr,&dev_attr_recover.attr,&dev_attr_boot_retries.attr,NULL};
-static const struct bin_attribute *const bin_attrs[]={&bin_attr_factory,NULL};
+static const struct bin_attribute *const bin_attrs[]={&bin_attr_factory,&bin_attr_wifi_factory,NULL};
 static const struct attribute_group group={.attrs=attrs,.bin_attrs=bin_attrs};
 static int suspend(struct device *dev)
 {
@@ -489,6 +550,21 @@ static int validate_interrupts(struct device_node *node)
 	}
 	return 0;
 }
+/* The Wi-Fi window and interrupt: both or neither, and then exactly MediaTek's. */
+static int validate_wifi(struct platform_device *pdev)
+{
+	struct resource *r=platform_get_resource_byname(pdev,IORESOURCE_MEM,y1_conn_wifi_range.name);
+	int at=of_property_match_string(pdev->dev.of_node,"interrupt-names",y1_conn_wifi_irq.name);
+	u32 cell[3];
+	if (!r && at<0) return 0;
+	if (!r || at<0 || r->start!=y1_conn_wifi_range.start || resource_size(r)!=y1_conn_wifi_range.size)
+		return -EINVAL;
+	for (unsigned j=0;j<3;j++)
+		if (of_property_read_u32_index(pdev->dev.of_node,"interrupts",at*3+j,cell+j)) return -EINVAL;
+	if (cell[0]!=Y1_CONN_GIC_SPI || cell[1]!=y1_conn_wifi_irq.spi || cell[2]!=Y1_CONN_LEVEL_LOW)
+		return -EINVAL;
+	return 0;
+}
 /* One fixed wiring (y1-conn-policy.h): reject a malformed node before any mapping or DMA. */
 static int validate_resources(struct platform_device *pdev)
 {
@@ -498,7 +574,7 @@ static int validate_resources(struct platform_device *pdev)
 		if (!r || r->start!=y1_conn_ranges[i].start || resource_size(r)!=y1_conn_ranges[i].size)
 			return -EINVAL;
 	}
-	if (validate_interrupts(pdev->dev.of_node)) return -EINVAL;
+	if (validate_interrupts(pdev->dev.of_node) || validate_wifi(pdev)) return -EINVAL;
 	node=of_parse_phandle(pdev->dev.of_node,"memory-region",0);
 	if (!node) return -EINVAL;
 	ret=of_address_to_resource(node,0,&memory);
@@ -662,7 +738,9 @@ static int probe(struct platform_device *pdev)
 	pm_runtime_use_autosuspend(dev); pm_runtime_enable(dev);
 	ret=devm_device_add_group(dev,&group);
 	if (ret) { pm_runtime_disable(dev); return ret; }
-	dev_info(dev,"MT6572 connectivity owner ready (Bluetooth); radio awaits the factory record\n");
+	dev_info(dev,"MT6572 connectivity owner ready (Bluetooth%s); radio awaits the factory record\n",
+		 IS_ENABLED(CONFIG_BT_INNIOASIS_Y1_WIFI) &&
+		 platform_get_resource_byname(pdev,IORESOURCE_MEM,"wifi") ? ", Wi-Fi" : "");
 	return 0;
 }
 static void shutdown(struct platform_device *pdev)
@@ -671,6 +749,7 @@ static void shutdown(struct platform_device *pdev)
 	c->removing=true;
 	if (c->mode==Y1_MODE_WMT) { WRITE_ONCE(c->abort,true); y2_conn_failed(c,-ESHUTDOWN); }
 	cancel_work_sync(&c->recovery_work);
+	if (c->wifi) { platform_device_unregister(c->wifi); c->wifi=NULL; }
 	y2_hci_unregister(c); pm_runtime_disable(c->dev);
 	mutex_lock(&c->lifecycle); sleep_then_off(c); mutex_unlock(&c->lifecycle);
 }

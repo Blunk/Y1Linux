@@ -50,8 +50,31 @@
       "selected_for_release": false,
       "redistribution_permission_established": false,
       "device_specific_calibration": false
+    },
+    {
+      "filename": "WIFI_RAM_CODE_MT6582",
+      "bytes": 160368,
+      "sha256": "4def37522e2bfd2d4b78e01bf9f567a37e3f67ab3d7b6646ffb317f5b2b49b82",
+      "source": "the owner's Innioasis Y2 stock package y2_v3.2.0_FM-20260813, system.img:/etc/firmware/WIFI_RAM_CODE_MT6582 (the Y1 has no Wi-Fi firmware)",
+      "cross_check": "byte-identical to WIFI_RAM_CODE_MT6582 in a public MT6572 phone's vendor firmware set (Micromax A102, github.com/ifxadi/android_vendor_Micromax_A102 cm-13.0, git blob 3681b30830bb201c1995ab26c75430f67adbc194), hashed only, 2026-11-07",
+      "redistribution": "not established; not selected for distribution",
+      "function": "MT6572/MT6582 CONNSYS Wi-Fi fullmac firmware; the name MediaTek's MT6572 driver loads (-DMT6628 branch of kalFirmwareImageMapping); docs/planning/Y1-WIFI-PLAN.md",
+      "proposed_install_path": "/data/firmware/mt6572/WIFI_RAM_CODE_MT6582",
+      "optional": true,
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false
     }
   ],
-  "provisioning_policy": "Owner-supplied/extracted files only (tools/connectivity/provision.py --profile y1); no boot-time downloads; never in the repository",
-  "calibration_policy": "The Y1's PROTECT_F/S calibration and its BT_Addr record are read only, never written; no copies in the repository"
+  "provisioning_policy": "Owner-supplied/extracted files only (tools/connectivity/provision.py --profile y1; the optional Wi-Fi firmware from the owner's Y2 package, WIFI.defaults from --stock-custom-nvram); no boot-time downloads; never in the repository",
+  "calibration_policy": "The Y1's PROTECT_F/S calibration and its BT_Addr record are read only, never written; no copies in the repository",
+  "wifi_default_record": {
+    "filename": "WIFI.defaults",
+    "bytes": 512,
+    "sha256": "9cfed6e4edabc7b6677d4e81972614fa67429006977d7910bfa24b33c68ba8b4",
+    "source": "Y1 stock system:/lib/libcustom_nvram.so (37508 bytes, sha256 0000ccf1a2d2a67c5836ebb5881eaf938b619566585523df1d702745c72b3ebd), file offset 0x3cf4 (VA 0x4cf4)",
+    "function": "WIFI_CFG_PARAM_STRUCT version 0x104, ucTxPwrValid 1, MAC all zero",
+    "owner_device": "the stock userdata /nvram/APCFG/APRDEB/WIFI (514 bytes: this record and a 2-byte checksum) is identical: no factory Wi-Fi calibration and no Wi-Fi MAC on this Y1",
+    "device_specific_calibration": false
+  }
 }
