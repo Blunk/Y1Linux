@@ -131,6 +131,38 @@ fn missing_helper_crash_events_cannot_bypass_restart_rate() {
     assert_eq!(restarts(&calls), 3);
 }
 
+/// The Y1 (docs/planning/Y1-WIFI-PLAN.md, W6): an image whose radio set says it has no modem
+/// calibration never starts y2-calibration; the other two helpers as on the Y2.
+#[test]
+fn an_image_without_modem_calibration_never_starts_it() {
+    let (fixture, steps) = fixture();
+    fixture.put(
+        "/etc/y2linux/radio-firmware.json",
+        r#"{"schema":1,"target":"/data/firmware/mt6572","calibration":false,
+            "files":[{"name":"WMT_SOC.cfg","size":82,"sha256":"161f18b686e59a763368ffb1d8229f158fa61493ecc3dff5c6ef8c11a7f5f1e0"}],
+            "library":{"name":"/lib/libbluetooth_mtk.so","size":1,"sha256":"36f2ea80a64eaeb52fbca577ee87895a622ace878d12b5ad7fa21d08f278afd7"},
+            "defaults":[],"patches":[]}"#,
+    );
+    let mut monitor = Supervisor::new(&fixture.root);
+    let (_, calls) = run(&steps, Vec::new(), || {
+        monitor.health(0.0, false).unwrap();
+        monitor.health(30.0, true).unwrap();
+    });
+    let started: Vec<&str> = calls
+        .iter()
+        .filter_map(|argv| match argv[0].as_str() {
+            "wpa_supplicant" => Some("wpa"),
+            "start-stop-daemon" if argv[1] == "-S" => Some(argv[7].as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        started,
+        ["wpa", "/usr/sbin/y2-radiod", "wpa", "/usr/sbin/y2-radiod"]
+    );
+    assert!(!monitor.pids.iter().any(|(n, _)| *n == "calibration"));
+}
+
 #[test]
 fn stale_reused_pid_is_not_a_healthy_helper() {
     let (fixture, _) = fixture();

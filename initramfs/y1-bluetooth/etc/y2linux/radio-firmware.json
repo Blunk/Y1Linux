@@ -2,14 +2,22 @@
   "schema": 1,
   "target": "/data/firmware/mt6572",
   "inbox": "/data/music/Firmware",
-  "note": "Bluetooth needs the radio firmware from the Innioasis Y1 firmware package.\nCopy (do not move) the file system.img from that package (rom.zip, version 3.0.2) into this\nfolder (about 650 MB). The player checks it, keeps the three small radio files and deletes the copy.\n",
+  "note": "Bluetooth and Wi-Fi need the radio firmware from two Innioasis firmware packages.\nCopy (do not move) the file system.img from the Innioasis Y1 package (rom.zip, version 3.0.2)\ninto this folder (about 650 MB). The player checks it, keeps the small radio files and deletes\nthe copy. For Wi-Fi, then copy system.img from the Innioasis Y2 package (version 3.2.0) here\nthe same way: the player keeps only its Wi-Fi file.\n",
   "files": [
     {"name": "WMT_SOC.cfg", "size": 82, "sha256": "161f18b686e59a763368ffb1d8229f158fa61493ecc3dff5c6ef8c11a7f5f1e0"},
     {"name": "mt6572_82_patch_e1_0_hdr.bin", "size": 39868, "sha256": "5c13ebad70fbddc10410c675fdce84e89f5db9fa1323f9d787eca3e96a99bfc1"}
   ],
   "library": {"name": "/lib/libbluetooth_mtk.so", "size": 13452, "sha256": "36f2ea80a64eaeb52fbca577ee87895a622ace878d12b5ad7fa21d08f278afd7"},
-  "defaults": [
-    {"name": "BT.defaults", "offset": 12292, "size": 32, "expect": "000046657201", "clear": 6, "sha256": "a317b67f17b3e190f1958e47c7eb5bb4a738ef9752080595caea7350493c119c"}
+  "libraries": [
+    {"name": "/lib/libcustom_nvram.so", "size": 37508, "sha256": "0000ccf1a2d2a67c5836ebb5881eaf938b619566585523df1d702745c72b3ebd"}
   ],
-  "patches": [1]
+  "defaults": [
+    {"name": "BT.defaults", "offset": 12292, "size": 32, "expect": "000046657201", "clear": 6, "sha256": "a317b67f17b3e190f1958e47c7eb5bb4a738ef9752080595caea7350493c119c"},
+    {"name": "WIFI.defaults", "offset": 15604, "size": 512, "expect": "04010000000000000000", "clear": 0, "sha256": "9cfed6e4edabc7b6677d4e81972614fa67429006977d7910bfa24b33c68ba8b4", "library": "/lib/libcustom_nvram.so"}
+  ],
+  "patches": [1],
+  "supplement": [
+    {"name": "WIFI_RAM_CODE_MT6582", "size": 160368, "sha256": "4def37522e2bfd2d4b78e01bf9f567a37e3f67ab3d7b6646ffb317f5b2b49b82"}
+  ],
+  "calibration": false
 }

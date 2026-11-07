@@ -2,9 +2,9 @@
 //! scan that takes it, or deletes a later one once the firmware is in place.
 // SPDX-License-Identifier: GPL-2.0-only
 use super::{
-    from_system_image, fs, install, installed, media, os_path, present, record, start, Path,
-    PathBuf, Result, Reviewed, Root, SystemTime, ENOSPC, FOLDER, INBOX, INTERNAL_INBOX, README,
-    SD_INBOX, SOURCE, STATE, UNIX_EPOCH,
+    from_supplement_image, from_system_image, fs, install, install_supplement, installed, media,
+    os_path, present, record, start, supplemented, Path, PathBuf, Result, Reviewed, Root,
+    SystemTime, ENOSPC, FOLDER, INBOX, INTERNAL_INBOX, README, SD_INBOX, SOURCE, STATE, UNIX_EPOCH,
 };
 use serde::{Deserialize, Serialize};
 use std::os::unix::fs::DirBuilderExt;
@@ -164,9 +164,13 @@ fn remove(root: &Root, source: &Path) {
 }
 
 /// After the install the Internal Storage (or the configured) Firmware folder goes away again (only
-/// its note; anything the owner put there stays).
+/// its note; anything the owner put there stays). The configured one stays while a supplement is
+/// still to come.
 fn tidy(root: &Root) {
-    let configured = configured(root).map(|(folder, _)| folder);
+    let waiting = Reviewed::of(root).is_ok_and(|r| !supplemented(root, &r));
+    let configured = configured(root)
+        .map(|(folder, _)| folder)
+        .filter(|_| !waiting);
     for folder in [Some(root.path(INTERNAL_INBOX)), configured]
         .into_iter()
         .flatten()
@@ -257,9 +261,17 @@ pub(super) fn scan(root: &Root, reviewed: &Reviewed) -> Result<Status> {
                 ..Record::new("Installing")
             },
         )?;
-        if let Err(error) =
-            from_system_image(reviewed, &source).and_then(|files| install(root, reviewed, files))
+        let result =
+            from_system_image(reviewed, &source).and_then(|files| install(root, reviewed, files));
+        // The other package's image first: its files wait in the folder for the set.
+        if result.is_err()
+            && !supplemented(root, reviewed)
+            && take_supplement(root, reviewed, &source)
         {
+            record_state(root, &Record::new("Missing"))?;
+            return Ok(Status::of("Missing", None));
+        }
+        if let Err(error) = result {
             let reason: String = error.text().chars().take(80).collect();
             record_state(
                 root,
@@ -315,6 +327,11 @@ pub(super) fn leftover(root: &Root, reviewed: &Reviewed) -> Result<Status> {
             value.leftover = Some(seen);
             break;
         }
+        if !supplemented(root, reviewed) && take_supplement(root, reviewed, &source) {
+            record_state(root, &value)?;
+            start(root);
+            return Ok(Status::of("Ready", None));
+        }
         if from_system_image(reviewed, &source).is_err() {
             value.kept = Some(seen);
             break;
@@ -328,6 +345,20 @@ pub(super) fn leftover(root: &Root, reviewed: &Reviewed) -> Result<Status> {
         record_state(root, &value)?;
     }
     Ok(Status::of("Ready", None))
+}
+
+/// The supplement from this copy, installed, the copy deleted; false when it is not that package's.
+fn take_supplement(root: &Root, reviewed: &Reviewed, source: &Path) -> bool {
+    let taken = from_supplement_image(reviewed, source)
+        .and_then(|files| install_supplement(root, reviewed, files))
+        .is_ok();
+    if taken {
+        remove(root, source);
+        if installed(root, reviewed) {
+            tidy(root);
+        }
+    }
+    taken
 }
 
 /// Cheap check for the service: a copy leftover() has not judged yet.

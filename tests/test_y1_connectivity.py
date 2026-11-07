@@ -118,8 +118,9 @@ class Y1ConnectivityFacts(unittest.TestCase):
                 self.assertNotIn('always-on', block)
                 self.assertNotIn('boot-on', block)
 
-    def test_b6_services_are_bluetooth_only(self):
-        # The Y2's S41 runs y2-factory, MD calibration, wpa_supplicant and connectivity-daemon: none on the Y1.
+    def test_b6_services_with_the_w6_wifi_service(self):
+        # The Y2's S41 runs y2-factory and MD calibration: never on the Y1. W6 adds the supplicant and the
+        # platform's connectivity monitor, only once the Wi-Fi device exists.
         base = ROOT / 'initramfs/y1-bluetooth/etc/init.d'
         services = (base / 'y1-services').read_text()
         listed = services.split('Y1_SERVICES="')[1].split('"')[0].split()
@@ -128,22 +129,32 @@ class Y1ConnectivityFacts(unittest.TestCase):
         self.assertNotIn('S40bluetoothd', listed)  # y2-radiod starts bluetoothd itself
         script = (base / 'S41y2-connectivity').read_text()
         code = '\n'.join(line for line in script.splitlines() if not line.lstrip().startswith('#'))
-        for absent in ('y2-factory', 'y2-calibration', 'wpa_supplicant', 'connectivity-daemon', 'y2-radio-activate'):
+        for absent in ('y2-factory', 'y2-calibration', 'y2-radio-activate', '/usr/libexec/y2/connectivity'):
             self.assertNotIn(absent, code)
         for present in ('RECORD=/data/connectivity/bt-record', 'FIRMWARE=/data/firmware/mt6572',
-                        '"$1 $3 $5" = "-rw------- 0 32"', '\tmigrate\n\tfirmware\n\tcompose\n\twifi_compose\n\tactivate || exit 1',
-                        'until y2-platform firmware scan', 'start-stop-daemon -K -p "$WAIT"',
+                        '"$1 $3 $5" = "-rw------- 0 32"',
+                        '\tmigrate\n\tfirmware\n\tcompose\n\twifi_compose\n\tactivate || exit 1\n\tservices',
+                        'y2-platform firmware scan', 'start-stop-daemon -K -p "$WAIT"',
                         'cat "$RECORD" > "$C/factory" || return 1\n\twifi_record\n\techo 1 > "$C/activate"',
+                        'activated=1*) wifi_record; return 0;;',
                         '-x /usr/sbin/y2-radiod', 'stop-wifi) y2-radio wifi off-runtime 2>/dev/null || : ;;',
+                        'wpa_supplicant -B -u -g /run/wpa_supplicant/global -P /run/y2/wpa.pid',
+                        '-p /run/y2/connectivity.pid -x /usr/sbin/y2-platform -- connectivity-daemon',
+                        '[ -e "$C/y2-mt6582-wifi" ] && wifi=1',
                         'mount --bind /data/bluetooth/bluez /var/lib/bluetooth',
+                        "'ctrl_interface=/run/wpa_supplicant' 'update_config=1' 'country=00'",
                         "[ -e /data/network/enabled ] || printf '0\\n' > /data/network/enabled"):
             self.assertIn(present, script)
+        # The supplicant and the monitor start after radiod is asked for, and only with the Wi-Fi device.
+        body = re.search(r'^services\(\) \{\n.*?^\}\n', script, re.M | re.S)[0]
+        self.assertLess(body.index('[ -n "$wifi" ] || return 0'), body.index('connectivity-daemon'))
+        self.assertLess(body.index('if [ -n "$wifi" ]'), body.index('wpa_supplicant -B'))
         listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
         self.assertIn('/y1-system/etc/init.d/S41y2-connectivity /project/initramfs/y1-bluetooth/etc/init.d/'
                       'S41y2-connectivity 0755', listing)
         pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
         self.assertIn('#ifdef Y1_THIRTY_FOURTH_BOOT\n    /* Bluetooth', pid1)
-        self.assertIn('{ "/etc/y2linux/radio-firmware.json", 0644 },\n#endif', pid1)
+        self.assertIn('{ "/etc/y2linux/radio-firmware.json", 0644 },\n', pid1)
         self.assertIn('file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/'
                       'radio-firmware.json 0644', listing)
 
@@ -967,6 +978,101 @@ int main(void){
 """)
 
 
+class Y1WifiW6(unittest.TestCase):
+    """W6 (docs/planning/Y1-WIFI-PLAN.md §14): S41's late Wi-Fi record and the firmware scan, the MTP hook."""
+
+    SCRIPT = (ROOT / 'initramfs/y1-bluetooth/etc/init.d/S41y2-connectivity').read_text()
+
+    def function(self, name):
+        return re.search(rf'^{name}\(\) \{{\n.*?^\}}\n', self.SCRIPT, re.M | re.S)[0]
+
+    def wifi_record(self, directory, child=False, record=b'r' * 512, mode=0o600):
+        base = Path(directory)
+        core = base / 'core'
+        core.mkdir()
+        (core / 'wifi_factory').write_bytes(b'')
+        if child:
+            (core / 'y2-mt6582-wifi').mkdir()
+        path = base / 'wifi-record'
+        path.write_bytes(record)
+        path.chmod(mode)
+        # ls -ln names uid 0 only for root: stand in for it with the caller's uid.
+        body = self.function('wifi_record').replace('"-rw------- 0 512"', f'"-rw------- {__import__("os").getuid()} 512"')
+        run = subprocess.run(['sh', '-c', f'C={core}\nWRECORD={path}\n{body}wifi_record'], capture_output=True)
+        return run.returncode, (core / 'wifi_factory').read_bytes()
+
+    def test_the_record_goes_to_the_driver_once_while_there_is_no_wifi_device(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_record(d), (0, b'r' * 512))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_record(d, child=True), (0, b''))  # registered already: nothing
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_record(d, mode=0o644), (0, b''))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_record(d, record=b'r' * 511), (0, b''))
+
+    def firmware(self, directory, status, copy):
+        base = Path(directory)
+        (base / 'bin').mkdir()
+        (base / 'bin/y2-platform').write_text(f'#!/bin/sh\necho \'{status}\'\n')
+        (base / 'bin/start-stop-daemon').write_text(f'#!/bin/sh\necho "$@" > {base}/started\n')
+        for tool in ('y2-platform', 'start-stop-daemon'):
+            (base / 'bin' / tool).chmod(0o755)
+        inbox = base / 'Firmware'
+        inbox.mkdir()
+        if copy:
+            (inbox / 'system.img').write_bytes(b'x')
+        run = subprocess.run(['sh', '-c', f'PATH={base}/bin:$PATH\nINBOX={inbox}\nWAIT={base}/wait.pid\n'
+                              f'{self.function("firmware")}firmware'], capture_output=True)
+        started = base / 'started'
+        return run.returncode, started.read_text() if started.exists() else None
+
+    def test_the_scan_runs_while_missing_or_while_a_copy_waits(self):
+        ready, missing = '{"state":"Ready"}', '{"state":"Missing"}'
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.firmware(d, ready, copy=False), (0, None))
+        for status, copy in ((ready, True), (missing, False), (missing, True)):
+            with tempfile.TemporaryDirectory() as d:
+                code, started = self.firmware(d, status, copy)
+                self.assertIn('firmware-wait', started)
+                self.assertIn('-S -q -b -m -p', started)
+        wait = self.SCRIPT.split(' firmware-wait)')[1].split(';;\nesac')[0]
+        self.assertIn('[ -f "$INBOX/system.img" ] && [ "$n" -lt 60 ] || break', wait)
+
+    def test_the_inbox_is_the_configured_one_and_mtp_judges_a_finished_copy(self):
+        config = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json').read_text())
+        self.assertIn(f"INBOX={config['inbox']}\n", self.SCRIPT)
+        mtp = (ROOT / 'initramfs/y1-mtp/etc/init.d/S45y1-mtp').read_text()
+        self.assertIn(f"[ -f {config['inbox']}/system.img ] && /etc/init.d/S41y2-connectivity firmware", mtp)
+        self.assertIn(' firmware) firmware;;', self.SCRIPT)
+
+    def test_the_service_daemon_runs_its_network_part_only_with_a_platform_that_knows_it(self):
+        policy = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/service-policy.json').read_text())
+        self.assertEqual(policy, {'schema': 1, 'network_only': True})
+        pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
+        self.assertIn('{ "/etc/y2linux/service-policy.json", 0644 },\n#endif', pid1)
+        listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
+        self.assertIn('file /y1-system/etc/y2linux/service-policy.json /project/initramfs/y1-bluetooth/etc/y2linux/'
+                      'service-policy.json 0644', listing)
+        daemon = (ROOT / 'platform/crates/y2-platform/src/commands/service/daemon.rs').read_text()
+        self.assertIn('const POLICY: &str = "/etc/y2linux/service-policy.json";', daemon)
+        body = self.function('services')
+        self.assertIn('grep -q service-policy.json /usr/sbin/y2-platform &&\n\t\tstart-stop-daemon -S -q -b -m -p '
+                      '/run/y2/readiness-supervisor.pid -x /usr/libexec/y2/readiness-supervise', body)
+        self.assertLess(body.index('[ -n "$wifi" ] || return 0'), body.index('readiness-supervise'))
+        self.assertIn('start-stop-daemon -K -p /run/y2/readiness-supervisor.pid', self.SCRIPT)
+
+    def test_the_driver_takes_a_late_record_once_under_the_recovery_lock(self):
+        core = (Y1 / 'core.c').read_text()
+        write = core[core.index('static ssize_t wifi_factory_write'):core.index('static const struct bin_attribute bin_attr_wifi_factory')]
+        self.assertIn('if (c->activated && (c->wifi_ready || c->wifi || c->removing || c->recovering)) ret=-EBUSY;', write)
+        self.assertLess(write.index('mutex_lock(&c->recovery_lock);'), write.index('register_wifi(c)'))
+        self.assertLess(write.index('register_wifi(c)'), write.index('mutex_unlock(&c->recovery_lock);'))
+        activate = core[core.index('static ssize_t activate_store'):core.index('static ssize_t status_show')]
+        self.assertLess(activate.index('mutex_lock(&c->recovery_lock);'), activate.index('register_wifi(c)'))
+        self.assertIn('out:\n\tmutex_unlock(&c->recovery_lock);', activate)
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -1129,8 +1235,22 @@ class Y1RecordB7(unittest.TestCase):
         self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
         self.assertEqual(config['target'], '/data/firmware/mt6572')
         self.assertEqual(config['inbox'], '/data/music/Firmware')  # S45y1-mtp's one storage, Music
-        (record,) = config['defaults']
+        bt, wifi = config['defaults']
         # The stock record starts with the generic MT6572 address (y1-conn-policy.h's reject hash).
-        self.assertEqual((record['offset'], record['size'], record['expect'], record['clear']),
-                         (0x3004, 32, '000046657201', 6))
+        self.assertEqual((bt['offset'], bt['size'], bt['expect'], bt['clear']), (0x3004, 32, '000046657201', 6))
+        self.assertNotIn('library', bt)
+        # W6: the Wi-Fi default from the Y1's own libcustom_nvram.so (the inventory's record and library).
+        default = INVENTORY['wifi_default_record']
+        self.assertEqual((wifi['name'], wifi['size'], wifi['sha256']),
+                         (default['filename'], default['bytes'], default['sha256']))
+        self.assertEqual((wifi['offset'], wifi['clear'], wifi['library']), (0x3cf4, 0, '/lib/libcustom_nvram.so'))
+        self.assertIn('file offset 0x3cf4', default['source'])
+        (library,) = config['libraries']
+        self.assertEqual(library['name'], wifi['library'])
+        self.assertIn(f"({library['size']} bytes, sha256 {library['sha256']})", default['source'])
+        # The supplement is the inventory's optional file: the Y2 package's Wi-Fi firmware.
+        optional = {f['filename']: (f['bytes'], f['sha256']) for f in INVENTORY['files'] if f.get('optional')}
+        self.assertEqual({f['name']: (f['size'], f['sha256']) for f in config['supplement']}, optional)
+        self.assertIn('Y2 package', config['note'])
+        self.assertIs(config['calibration'], False)  # no MD1: the monitor never starts y2-calibration
         self.assertEqual(config['patches'], [1])

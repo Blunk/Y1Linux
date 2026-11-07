@@ -66,6 +66,8 @@ static const struct override overrides[] = {
     { "/etc/init.d/S41y2-connectivity", 0755 },
     /* B7: the Y1's radio firmware set for y2-platform firmware (/data/firmware/mt6572). */
     { "/etc/y2linux/radio-firmware.json", 0644 },
+    /* W6: the Y2's service daemon restricted to its network part (docs/planning/Y1-WIFI-PLAN.md §14). */
+    { "/etc/y2linux/service-policy.json", 0644 },
 #endif
 };
 

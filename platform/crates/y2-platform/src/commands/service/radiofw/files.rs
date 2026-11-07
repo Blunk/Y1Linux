@@ -43,15 +43,22 @@ pub(super) fn defaults(custom: &[u8]) -> Result<Files> {
     ])
 }
 
-/// The configured default records (radio-firmware.json): each slice of the library, which must
-/// start with its expected bytes, with its leading bytes cleared.
-pub(super) fn sliced(slices: &[Slice], library: &[u8]) -> Result<Files> {
+/// The configured default records (radio-firmware.json): each slice of its library (`libraries`:
+/// path and bytes, the set's own first), which must start with its expected bytes, with its leading
+/// bytes cleared.
+pub(super) fn sliced(slices: &[Slice], libraries: &[(&str, &[u8])]) -> Result<Files> {
     let layout = || Error::Value("stock_reader_library_layout".into());
-    if !library.starts_with(b"\x7fELF") {
-        return Err(layout());
-    }
     let mut out = Vec::new();
     for slice in slices {
+        let wanted = slice.library.as_deref();
+        let library = libraries
+            .iter()
+            .find(|(name, _)| wanted.is_none_or(|w| w == *name))
+            .map(|(_, data)| *data)
+            .ok_or_else(layout)?;
+        if !library.starts_with(b"\x7fELF") {
+            return Err(layout());
+        }
         let end = slice
             .offset
             .checked_add(slice.size as usize)
@@ -95,6 +102,16 @@ pub(super) fn checked(reviewed: &Reviewed, files: Files) -> Result<Files> {
     Ok(files)
 }
 
+/// A stock library of the image with its reviewed size and SHA-256.
+fn library(fs: &mut Ext4, (path, size, sha): &(String, u64, String)) -> Result<Vec<u8>> {
+    let data = fs.read(path, *size)?;
+    if data.len() as u64 != *size || sha256_hex(&data) != *sha {
+        let name = path.rsplit('/').next().unwrap_or_default();
+        return Err(Error::Value(format!("firmware_mismatch:{name}")));
+    }
+    Ok(data)
+}
+
 /// The radio files from the stock system.img (sparse or raw ext4).
 pub(super) fn from_system_image(reviewed: &Reviewed, path: &Path) -> Result<Files> {
     let mut fs = Ext4::new(Image::open(path)?)?;
@@ -105,16 +122,40 @@ pub(super) fn from_system_image(reviewed: &Reviewed, path: &Path) -> Result<File
             fs.read(&format!("/etc/firmware/{name}"), *size)?,
         ));
     }
-    let custom = fs.read(&reviewed.custom.0, reviewed.custom.1)?;
-    if custom.len() as u64 != reviewed.custom.1 || sha256_hex(&custom) != reviewed.custom.2 {
-        let name = reviewed.custom.0.rsplit('/').next().unwrap_or_default();
-        return Err(Error::Value(format!("firmware_mismatch:{name}")));
-    }
+    let custom = library(&mut fs, &reviewed.custom)?;
     files.extend(match &reviewed.slices {
         None => defaults(&custom)?,
-        Some(slices) => sliced(slices, &custom)?,
+        Some(slices) => {
+            let mut libraries = vec![(reviewed.custom.0.clone(), custom)];
+            for entry in &reviewed.libraries {
+                libraries.push((entry.0.clone(), library(&mut fs, entry)?));
+            }
+            let named: Vec<(&str, &[u8])> = libraries
+                .iter()
+                .map(|(name, data)| (name.as_str(), data.as_slice()))
+                .collect();
+            sliced(slices, &named)?
+        }
     });
     checked(reviewed, files)
+}
+
+/// The supplement from another package's system.img: each file of its /etc/firmware with the
+/// reviewed size and SHA-256.
+pub(super) fn from_supplement_image(reviewed: &Reviewed, path: &Path) -> Result<Files> {
+    if reviewed.supplement.is_empty() {
+        return Err(Error::Value("no_supplement".into()));
+    }
+    let mut fs = Ext4::new(Image::open(path)?)?;
+    let mut files: Files = Vec::new();
+    for (name, size, sha) in &reviewed.supplement {
+        let data = fs.read(&format!("/etc/firmware/{name}"), *size)?;
+        if data.len() as u64 != *size || sha256_hex(&data) != *sha {
+            return Err(Error::Value(format!("firmware_mismatch:{name}")));
+        }
+        files.push((name.clone(), data));
+    }
+    Ok(files)
 }
 
 /// The radio files from a directory (a root's /lib/firmware/mediatek/mt6582).
@@ -151,6 +192,33 @@ pub fn present(root: &Root) -> bool {
     every
 }
 
+/// Every supplement file is in place with its size (true when there is none).
+pub(super) fn supplemented(root: &Root, reviewed: &Reviewed) -> bool {
+    let target = root.path(&reviewed.target);
+    reviewed.supplement.iter().all(|(name, size, _)| {
+        target
+            .join(name)
+            .symlink_metadata()
+            .is_ok_and(|m| m.len() == *size && m.file_type().is_file())
+    })
+}
+
+/// The installed supplement files that still have their reviewed hash (the set's install keeps them).
+fn kept_supplement(target: &Path, reviewed: &Reviewed) -> Files {
+    reviewed
+        .supplement
+        .iter()
+        .filter_map(|(name, size, sha)| {
+            let file = target.join(name);
+            let info = file.symlink_metadata().ok()?;
+            let data = (info.file_type().is_file() && info.len() == *size)
+                .then(|| fs::read(&file).ok())
+                .flatten()?;
+            (sha256_hex(&data) == *sha).then(|| (name.clone(), data))
+        })
+        .collect()
+}
+
 /// Every reviewed file is in place with the reviewed hash.
 pub(super) fn installed(root: &Root, reviewed: &Reviewed) -> bool {
     from_directory(reviewed, &root.path(&reviewed.target)).is_ok()
@@ -166,9 +234,35 @@ fn rmtree(path: &Path) {
     }
 }
 
-/// Write the checked files to Y2DATA: a fresh directory, then one rename.
+/// Install the checked set on Y2DATA, keeping an installed supplement.
 pub(super) fn install(root: &Root, reviewed: &Reviewed, files: Files) -> Result<()> {
-    let files = checked(reviewed, files)?;
+    let mut files = checked(reviewed, files)?;
+    let target = root.path(&reviewed.target);
+    files.extend(kept_supplement(&target, reviewed));
+    write_set(root, reviewed, files)
+}
+
+/// Add the checked supplement to the installed files (or to a new folder): the folder's other files
+/// stay, so the same one-rename write as the set's.
+pub(super) fn install_supplement(root: &Root, reviewed: &Reviewed, files: Files) -> Result<()> {
+    let target = root.path(&reviewed.target);
+    let mut all = files;
+    if target.is_dir() && !target.is_symlink() {
+        let names: Vec<String> = all.iter().map(|(n, _)| n.clone()).collect();
+        for entry in fs::read_dir(&target).map_err(|e| os_path(e, &target))? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if names.contains(&name) || !entry.file_type()?.is_file() {
+                continue;
+            }
+            all.push((name, fs::read(entry.path())?));
+        }
+    }
+    write_set(root, reviewed, all)
+}
+
+/// Write the files to Y2DATA: a fresh directory, then one rename.
+fn write_set(root: &Root, reviewed: &Reviewed, files: Files) -> Result<()> {
     let target = root.path(&reviewed.target);
     let (Some(parent), Some(name)) = (
         target.parent().map(Path::to_path_buf),

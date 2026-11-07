@@ -442,24 +442,36 @@ static const struct bin_attribute bin_attr_factory = {
 	.attr={.name="factory",.mode=0200}, .size=Y1_CONN_RECORD_SIZE, .write=factory_write,
 };
 /* The Wi-Fi record (y1-conn-policy.h): the Y1's stock default with a MAC, after the Bluetooth record and
- * before activation. Without it activation registers Bluetooth only. */
+ * before activation. Without it activation registers Bluetooth only. Once after activation too (the Wi-Fi
+ * firmware imported later, W6): the record, then the Wi-Fi device, with no recovery running meanwhile. */
+static int register_wifi(struct y2_conn *c);
 static ssize_t wifi_factory_write(struct file *file, struct kobject *kobj, const struct bin_attribute *attr,
 				  char *data, loff_t offset, size_t size)
 {
 	struct y2_conn *c=dev_get_drvdata(kobj_to_dev(kobj)); int ret=size;
 	unsigned char digest[32], *copy;
+	bool late=false;
 	if (offset || size!=Y1_CONN_WIFI_RECORD_SIZE) return -EINVAL;
 	copy=kmemdup(data,size,GFP_KERNEL);
 	if (!copy) return -ENOMEM;
 	memset(copy+Y1_CONN_WIFI_MAC,0,6);
 	sha256(copy,size,digest);
 	kfree(copy);
+	mutex_lock(&c->recovery_lock);
 	mutex_lock(&c->lifecycle);
-	if (c->activated) ret=-EBUSY;
+	if (c->activated && (c->wifi_ready || c->wifi || c->removing || c->recovering)) ret=-EBUSY;
 	else if (!c->factory_ready) ret=-ENODATA;
 	else if (y1_conn_wifi_record_check((const u8 *)data,size,digest,c->bt_factory)) ret=-EINVAL;
-	else { memcpy(c->wifi_factory,data,size); c->wifi_ready=true; }
+	else { memcpy(c->wifi_factory,data,size); c->wifi_ready=true; late=c->activated; }
 	mutex_unlock(&c->lifecycle);
+	if (late) {
+		int registered=register_wifi(c);
+		if (registered) {
+			mutex_lock(&c->lifecycle); c->wifi_ready=false; mutex_unlock(&c->lifecycle);
+			ret=registered;
+		} else if (c->wifi) dev_info(c->dev,"Wi-Fi registered after activation\n");
+	}
+	mutex_unlock(&c->recovery_lock);
 	memzero_explicit(digest,sizeof(digest));
 	return ret;
 }
@@ -483,15 +495,20 @@ static ssize_t activate_store(struct device *dev, struct device_attribute *attr,
 {
 	struct y2_conn *c=dev_get_drvdata(dev); bool value; int ret;
 	if (kstrtobool(buf,&value) || !value) return -EINVAL;
+	/* recovery_lock: a late Wi-Fi record (wifi_factory_write) waits until the device is registered. */
+	mutex_lock(&c->recovery_lock);
 	mutex_lock(&c->lifecycle);
-	if (!c->factory_ready) { mutex_unlock(&c->lifecycle); return -ENODATA; }
-	if (c->activated) { mutex_unlock(&c->lifecycle); return n; }
+	if (!c->factory_ready) { mutex_unlock(&c->lifecycle); ret=-ENODATA; goto out; }
+	if (c->activated) { mutex_unlock(&c->lifecycle); ret=n; goto out; }
 	c->activated=true; mutex_unlock(&c->lifecycle);
 	ret=y2_hci_register(c);
-	if (ret) { c->activated=false; return ret; }
+	if (ret) { c->activated=false; goto out; }
 	ret=register_wifi(c);
-	if (ret) { y2_hci_unregister(c); c->activated=false; return ret; }
-	return n;
+	if (ret) { y2_hci_unregister(c); c->activated=false; goto out; }
+	ret=n;
+out:
+	mutex_unlock(&c->recovery_lock);
+	return ret;
 }
 static ssize_t status_show(struct device *dev, struct device_attribute *attr, char *buf)
 {

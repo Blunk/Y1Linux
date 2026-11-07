@@ -162,3 +162,36 @@ fn removed_firmware_is_noticed_at_the_next_maintenance_pass() {
     fixture.put("/media/sd/Firmware/system.img", "x");
     assert!(started(&tick(&fixture), &scan));
 }
+
+/// The Innioasis Y1 (docs/planning/Y1-WIFI-PLAN.md, W6): with the image's service policy a pass keeps
+/// its network part (network.json Online after the DNS probe, the time status) and starts no media,
+/// firmware, update or report work and records no USB transfer; an unreadable policy restricts too.
+#[test]
+fn a_network_only_image_keeps_the_network_part_alone() {
+    for policy in [r#"{"schema": 1, "network_only": true}"#, "not json"] {
+        let mut fixture = fixture();
+        fixture.put("/etc/y2linux/service-policy.json", policy);
+        online(&mut fixture);
+        let run = tick(&fixture);
+        assert_eq!(
+            fixture.json("/run/y2/network.json")["state"],
+            json!("Online"),
+            "{policy}"
+        );
+        assert!(fixture.path("/run/y2/time-status.json").exists());
+        let platform: Vec<_> = run
+            .calls
+            .iter()
+            .filter(|c| c["argv"][0] == json!(PLATFORM))
+            .collect();
+        assert!(platform.is_empty(), "{policy}: {platform:?}");
+        assert!(!fixture.path("/run/y2/usb-transfer.json").exists());
+    }
+    // Saying so explicitly keeps the whole service (as without the file).
+    let fixture = fixture();
+    fixture.put(
+        "/etc/y2linux/service-policy.json",
+        r#"{"schema": 1, "network_only": false}"#,
+    );
+    assert!(started(&tick(&fixture), &["media", "reconcile"]));
+}

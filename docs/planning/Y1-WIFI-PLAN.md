@@ -4,7 +4,10 @@ Status: **W0–W2 done 2026-11-07** (owner-approved): the firmware source decide
 comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); **W3 PASS**
 (§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered); **W4 PASS** (§11–§12: passive and active scans
 find networks: the Y1's Wi-Fi receives and transmits); **W5 PASS, throughput open** (§13: WPA2 association,
-DHCP, DNS, Internet and intact transfers on the owner's network, but 1–8 Mbit/s); W5b and W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
+DHCP, DNS, Internet and intact transfers on the owner's network, but 1–8 Mbit/s); **W6 built** (§14, owner-approved
+before W5b: Wi-Fi as a product, the Y2's connectivity service and Reborn's screens, the firmware imported from the
+two packages; its userspace PASS live on build 3, BOOTIMG build 5 to flash, the platform part with the next
+Y2ROOT); W5b open. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
 radio function, a transmitter, firmware not taken from this device): each stage has its own admission, and the
 roadmap audit is repeated before W3 (the first Wi-Fi power-on).
 
@@ -438,6 +441,98 @@ Owner-approved (`BotanischerGarten`, WPA2, country AT); roadmap audit first. `ev
   - Teardown: `udhcpc` and `wpa_supplicant` stopped, address and route removed, `wlan0` down, Wi-Fi blocked;
     Bluetooth powered, no Wi-Fi, WMT or core error at any time.
 - **Result**: association, DHCP, DNS, the Internet and intact transfers PASS; **performance open**.
-- **Next (W5b, before W6)**: the transfers again pinned to one access point (`bssid=` in a test copy of the
+- **Next (W5b)**: the transfers again pinned to one access point (`bssid=` in a test copy of the
   config) and longer; an upload; the RX drop counter during a transfer; Bluetooth audio with the owner's headset at
   the same time. Then W6: the Y2's connectivity daemon and Reborn's Wi-Fi screens, the regulatory domain at boot.
+
+## 14. W6 — Wi-Fi as a product — 2026-11-07
+
+Owner-approved ("continue with W6, make it a product"; W5b, the throughput check, stays open); roadmap audit first
+("Y1 Wi-Fi W6"). Goal: a Y1 gets Wi-Fi the way a Y2 does. The owner copies the firmware packages over USB, switches
+Wi-Fi on in Reborn and picks a network, with nothing done by hand. Read on the Y1 first: no `/dev/y2-calibration`,
+no BusyBox `inotifyd`, the Wi-Fi child device under the connectivity node, the root still beta 9.3.12.
+
+**What the Y2 does that the Y1 lacked** (traced in the platform):
+
+| Y2 | Y1 before W6 | W6 |
+| --- | --- | --- |
+| `usr/libexec/y2/connectivity`: factory, calibration, activation, `wpa_supplicant -g`, radiod, `connectivity-daemon` | radiod only | S41 runs the same without factory and calibration |
+| `connectivity-daemon` supervises `y2-calibration` (MD1, MT6582) | — | the image's `radio-firmware.json` says `"calibration": false`; the monitor skips it |
+| `service-daemon`: `network.json` (Reborn's Wi-Fi state, stale after 15 s), the DNS probe (`Online`), the Wi-Fi self-heal and power policy, coexistence, ntpd | not run (it would also start the Y2's USB, card, update and report work) | `/etc/y2linux/service-policy.json` restricts it to that network part |
+| `S02y2-data`: `wpa_supplicant.conf` (`country=00`, `update_config=1`), `/run/wpa_supplicant` | — | S41's `layout` |
+| `firmware scan` installs the Wi-Fi firmware from the Y2 package | B7: the Y1's `system.img` (Bluetooth only); the Wi-Fi files copied by hand | the Y1's set gains the Wi-Fi default and the Y2 package's file as a supplement |
+
+- **Platform** (reaches the Y1 with a new Y2ROOT; the Y2's behaviour unchanged: no file, no field):
+  - `radiofw`: `radio-firmware.json` may name further `libraries` of the same image (a default's `library`),
+    a `supplement` (files of another package's `/etc/firmware`, installed beside the set and not needed for
+    `Ready`) and `calibration`. A copy that is not the set's image but holds the supplement is installed,
+    deleted and the radios restarted, in either order. The set's install keeps an installed supplement. The
+    configured folder and its note stay while the supplement is missing. `firmware install` takes either image.
+  - The connectivity monitor starts `y2-calibration` only when the image's set says `calibration` (default true).
+  - `service-daemon`: with `/etc/y2linux/service-policy.json` (`{"schema":1,"network_only":true}`; any other
+    content except an explicit `false` restricts too) each pass keeps `network.json` with the DNS probe and the
+    self-heal, `coexistence.json`, the Wi-Fi power policy, `time-status.json`, ntpd once `Online` and the hourly
+    time floor. It runs no USB, media, firmware, update, report or health work, and has the dark cadence from the
+    start.
+- **Y1 set** (`initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json`): `WIFI.defaults` from the Y1's own
+  `/lib/libcustom_nvram.so` (`0x3cf4`, 512 bytes, `9cfed6e4…`, as `provision.py`); supplement
+  `WIFI_RAM_CODE_MT6582` (`4def3752…`); `calibration: false`; the note names both packages. **Checked with the
+  real images** (the owner's stock system partition `ANDROID-from-backup.img` and the Y2 3.2.0 `system.img`):
+  `firmware install` in both orders and the owner's flow (`firmware scan` with each copy in `Music/Firmware`)
+  install all five files with the pinned hashes and delete both copies.
+- **Kernel** (`core.c`): `wifi_factory` is also taken once after activation, while there is no Wi-Fi device. It
+  registers the device then (`Wi-Fi registered after activation`). Activation and this late path hold
+  `recovery_lock`, so neither races a recovery. Before, a Wi-Fi import while running needed a restart.
+- **S41** (`S41y2-connectivity`): the Y2's `/data/network` defaults and `/run/wpa_supplicant`; the firmware scan
+  also while a copy waits in the folder. After activation it writes the late Wi-Fi record. With the Wi-Fi device
+  (none on a Bluetooth-only Y1: no supplicant RAM): `iw reg reload` (cfg80211 read `regulatory.db` before the
+  root existed, so the owner's country applies), `wpa_supplicant -g`, radiod, `connectivity-daemon`, and the Y2's
+  `readiness-supervise` for the service daemon, the last only when `/usr/sbin/y2-platform` knows the policy
+  (`grep -q service-policy.json`: beta 9.3.12 does not and would run the Y2's whole service). `stop-daemon` also
+  stops these.
+- **S45y1-mtp**: when a copy finishes (its receipt's refresh generation) and `Music/Firmware/system.img` exists, it
+  runs `S41 firmware` (BusyBox has no `inotifyd`; the receipt loop already runs every second).
+- **Tests**: platform: `radiofw` 17 (3 new: a supplement optional and named once, the calibration switch, both
+  orders through `scan` from synthetic ext4 images), the supervisor without calibration, `tests/service.rs` the
+  network-only pass (no platform child, no USB record, `Online`; an unreadable policy restricts). Y1:
+  `test_y1_connectivity` 41 (W6: the late record, the scan conditions, the MTP hook, the service policy and its
+  guard, the driver's locking; B7's set test now checks the Wi-Fi default and the supplement against the
+  inventory), with `test_y1_provision`, `test_y1_bt_record` and `test_wifi`: 50 OK, 1 skipped. Gate: fmt, clippy,
+  armv7, quality ratchet and unit tests pass. The goldens fail the same 21 cases as `HEAD` (media status, report
+  upload, reset plan; measured with and without these changes). One gate run also failed
+  `service-daemon-wifi-online` and `service-daemon-usb-internal-storage`. They did not fail again in three full
+  runs or five runs alone. Record compatibility and the Reborn contract pass.
+- **Build** `out/y1-thirty-fifth-boot-5`: BOOTIMG **`eeede6ed2bb7387ab1a5fca1c2bb0a5ef9b955e58bdeefe7ee008f8658aa5ac5`**
+  (4 177 920 bytes), zImage-dtb `54e85ead…ca87`, `y1-init` `d8f41d4e…e5` (the policy override), DTB and `.config`
+  as build 3; the fullmac's 47 warnings, none elsewhere. (Build 4, `f49d4182…`, lacked the policy; not for
+  flashing.)
+
+**Live run on build 3 — PASS** (`evidence-private/2026-11-07-y1-wifi-w6/`; the new S41 copied into the RAM overlay,
+beta 9.3.12's platform; the owner's `wpa_supplicant.conf` changed from `update_config=0` to `1` so Reborn can save
+networks):
+
+- S41 restart: `wpa_supplicant` on `/run/wpa_supplicant/global`, radiod, the monitor; `country AT: DFS-ETSI` after
+  the reload. Bluetooth powered throughout.
+- `y2-radio wifi on` (Reborn's switch): wlan0, scan, `COMPLETED` about 12 s later through the monitor's
+  `interface_add`, DHCP by the Y2's action hook, default route and resolver. Gateway ping, DNS by name and HTTP
+  work. Off: `wlan0` gone, the radio blocked, the supplicant interface removed. On again: an address after 8 s.
+- The power daemon's order (`stop-wifi`, `stop-bluetooth`, `stop-daemon`): each under 0.1 s, `wlan0` gone. Start
+  again: Wi-Fi back as the owner left it (an address after 16 s).
+- Cost connected: `wpa_supplicant` 6.2 MB, monitor 3.6 MB, radiod 3.1 MB RSS; CPU idle; MemAvailable 433 MB.
+- As expected with beta 9.3.12's platform: `status wifi` stays `Authenticated / dns_unavailable`, because nothing
+  runs the DNS probe and no `network.json` is published (the service daemon waits for a root that knows the
+  policy). The monitor restarts `y2-calibration` every 30 s; the platform change removes this.
+- Found: after an off/on cycle `/run/y2/wifi-action.pid` was gone while the action hook's `wpa_cli` ran. The old
+  instance outlived its pid file, so a later stop by pid file misses it. This is in the Y2's shared hook code: open,
+  not changed here.
+- Afterwards: Wi-Fi off again (`/data/network/enabled` 0, as before W6).
+
+**Owner procedure (build 5)**: flash BOOTIMG `eeede6ed…` as for the earlier builds (keep build 3, `2b881029…`, for
+the way back), boot. Expected: Bluetooth as before; with Wi-Fi switched on in Reborn the owner's network as in the
+live run (still `dns_unavailable` until the new root). With the next Y2ROOT on the Y1: `Online` in Reborn,
+`network.json`, no `y2-calibration`, and the import from `Music/Firmware` (Y1 package first, then the Y2's). Remove
+the B6 placeholders then (B7 §17).
+
+**Open**: W5b (throughput with one access point, an upload, Bluetooth audio during a transfer), the late Wi-Fi
+record on hardware (build 5 with an empty `/data/firmware/mt6572`), the platform part on the device (next Y2ROOT),
+the action hook's pid file.

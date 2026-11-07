@@ -65,10 +65,11 @@ supervise() {
 }
 
 # The receipt Reborn reads (org.y2linux.usb-transfer/v1): a rescan whenever umtprd's generation of durable changes
-# moves on, or the computer lets go.
+# moves on, or the computer lets go. Then also a radio firmware copy in Music/Firmware is judged
+# (S41y2-connectivity; docs/planning/Y1-WIFI-PLAN.md, W6: the Y2 package's system.img for Wi-Fi).
 receipts() {
 	boot=$(cat /proc/sys/kernel/random/boot_id)
-	refresh=0 seen= last_cable= last=
+	refresh=0 seen= last_cable= last= judged=0
 	while [ ! -e "$RUN/stop" ]; do
 		events=$(cat /run/y2/mtp-events.json 2>/dev/null)
 		generation=$(echo "$events" | grep -o '"generation": *[0-9]*' | grep -o '[0-9]*$')
@@ -79,6 +80,10 @@ receipts() {
 		[ -n "$generation" ] && [ "$generation" != "$seen" ] && { [ -n "$seen" ] && refresh=$((refresh + 1)); seen=$generation; }
 		[ "$last_cable" = configured ] && [ "$cable" != configured ] && refresh=$((refresh + 1))
 		last_cable=$cable
+		if [ "$refresh" != "$judged" ]; then
+			judged=$refresh
+			[ -f /data/music/Firmware/system.img ] && /etc/init.d/S41y2-connectivity firmware
+		fi
 		state=Ready
 		[ "$active" = true ] && state=Copying
 		record="{\"schema\":\"org.y2linux.usb-transfer/v1\",\"boot_id\":\"$boot\",\"state\":\"$state\",\"reason\":null,\"mode\":\"mtp\",\"cable\":\"$cable\",\"functions\":[\"ffs.mtp\",\"ecm.usb0\",\"acm.GS0\"],\"views\":[],\"filesystem_owner\":\"linux\",\"block_export\":false,\"refresh_generation\":$refresh,\"active\":$active,\"error\":${error:-null},\"restarts\":0}"

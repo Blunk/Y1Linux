@@ -4,6 +4,7 @@
 use super::super::published;
 use super::super::wifi::journal;
 use crate::commands::network::wlan_switched_off;
+use crate::commands::service::radiofw::Reviewed;
 use crate::reply::{unlink_missing_ok, Failure};
 use serde::Serialize;
 use serde_json::json;
@@ -67,6 +68,8 @@ pub struct Supervisor {
     /// Read once: neither changes while the daemon runs (the helpers are on the read-only root).
     boot_id: OnceCell<Option<String>>,
     binaries: OnceCell<Vec<PathBuf>>,
+    /// The image's radio set says whether the modem calibration helper belongs (the Y1: no MD1).
+    calibrates: OnceCell<bool>,
 }
 
 impl Supervisor {
@@ -85,6 +88,7 @@ impl Supervisor {
             next_renew: 0.0,
             boot_id: OnceCell::new(),
             binaries: OnceCell::new(),
+            calibrates: OnceCell::new(),
         }
     }
 
@@ -176,7 +180,13 @@ impl Supervisor {
         }
         self.next_health = now + HEALTH_S;
         self.pids.clear();
+        let calibrates = *self
+            .calibrates
+            .get_or_init(|| Reviewed::calibrates(&self.root));
         for (index, (name, _)) in HELPERS.into_iter().enumerate() {
+            if name == "calibration" && !calibrates {
+                continue;
+            }
             let mut pid = alive(&self.root, name, &self.binaries()[index]);
             let due = self
                 .next_restart
