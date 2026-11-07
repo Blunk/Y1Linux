@@ -1,4 +1,4 @@
-"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-fourth) from a fresh
+"""Package and check an Innioasis Y1 test BOOTIMG (variant first to thirty-fifth) from a fresh
 build directory; never access a device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
@@ -237,6 +237,19 @@ VARIANTS['thirty-fourth'] = dict(
     VARIANTS['thirty-third'],
     expected=[line for line in VARIANTS['thirty-third']['expected'] if 'bring-up' not in line],
     forbidden=VARIANTS['thirty-third']['forbidden'] + ['innioasis,bring-up'])
+
+# Wi-Fi W3: the thirty-fourth tree with the connectivity owner's Wi-Fi window and interrupt (MediaTek's MT6572
+# CONN_HIF_BASE 0x180f0000 and MT_WF_HIF_IRQ_ID, SPI 123, level-low).
+VARIANTS['thirty-fifth'] = dict(
+    VARIANTS['thirty-fourth'],
+    expected=[line for line in VARIANTS['thirty-fourth']['expected']
+              if not line.startswith(('reg-names = "mcu"', 'interrupt-names = "btif"'))] + [
+        'reg-names = "mcu", "conn-emi", "btif", "tx-dma", "rx-dma", "wifi";',
+        'interrupt-names = "btif", "tx-dma", "rx-dma", "wake", "wifi";',
+        'reg = <0x18070000 0x1000 0x80000000 0x100000 0x1100e000 0x100 0x11000380 0x80 0x11000400 0x80 '
+        '0x180f0000 0x5c>;',
+        'interrupts = <0x00 0x34 0x08 0x00 0x29 0x08 0x00 0x2a 0x08 0x00 0x7a 0x08 0x00 0x7b 0x08>;',
+    ])
 
 
 def empty_ramdisk():
