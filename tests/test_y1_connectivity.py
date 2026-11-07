@@ -1043,7 +1043,7 @@ class Y1WifiW3(unittest.TestCase):
         self.assertEqual(sorted(set(new) - set(old)), sorted([
             'CONFIG_LOCALVERSION="-y1-thirty-fifth-boot"', 'CONFIG_WIRELESS=y', 'CONFIG_CFG80211=y',
             'CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y', 'CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y',
-            'CONFIG_BT_INNIOASIS_Y1_WIFI=y']))
+            'CONFIG_BT_INNIOASIS_Y1_WIFI=y', 'CONFIG_PACKET=y']))
         self.assertEqual(sorted(set(old) - set(new)),
                          sorted(['CONFIG_LOCALVERSION="-y1-thirty-fourth-boot"', '# CONFIG_WIRELESS is not set']))
         self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-thirty-fourth-boot.list"', new)
