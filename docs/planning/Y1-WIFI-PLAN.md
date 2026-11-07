@@ -3,7 +3,8 @@
 Status: **W0–W2 done 2026-11-07** (owner-approved): the firmware source decided (F2, the owner's Y2 file, by hash
 comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); **W3 PASS**
 (§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered); **W4 PASS** (§11–§12: passive and active scans
-find networks: the Y1's Wi-Fi receives and transmits); W5–W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
+find networks: the Y1's Wi-Fi receives and transmits); **W5 PASS, throughput open** (§13: WPA2 association,
+DHCP, DNS, Internet and intact transfers on the owner's network, but 1–8 Mbit/s); W5b and W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
 radio function, a transmitter, firmware not taken from this device): each stage has its own admission, and the
 roadmap audit is repeated before W3 (the first Wi-Fi power-on).
 
@@ -407,3 +408,36 @@ build 2, `5a78d9d4…eb75`. Domain set first: `iw reg reload`, `iw reg set AT` (
 - **Open for W5**: association with the owner's network (WPA2, `wpa_supplicant` as on the Y2), DHCP, DNS, a bounded
   transfer, coexistence with Bluetooth audio, RAM/CPU; the TX power and frequency offset are uncalibrated defaults
   (signal levels equal to the passive scan's, so no obvious loss); the domain at boot (W6).
+
+## 13. W5 — association with the owner's network — 2026-11-07
+
+Owner-approved (`BotanischerGarten`, WPA2, country AT); roadmap audit first. `evidence-private/2026-11-07-y1-wifi-w5/`.
+
+- **Credentials**: the owner ran one command in his own terminal (passphrase read without echo, `wpa_passphrase`,
+  its comment lines, including the plaintext one, removed): `/data/network/wpa_supplicant.conf`, root 0600, holds
+  `ctrl_interface=/run/wpa_supplicant`, `update_config=0`, `country=AT` and one network block with a 64-hex PSK.
+- **Build 2 failed to start `wpa_supplicant`** (`nl80211 … Failed to initialize driver interface`, nothing
+  associated): the Y1 kernel lacked `CONFIG_PACKET` (`AF_PACKET`, which `wpa_supplicant`'s EAPOL and `udhcpc` need;
+  the Y2 has it). The comparison of the Y2's networking options with the Y1's left only this one. **Build 3**
+  (`out/y1-thirty-fifth-boot-3`, BOOTIMG **`2b881029f8154b4e42d32f7b90d73c4db40bd059a389421ba1a34bc23b5ded86`**, read
+  back from the Y1; `.config` `5b539021…72aa`; DTB, `y1-init` unchanged; the fragment adds `CONFIG_PACKET=y`).
+- **Run on build 3** (by hand with the Y2's tools: `wpa_supplicant -D nl80211`, BusyBox `udhcpc` with a script in
+  `/run/y1-w5`; not yet the Y2's connectivity daemon, W6):
+  - `COMPLETED` 6.3 s after `wpa_supplicant` started: WPA2-PSK, CCMP/CCMP, 2412 MHz, RSSI −33 dBm, link 135 Mbit/s.
+  - DHCP at once: `192.168.1.37/24`, gateway and DNS `192.168.1.1`, default route on `wlan0`.
+  - Gateway ping 5/5 (1.2–44 ms); DNS through the router; `github.com` by name 3/3 (25–59 ms): **the Internet
+    works**.
+  - **Five 8 MiB HTTP downloads from the owner's PC, every one with the right SHA-256** (`35d3078c…`); RAM:
+    `wpa_supplicant` 5.6 MB, `udhcpc` 0.9 MB RSS, MemAvailable 434 MB of 496; CPU 3–5 % busy.
+  - **Throughput low and erratic**: 2.1, 1.1, 1.2, 1.3 and 8.3 Mbit/s (the Y2: about 45). The PC was on the
+    router's 5 GHz network (1170 Mbit/s), not the limit; Bluetooth off (`off-runtime`) did not help (1.2, 1.3),
+    Bluetooth on again gave the 8.3. `wlan0`: 12 151 packets received, 250 dropped, no TX error; the reported
+    TX rate fell to 5.5–11 Mbit/s at times with a bogus −10 dBm, then back to 135 / −34 dBm. **The network has two
+    2.4 GHz access points and the Y1 roamed between them during the test** (`…:ec` → `…:56` → `…:ec`), which stalls
+    a transfer. Not settled: how much is roaming, how much the uncalibrated TX/frequency defaults or the RX drops.
+  - Teardown: `udhcpc` and `wpa_supplicant` stopped, address and route removed, `wlan0` down, Wi-Fi blocked;
+    Bluetooth powered, no Wi-Fi, WMT or core error at any time.
+- **Result**: association, DHCP, DNS, the Internet and intact transfers PASS; **performance open**.
+- **Next (W5b, before W6)**: the transfers again pinned to one access point (`bssid=` in a test copy of the
+  config) and longer; an upload; the RX drop counter during a transfer; Bluetooth audio with the owner's headset at
+  the same time. Then W6: the Y2's connectivity daemon and Reborn's Wi-Fi screens, the regulatory domain at boot.

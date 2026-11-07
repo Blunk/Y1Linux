@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 Wi-Fi W5, association with the owner's network — 2026-11-07
+
+Boundary review before the Y1's first Wi-Fi association ([plan](Y1-WIFI-PLAN.md) §13; owner-approved; the owner's
+WPA2 network, country AT; the owner enters the passphrase on the Y1 himself, only its PSK is stored, in
+`/data/network/wpa_supplicant.conf`, root 0600, never in the repository or evidence). Evidence: W4 passed on the Y1
+(`1a7d7625`): reception (passive scan) and transmission (probe responses) work. W5 runs the Y2's tools by hand
+(`wpa_supplicant`, BusyBox `udhcpc` with a script in `/run`), not yet the Y2's connectivity daemon (W6): association,
+DHCP, gateway and DNS, an 8 MiB transfer with its hash, RAM and CPU while connected, then everything stopped and the
+radio blocked. Bluetooth stays up throughout; audio coexistence needs the owner's headset and is recorded as open
+if not run. Gaps: uncalibrated TX power and frequency offset (the throughput is the indicator). Proceeding with W5
+only.
+
 ## Y1 Wi-Fi W4, the first scans — 2026-11-07
 
 Boundary review before the Y1's first Wi-Fi reception and transmission ([plan](Y1-WIFI-PLAN.md) §11;
