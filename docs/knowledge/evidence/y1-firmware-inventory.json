@@ -12,7 +12,7 @@
       "source": "Y1 stock system:/etc/firmware/WMT_SOC.cfg",
       "redistribution": "not established; not selected for distribution",
       "function": "WMT SoC configuration (coex_wmt_ant_mode=1, wmt_gps_lna_pin=0, wmt_gps_lna_enable=0, sdio_driving_cfg=0; no co_clock_flag)",
-      "proposed_install_path": "/lib/firmware/mediatek/mt6572/WMT_SOC.cfg",
+      "proposed_install_path": "/data/firmware/mt6572/WMT_SOC.cfg",
       "selected_for_release": false,
       "redistribution_permission_established": false,
       "device_specific_calibration": false
@@ -31,7 +31,7 @@
         "patch_info_hex": "11000600"
       },
       "function": "WMT ROM patch, the only part (count 1, sequence 1); not the Y2's file of the same name",
-      "proposed_install_path": "/lib/firmware/mediatek/mt6572/mt6572_82_patch_e1_0_hdr.bin",
+      "proposed_install_path": "/data/firmware/mt6572/mt6572_82_patch_e1_0_hdr.bin",
       "selected_for_release": false,
       "redistribution_permission_established": false,
       "device_specific_calibration": false,

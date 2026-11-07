@@ -1,12 +1,16 @@
 #!/bin/sh
 # Innioasis Y1 override of the Y2's S41y2-connectivity (docs/planning/Y1-BLUETOOTH-PLAN.md, B6): Bluetooth only.
 # The Y2's factory provider, MD calibration, wpa_supplicant and connectivity-daemon are MT6582 and Wi-Fi only.
-# Here: the Y2's /data/bluetooth layout (S02y2-data), the owner's 32-byte BT_Addr record
-# (/data/connectivity/bt-record, root 0600, from tools/connectivity/y1_bt_record.py) handed to the driver, hci0
-# activated, then y2-radiod, which powers Bluetooth through BlueZ and starts bluetoothd and BlueALSA itself.
+# Here: the Y2's /data/bluetooth layout (S02y2-data), the radio firmware from the owner's system.img (B7:
+# y2-platform firmware with the image's radio-firmware.json, into /data/firmware/mt6572), the 32-byte BT_Addr record
+# (/data/connectivity/bt-record, root 0600: the owner's stock record from tools/connectivity/y1_bt_record.py,
+# else composed once from the stock defaults and a random address) handed to the driver, hci0 activated, then
+# y2-radiod, which powers Bluetooth through BlueZ and starts bluetoothd and BlueALSA itself.
 # The power daemon's shutdown calls stop-wifi, stop-bluetooth and stop-daemon one by one, as on the Y2.
 C=/sys/devices/platform/18070000.connectivity
 RECORD=/data/connectivity/bt-record
+FIRMWARE=/data/firmware/mt6572
+WAIT=/run/y2/radio-firmware-wait.pid
 
 layout() {
 	umask 077
@@ -22,6 +26,36 @@ layout() {
 	mkdir -p /var/lib/bluetooth /var/lib/bluealsa
 	mountpoint -q /var/lib/bluetooth || mount --bind /data/bluetooth/bluez /var/lib/bluetooth
 	mountpoint -q /var/lib/bluealsa || mount --bind /data/bluetooth/bluealsa /var/lib/bluealsa
+}
+
+# B5/B6 placed the two files by hand in /data/firmware/mediatek/mt6572; the driver now reads the platform's folder.
+migrate() {
+	[ ! -e "$FIRMWARE" ] && [ -d /data/firmware/mediatek/mt6572 ] && [ ! -L /data/firmware/mediatek/mt6572 ] || return 0
+	mv /data/firmware/mediatek/mt6572 "$FIRMWARE" && rmdir /data/firmware/mediatek 2>/dev/null
+	return 0
+}
+
+# While the firmware is missing, the platform's import (the Y1's set: /etc/y2linux/radio-firmware.json) looks for
+# the owner's system.img in Music/Firmware every 5 s (on the Y2 its service daemon does this); after an install it
+# restarts this script.
+firmware() {
+	case "$(y2-platform firmware status 2>/dev/null)" in *'"state":"Ready"'*) return 0;; esac
+	mkdir -p /run/y2
+	start-stop-daemon -S -q -b -m -p "$WAIT" -x /bin/sh -- "$0" firmware-wait
+}
+
+# Once, when the owner supplied no stock record: the stock defaults (bytes 6-31) behind a new random address,
+# unicast and locally administered (first octet: bit 0 clear, bit 1 set), so never zero or the generic default.
+compose() {
+	[ ! -e "$RECORD" ] && [ ! -L "$RECORD" ] || return 0
+	[ -f "$FIRMWARE/BT.defaults" ] && [ ! -L "$FIRMWARE/BT.defaults" ] || return 1
+	set -- $(ls -ln "$FIRMWARE/BT.defaults")
+	[ "$5" = 32 ] || return 1
+	set -- $(head -c 6 /dev/urandom | od -An -tu1)
+	[ $# = 6 ] || return 1
+	umask 077
+	{ printf "$(printf '\\%03o' $(( ($1 & 252) | 2 )) $2 $3 $4 $5 $6)"; tail -c 26 "$FIRMWARE/BT.defaults"; } \
+		> "$RECORD.new" && mv "$RECORD.new" "$RECORD"
 }
 
 # The driver checks the record again (32 bytes, unicast, not the generic default) and refuses a second write.
@@ -40,6 +74,9 @@ case "$1" in
 	grep -q '^[^ ]* /data ext4 ' /proc/mounts || exit 0
 	[ ! -e /data/system/platform/maintenance-pending ] || exit 1
 	layout || exit 1
+	migrate
+	firmware
+	compose
 	activate || exit 1
 	mkdir -p /run/y2
 	start-stop-daemon -S -b -m -p /run/y2/radiod.pid -x /usr/sbin/y2-radiod
@@ -50,9 +87,13 @@ case "$1" in
  stop-wifi) : ;;
  stop-bluetooth) y2-radio bluetooth off-runtime 2>/dev/null || : ;;
  stop-daemon)
+	start-stop-daemon -K -p "$WAIT" 2>/dev/null || :
 	start-stop-daemon -K -p /run/y2/radiod.pid 2>/dev/null || :
 	start-stop-daemon -K -p /run/y2/bluealsa.pid 2>/dev/null || :
 	;;
  restart) "$0" stop; "$0" start;;
+ firmware-wait)
+	until y2-platform firmware scan 2>/dev/null | grep -q '"state":"Ready"'; do sleep 5; done
+	;;
 esac
 exit 0

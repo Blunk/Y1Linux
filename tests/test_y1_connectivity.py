@@ -8,6 +8,8 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 from test_power import run_c
 from test_audio import function
@@ -40,7 +42,7 @@ class Y1ConnectivityFacts(unittest.TestCase):
 
     def test_firmware_table_matches_the_inventory_and_has_no_modem_or_wifi(self):
         header = (Y1 / 'conn.h').read_text()
-        self.assertIn('#define Y2_CONN_FW "mediatek/mt6572/"', header)
+        self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
         rows = re.findall(r'\{Y2_CONN_FW "([^"]+)", (\d+), \{([^}]*)\}\}', header)
         table = {name: (int(size), bytes(int(b, 16) for b in digest.split(',')).hex())
                  for name, size, digest in rows}
@@ -49,7 +51,7 @@ class Y1ConnectivityFacts(unittest.TestCase):
         self.assertEqual(table, wanted)
         for f in INVENTORY['files']:
             if f['filename'] in table:
-                self.assertTrue(f['proposed_install_path'].startswith('/lib/firmware/mediatek/mt6572/'))
+                self.assertTrue(f['proposed_install_path'].startswith('/data/firmware/mt6572/'))
 
     def test_default_address_hash_is_the_stock_mt6572_default(self):
         # libbluetooth_mtk .data 0x4004 (B1 §4); the Y2's hash is the same rule for 65:82.
@@ -119,7 +121,9 @@ class Y1ConnectivityFacts(unittest.TestCase):
         code = '\n'.join(line for line in script.splitlines() if not line.lstrip().startswith('#'))
         for absent in ('y2-factory', 'y2-calibration', 'wpa_supplicant', 'connectivity-daemon', 'y2-radio-activate'):
             self.assertNotIn(absent, code)
-        for present in ('RECORD=/data/connectivity/bt-record', '"$1 $3 $5" = "-rw------- 0 32"',
+        for present in ('RECORD=/data/connectivity/bt-record', 'FIRMWARE=/data/firmware/mt6572',
+                        '"$1 $3 $5" = "-rw------- 0 32"', '\tmigrate\n\tfirmware\n\tcompose\n\tactivate || exit 1',
+                        'until y2-platform firmware scan', 'start-stop-daemon -K -p "$WAIT"',
                         'cat "$RECORD" > "$C/factory" && echo 1 > "$C/activate"', '-x /usr/sbin/y2-radiod',
                         'stop-wifi) : ;;', 'mount --bind /data/bluetooth/bluez /var/lib/bluetooth'):
             self.assertIn(present, script)
@@ -128,6 +132,9 @@ class Y1ConnectivityFacts(unittest.TestCase):
                       'S41y2-connectivity 0755', listing)
         pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
         self.assertIn('#ifdef Y1_THIRTY_FOURTH_BOOT\n    /* Bluetooth', pid1)
+        self.assertIn('{ "/etc/y2linux/radio-firmware.json", 0644 },\n#endif', pid1)
+        self.assertIn('file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/'
+                      'radio-firmware.json 0644', listing)
 
     def test_never_the_jtag_pads_or_gpio_modes(self):
         # B1 §0: stock writes 0x10208000/0x10005300 only behind its JTAG debug flag.
@@ -252,7 +259,7 @@ int main(void){
 #include <stdlib.h>
 #include <string.h>
 ''' + POLICY + r'''
-#define Y2_CONN_FW "mediatek/mt6572/"
+#define Y2_CONN_FW "mt6572/"
 #define GFP_KERNEL 0
 #define dev_err(...) ((void)0)
 #define dev_info(...) ((void)0)
@@ -260,7 +267,7 @@ struct firmware {size_t size; const unsigned char *data;};
 struct y2_conn {void *dev;};
 static struct firmware blob; static unsigned char buffer[2048]; static unsigned released;
 static int y2_conn_request_firmware(void *dev,const char *name,const struct firmware **fw){
- (void)dev; assert(!strcmp(name,"mediatek/mt6572/WMT_SOC.cfg")); *fw=&blob; return 0;
+ (void)dev; assert(!strcmp(name,"mt6572/WMT_SOC.cfg")); *fw=&blob; return 0;
 }
 static void release_firmware(const struct firmware *fw){assert(fw==&blob);released++;}
 static char *kmemdup_nul(const void *p,size_t n,int flags){(void)flags;return strndup(p,n);}
@@ -886,3 +893,60 @@ int main(void){
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Y1RecordB7(unittest.TestCase):
+    """B7: S41 composes the record once from the platform's BT.defaults and a random address."""
+
+    def compose(self, directory, defaults=None, record=None):
+        script = (ROOT / 'initramfs/y1-bluetooth/etc/init.d/S41y2-connectivity').read_text()
+        body = re.search(r'^compose\(\) \{\n.*?^\}\n', script, re.M | re.S)[0]
+        firmware = Path(directory) / 'firmware'
+        firmware.mkdir(exist_ok=True)
+        if defaults is not None:
+            (firmware / 'BT.defaults').write_bytes(defaults)
+        path = Path(directory) / 'bt-record'
+        if record is not None:
+            path.write_bytes(record)
+        run = subprocess.run(['sh', '-c', f'FIRMWARE={firmware}\nRECORD={path}\n{body}compose'],
+                             capture_output=True)
+        return run.returncode, path.read_bytes() if path.exists() else None, path
+
+    def test_a_new_record_is_the_defaults_behind_a_unicast_local_address(self):
+        defaults = bytes(6) + bytes(range(100, 126))  # synthetic settings, never the stock bytes
+        seen = set()
+        for _ in range(8):
+            with tempfile.TemporaryDirectory() as d:
+                code, record, path = self.compose(d, defaults)
+                self.assertEqual(code, 0)
+                self.assertEqual(len(record), 32)
+                self.assertEqual(record[6:], defaults[6:])
+                self.assertEqual(record[0] & 3, 2)  # unicast, locally administered
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertFalse(path.with_name('bt-record.new').exists())
+                seen.add(record[:6])
+        self.assertGreater(len(seen), 1)
+
+    def test_an_existing_record_is_kept_and_bad_defaults_write_nothing(self):
+        owner = bytes(range(32))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.compose(d, bytes(32), owner)[:2], (0, owner))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.compose(d)[:2], (1, None))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.compose(d, bytes(31))[:2], (1, None))
+
+    def test_the_radio_firmware_set_is_the_inventory_and_the_stock_default_record(self):
+        config = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json').read_text())
+        wanted = {f['filename']: (f['bytes'], f['sha256']) for f in INVENTORY['files']
+                  if f['filename'] != 'modem_1_2g_n.img'}
+        self.assertEqual({f['name']: (f['size'], f['sha256']) for f in config['files']}, wanted)
+        header = (Y1 / 'conn.h').read_text()
+        self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
+        self.assertEqual(config['target'], '/data/firmware/mt6572')
+        self.assertEqual(config['inbox'], '/data/music/Firmware')  # S45y1-mtp's one storage, Music
+        (record,) = config['defaults']
+        # The stock record starts with the generic MT6572 address (y1-conn-policy.h's reject hash).
+        self.assertEqual((record['offset'], record['size'], record['expect'], record['clear']),
+                         (0x3004, 32, '000046657201', 6))
+        self.assertEqual(config['patches'], [1])

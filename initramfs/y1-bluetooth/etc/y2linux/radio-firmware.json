@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "target": "/data/firmware/mt6572",
+  "inbox": "/data/music/Firmware",
+  "note": "Bluetooth needs the radio firmware from the Innioasis Y1 firmware package.\nCopy (do not move) the file system.img from that package (rom.zip, version 3.0.2) into this\nfolder (about 650 MB). The player checks it, keeps the three small radio files and deletes the copy.\n",
+  "files": [
+    {"name": "WMT_SOC.cfg", "size": 82, "sha256": "161f18b686e59a763368ffb1d8229f158fa61493ecc3dff5c6ef8c11a7f5f1e0"},
+    {"name": "mt6572_82_patch_e1_0_hdr.bin", "size": 39868, "sha256": "5c13ebad70fbddc10410c675fdce84e89f5db9fa1323f9d787eca3e96a99bfc1"}
+  ],
+  "library": {"name": "/lib/libbluetooth_mtk.so", "size": 13452, "sha256": "36f2ea80a64eaeb52fbca577ee87895a622ace878d12b5ad7fa21d08f278afd7"},
+  "defaults": [
+    {"name": "BT.defaults", "offset": 12292, "size": 32, "expect": "000046657201", "clear": 6, "sha256": "a317b67f17b3e190f1958e47c7eb5bb4a738ef9752080595caea7350493c119c"}
+  ],
+  "patches": [1]
+}
