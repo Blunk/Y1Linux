@@ -456,7 +456,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-core.c",
       "source": "kernel/y1/connectivity/core.c",
-      "sha256": "75a4af9bd577bf40112f9dd0d9df08cb8e0886cdfde77d3e57b498224cd96528"
+      "sha256": "9931342d4dcb51876db3ce37a9f497d87a22abdb4f3580a4687b9beab3ea99dc"
     },
     {
       "path": "drivers/bluetooth/y1-conn-wmt.c",

@@ -103,9 +103,25 @@ pub struct Config {
     pub note: Option<String>,
     pub files: Vec<Entry>,
     pub library: Entry,
+    /// More stock libraries of the same image that a default is cut from (`Slice::library`).
+    #[serde(default)]
+    pub libraries: Vec<Entry>,
     pub defaults: Vec<Slice>,
     /// The patches' download sequence numbers (header byte 24, low nibble), sorted.
     pub patches: Vec<u8>,
+    /// Files from another firmware package's system.img (its /etc/firmware), installed beside the
+    /// set when the owner copies that image too; the set is Ready without them (the Y1's Wi-Fi
+    /// firmware from the Innioasis Y2 package: docs/planning/Y1-WIFI-PLAN.md, W6).
+    #[serde(default)]
+    pub supplement: Vec<Entry>,
+    /// Whether the Y2's modem calibration helper (y2-calibration, MD1 on the MT6582) belongs to the
+    /// radios; an image without that modem says false.
+    #[serde(default = "yes")]
+    pub calibration: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// A file with its reviewed size and SHA-256 (`name` is a path for the library).
@@ -128,6 +144,9 @@ pub struct Slice {
     pub expect: String,
     pub clear: usize,
     pub sha256: String,
+    /// The library it is cut from (a `libraries` name); the set's `library` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library: Option<String>,
 }
 
 /// The reviewed tables (a test swaps them for its fixture files', as tests/test_radio_firmware.py).
@@ -136,6 +155,12 @@ pub struct Reviewed {
     pub files: Vec<(String, u64, String)>,
     pub defaults: Vec<(String, u64, String)>,
     pub custom: (String, u64, String),
+    /// The configured further libraries (`Config::libraries`).
+    pub libraries: Vec<(String, u64, String)>,
+    /// The configured supplement (`Config::supplement`): not part of `all()`, never needed for Ready.
+    pub supplement: Vec<(String, u64, String)>,
+    /// `Config::calibration` (the Y2's: true).
+    pub calibration: bool,
     /// How the defaults come out of the library: the Y2's reader (None) or the configured slices.
     pub slices: Option<Vec<Slice>>,
     pub patches: Vec<u8>,
@@ -155,6 +180,9 @@ impl Reviewed {
             files: own(&FILES),
             defaults: own(&DEFAULTS),
             custom: (CUSTOM.0.into(), CUSTOM.1, CUSTOM.2.into()),
+            libraries: Vec::new(),
+            supplement: Vec::new(),
+            calibration: true,
             slices: None,
             patches: vec![1, 2],
             target: TARGET.into(),
@@ -188,11 +216,20 @@ impl Reviewed {
             && sha(&c.library.sha256)
             && !c.files.is_empty()
             && c.files.iter().all(|f| plain(&f.name) && sha(&f.sha256))
+            && c.libraries
+                .iter()
+                .all(|l| absolute(&l.name) && sha(&l.sha256))
+            && c.supplement.iter().all(|f| {
+                plain(&f.name) && sha(&f.sha256) && !c.files.iter().any(|g| g.name == f.name)
+            })
             && c.defaults.iter().all(|d| {
                 plain(&d.name)
                     && sha(&d.sha256)
                     && d.clear as u64 <= d.size
                     && hex(&d.expect).is_some_and(|e| e.len() as u64 <= d.size)
+                    && d.library.as_deref().is_none_or(|l| {
+                        l == c.library.name || c.libraries.iter().any(|e| e.name == l)
+                    })
             });
         if !valid {
             return None;
@@ -215,12 +252,20 @@ impl Reviewed {
                 c.library.size,
                 c.library.sha256.to_ascii_lowercase(),
             ),
+            libraries: table(&c.libraries),
+            supplement: table(&c.supplement),
+            calibration: c.calibration,
             slices: Some(c.defaults),
             patches: c.patches,
             target: c.target,
             inbox: c.inbox,
             note: c.note,
         })
+    }
+
+    /// Whether this image runs the modem calibration helper (an unreadable set: as the Y2).
+    pub fn calibrates(root: &Root) -> bool {
+        Self::of(root).map_or(true, |r| r.calibration)
     }
 
     fn all(&self) -> impl Iterator<Item = &(String, u64, String)> {
@@ -327,14 +372,21 @@ pub fn run(root: &Root, action: &str, path: Option<&str>) -> Outcome {
                     Error::Value("install needs a system.img or a directory".into())
                 })?;
                 let source = PathBuf::from(path);
-                let files = if source.is_dir() {
-                    from_directory(&reviewed, &source)?
+                if source.is_dir() {
+                    install(root, &reviewed, from_directory(&reviewed, &source)?)?;
                 } else {
-                    from_system_image(&reviewed, &source)?
-                };
-                install(root, &reviewed, files)?;
+                    match from_system_image(&reviewed, &source) {
+                        Ok(files) => install(root, &reviewed, files)?,
+                        // The other package's image: its supplement (the set's failure otherwise).
+                        Err(error) => match from_supplement_image(&reviewed, &source) {
+                            Ok(files) => install_supplement(root, &reviewed, files)?,
+                            Err(_) => return Err(error),
+                        },
+                    }
+                }
                 start(root);
-                Ok(Status::of("Ready", None))
+                // Ready, or Missing after a supplement alone.
+                Ok(state(root))
             }
         }
     })();
@@ -526,8 +578,9 @@ mod tests {
             expect: "000046657201".into(),
             clear: 6,
             sha256: String::new(),
+            library: None,
         };
-        let derived = files::sliced(std::slice::from_ref(&slice), library).unwrap();
+        let derived = files::sliced(std::slice::from_ref(&slice), &[("", library)]).unwrap();
         let entry = |name: &str, data: &[u8]| {
             let sha256 = sha256_hex(data);
             json!({"name": name, "size": data.len(), "sha256": sha256})
@@ -625,20 +678,21 @@ mod tests {
             expect: "000046657201".into(),
             clear: 6,
             sha256: String::new(),
+            library: None,
         };
         let stock = library(GENERIC);
-        let cut = files::sliced(std::slice::from_ref(&slice), &stock).unwrap();
+        let cut = files::sliced(std::slice::from_ref(&slice), &[("", &stock)]).unwrap();
         assert_eq!(&cut[0].1[..6], &[0; 6]);
         assert_eq!(&cut[0].1[6..], &stock[0x300a..0x3024]);
         let moved = library([2, 0x11, 0x22, 0x33, 0x44, 0x55]);
         assert_eq!(
-            files::sliced(std::slice::from_ref(&slice), &moved)
+            files::sliced(std::slice::from_ref(&slice), &[("", &moved)])
                 .unwrap_err()
                 .text(),
             "stock_reader_library_layout"
         );
         let short = &stock[..0x3010];
-        assert!(files::sliced(std::slice::from_ref(&slice), short).is_err());
+        assert!(files::sliced(std::slice::from_ref(&slice), &[("", short)]).is_err());
     }
 
     #[test]
@@ -701,6 +755,148 @@ mod tests {
             checked(&Reviewed::stock(), back).unwrap_err().text(),
             "firmware_mismatch:WIFI_RAM_CODE_MT6582"
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+    /// A stand-in for the Y1's libcustom_nvram.so: an ELF with the Wi-Fi default at 0x3cf4.
+    fn nvram_library() -> Vec<u8> {
+        let mut data: Vec<u8> = (0..37508u32).map(|i| (i * 13 % 251) as u8).collect();
+        data[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
+        data[0x3cf4..0x3cfe].copy_from_slice(&[4, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+        data
+    }
+
+    /// The Y1's W6 set: the B7 set, WIFI.defaults from a second library and the Y2 package's Wi-Fi
+    /// firmware as the supplement.
+    fn wifi_config(files: &Files, bt: &[u8], nvram: &[u8], wifi: &[u8]) -> serde_json::Value {
+        let mut value = config(files, bt);
+        let slice = Slice {
+            name: "WIFI.defaults".into(),
+            offset: 0x3cf4,
+            size: 512,
+            expect: "0401".into(),
+            clear: 0,
+            sha256: sha256_hex(&nvram[0x3cf4..0x3ef4]),
+            library: Some("/lib/libcustom_nvram.so".into()),
+        };
+        value["defaults"].as_array_mut().unwrap().push(json!(slice));
+        value["libraries"] = json!([{"name": "/lib/libcustom_nvram.so", "size": nvram.len(),
+            "sha256": sha256_hex(nvram)}]);
+        value["supplement"] = json!([{"name": "WIFI_RAM_CODE_MT6582", "size": wifi.len(),
+            "sha256": sha256_hex(wifi)}]);
+        value["calibration"] = json!(false);
+        value
+    }
+
+    #[test]
+    fn a_supplement_is_optional_and_named_once() {
+        let fixture = Fixture::new();
+        assert!(Reviewed::calibrates(&fixture.root), "the Y2: no config");
+        let wifi = vec![9u8; 160368];
+        let good = wifi_config(&y1_files(), &library(GENERIC), &nvram_library(), &wifi);
+        fixture.put_json(CONFIG, &good);
+        let reviewed = Reviewed::of(&fixture.root).unwrap();
+        assert_eq!((reviewed.all().count(), reviewed.supplement.len()), (4, 1));
+        assert!(!reviewed.calibration && !Reviewed::calibrates(&fixture.root));
+        let mut bad = Vec::new();
+        let mut twice = good.clone();
+        twice["supplement"][0]["name"] = json!("WMT_SOC.cfg");
+        bad.push(twice);
+        let mut unknown = good.clone();
+        unknown["defaults"][1]["library"] = json!("/lib/other.so");
+        bad.push(unknown);
+        let mut relative = good.clone();
+        relative["libraries"][0]["name"] = json!("lib/libcustom_nvram.so");
+        bad.push(relative);
+        for value in bad {
+            fixture.put_json(CONFIG, &value);
+            assert!(Reviewed::of(&fixture.root).is_err(), "{value}");
+            assert!(Reviewed::calibrates(&fixture.root), "unreadable: as the Y2");
+        }
+    }
+
+    /// A raw ext4 image of `tree` (false without a host mke2fs), finished a minute ago.
+    fn ext4(tree: &Path, image: &Path) -> bool {
+        let made = std::process::Command::new("mke2fs")
+            .args(["-q", "-F", "-b", "4096", "-d"])
+            .arg(tree)
+            .arg(image)
+            .arg("8M")
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if made {
+            fs::File::options()
+                .write(true)
+                .open(image)
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_secs(60))
+                .unwrap();
+        }
+        made
+    }
+
+    #[test]
+    fn the_supplement_comes_from_the_other_package_in_either_order() {
+        let dir = std::env::temp_dir().join(format!("y2-radiofw-supp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let (y1, y2) = (dir.join("y1"), dir.join("y2"));
+        fs::create_dir_all(y1.join("etc/firmware")).unwrap();
+        fs::create_dir_all(y1.join("lib")).unwrap();
+        fs::create_dir_all(y2.join("etc/firmware")).unwrap();
+        let files = y1_files();
+        for (name, data) in &files {
+            fs::write(y1.join("etc/firmware").join(name), data).unwrap();
+        }
+        let (bt, nvram, wifi) = (library(GENERIC), nvram_library(), vec![9u8; 160368]);
+        fs::write(y1.join("lib/libbluetooth_mtk.so"), &bt).unwrap();
+        fs::write(y1.join("lib/libcustom_nvram.so"), &nvram).unwrap();
+        fs::write(y2.join("etc/firmware/WIFI_RAM_CODE_MT6582"), &wifi).unwrap();
+        let config = serde_json::to_string(&wifi_config(&files, &bt, &nvram, &wifi)).unwrap();
+        for (order, first, second) in [("y1-first", &y1, &y2), ("y2-first", &y2, &y1)] {
+            let root = Root::new(dir.join(order));
+            for folder in ["/run/y2", "/etc/y2linux", "/data/music"] {
+                fs::create_dir_all(root.path(folder)).unwrap();
+            }
+            fs::write(root.path(CONFIG), &config).unwrap();
+            let reviewed = Reviewed::of(&root).unwrap();
+            let inbox = root.path("/data/music/Firmware");
+            let image = inbox.join(SOURCE);
+            assert_eq!(scan(&root, &reviewed).unwrap(), json!({"state": "Missing"}));
+            if !ext4(first, &image) {
+                let _ = fs::remove_dir_all(&dir);
+                return; // no host mke2fs
+            }
+            // Two passes see the copy finished; then the second package's copy.
+            scan(&root, &reviewed).unwrap();
+            let after_first = scan(&root, &reviewed).unwrap();
+            assert!(!image.exists(), "{order}: the first copy goes");
+            assert!(
+                inbox.join("README.txt").exists(),
+                "{order}: the folder waits"
+            );
+            assert!(ext4(second, &image));
+            for _ in 0..3 {
+                scan(&root, &reviewed).unwrap();
+            }
+            assert!(
+                !image.exists() && !inbox.exists(),
+                "{order}: both taken, folder tidied"
+            );
+            assert_eq!(scan(&root, &reviewed).unwrap(), json!({"state": "Ready"}));
+            let target = root.path("/data/firmware/mt6572");
+            assert!(
+                installed(&root, &reviewed) && supplemented(&root, &reviewed),
+                "{order}"
+            );
+            assert_eq!(fs::read(target.join("WIFI_RAM_CODE_MT6582")).unwrap(), wifi);
+            let defaults = fs::read(target.join("WIFI.defaults")).unwrap();
+            assert_eq!(defaults, &nvram[0x3cf4..0x3ef4]);
+            let expected = if order == "y1-first" {
+                "Ready"
+            } else {
+                "Missing"
+            };
+            assert_eq!(after_first, json!({"state": expected}), "{order}");
+        }
         fs::remove_dir_all(&dir).unwrap();
     }
 }

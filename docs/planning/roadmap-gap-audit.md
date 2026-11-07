@@ -1,5 +1,25 @@
 # Roadmap gap audit
 
+## Y1 Wi-Fi W6, Wi-Fi as a product — 2026-11-07
+
+Boundary review before a production-scope change on the Y1 ([plan](Y1-WIFI-PLAN.md) §14; owner-approved: "continue
+with W6, make it a product"; W5b, the throughput check pinned to one access point, is not run first and stays
+open). Evidence: W5 on the Y1 (`7d387e74`, BOOTIMG `2b881029…`): association, DHCP, DNS, the Internet and intact
+transfers with the Y2's `wpa_supplicant` by hand; Bluetooth unaffected; 1–8 Mbit/s with roaming between two access
+points. Read on the Y1 before W6: no `/dev/y2-calibration` (the Y2's modem calibration helper cannot run there),
+no BusyBox `inotifyd`, the Wi-Fi child device under the connectivity node, the hand-copied Wi-Fi files in
+`/data/firmware/mt6572`, the Y2ROOT still `baseline-215-9-g31d3987e` (beta 9.3.12, without the B7 import). W6
+scope: the Y2's connectivity service on the Y1 (supplicant, its action hook and DHCP, the platform's monitor;
+Reborn's Wi-Fi screens unchanged), Wi-Fi off by default as on the Y2 (`/data/network/enabled` 0, country `00`
+unless the owner's configuration names one, the regulatory database reloaded once the root is mounted), the Wi-Fi
+firmware imported like Bluetooth's (the Y1's own `system.img` for `WIFI.defaults`, the Innioasis Y2 package's
+`system.img` for `WIFI_RAM_CODE_MT6582`), and Wi-Fi without a restart when that file arrives later. Platform
+changes keep the Y2's outputs byte-identical (no supplement, no extra library, the calibration device present) and
+reach the Y1 only with a new Y2ROOT; the BOOTIMG part works with today's. Gaps: throughput (W5b), Bluetooth audio
+during a Wi-Fi transfer, no factory TX calibration. Found while tracing: on the Y2, Reborn's Wi-Fi state
+(`network.json`, `Online` after the DNS probe) comes from the service daemon, which the Y1 does not run, so W6 adds
+a network-only mode of that daemon, chosen by the image. Proceeding with W6 only.
+
 ## Y1 Wi-Fi W5, association with the owner's network — 2026-11-07
 
 Boundary review before the Y1's first Wi-Fi association ([plan](Y1-WIFI-PLAN.md) §13; owner-approved; the owner's
