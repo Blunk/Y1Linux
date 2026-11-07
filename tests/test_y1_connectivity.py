@@ -98,8 +98,9 @@ class Y1ConnectivityFacts(unittest.TestCase):
         self.assertEqual(compatible, 'innioasis,y1-mt6572-connectivity')
         naming = [t.name for t in sorted((ROOT / 'kernel/dts').glob('*y1*')) if compatible in t.read_text()]
         # B6 (thirty-fourth): the full driver, no limit.
+        # W3 (thirty-fifth, docs/planning/Y1-WIFI-PLAN.md): the full driver with the Wi-Fi window and interrupt.
         limits = {'innioasis-y1-thirty-second-boot.dts': 'chip-id', 'innioasis-y1-thirty-third-boot.dts': 'wmt',
-                  'innioasis-y1-thirty-fourth-boot.dts': None}
+                  'innioasis-y1-thirty-fourth-boot.dts': None, 'innioasis-y1-thirty-fifth-boot.dts': None}
         self.assertEqual(naming, sorted(limits))
         for name, limit in limits.items():
             tree = (ROOT / 'kernel/dts' / name).read_text()
@@ -130,10 +131,12 @@ class Y1ConnectivityFacts(unittest.TestCase):
         for absent in ('y2-factory', 'y2-calibration', 'wpa_supplicant', 'connectivity-daemon', 'y2-radio-activate'):
             self.assertNotIn(absent, code)
         for present in ('RECORD=/data/connectivity/bt-record', 'FIRMWARE=/data/firmware/mt6572',
-                        '"$1 $3 $5" = "-rw------- 0 32"', '\tmigrate\n\tfirmware\n\tcompose\n\tactivate || exit 1',
+                        '"$1 $3 $5" = "-rw------- 0 32"', '\tmigrate\n\tfirmware\n\tcompose\n\twifi_compose\n\tactivate || exit 1',
                         'until y2-platform firmware scan', 'start-stop-daemon -K -p "$WAIT"',
-                        'cat "$RECORD" > "$C/factory" && echo 1 > "$C/activate"', '-x /usr/sbin/y2-radiod',
-                        'stop-wifi) : ;;', 'mount --bind /data/bluetooth/bluez /var/lib/bluetooth'):
+                        'cat "$RECORD" > "$C/factory" || return 1\n\twifi_record\n\techo 1 > "$C/activate"',
+                        '-x /usr/sbin/y2-radiod', 'stop-wifi) y2-radio wifi off-runtime 2>/dev/null || : ;;',
+                        'mount --bind /data/bluetooth/bluez /var/lib/bluetooth',
+                        "[ -e /data/network/enabled ] || printf '0\\n' > /data/network/enabled"):
             self.assertIn(present, script)
         listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
         self.assertIn('/y1-system/etc/init.d/S41y2-connectivity /project/initramfs/y1-bluetooth/etc/init.d/'
@@ -966,6 +969,84 @@ int main(void){
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Y1WifiW3(unittest.TestCase):
+    """W3 (docs/planning/Y1-WIFI-PLAN.md): the thirty-fifth tree and fragment, S41's Wi-Fi record."""
+
+    def wifi_compose(self, directory, defaults=None, record=None, wifi_build=True):
+        script = (ROOT / 'initramfs/y1-bluetooth/etc/init.d/S41y2-connectivity').read_text()
+        body = re.search(r'^wifi_compose\(\) \{\n.*?^\}\n', script, re.M | re.S)[0]
+        base = Path(directory)
+        (base / 'firmware').mkdir(exist_ok=True)
+        (base / 'core').mkdir(exist_ok=True)
+        if wifi_build:
+            (base / 'core/wifi_factory').write_bytes(b'')
+        if defaults is not None:
+            (base / 'firmware/WIFI.defaults').write_bytes(defaults)
+        path = base / 'wifi-record'
+        if record is not None:
+            path.write_bytes(record)
+        run = subprocess.run(['sh', '-c', f'C={base / "core"}\nFIRMWARE={base / "firmware"}\nWRECORD={path}\n'
+                              f'{body}wifi_compose'], capture_output=True)
+        return run.returncode, path.read_bytes() if path.exists() else None, path
+
+    def test_a_new_wifi_record_is_the_default_with_a_unicast_local_address(self):
+        defaults = bytearray(range(256)) * 2  # synthetic settings, never the stock bytes
+        defaults[4:10] = bytes(6)
+        seen = set()
+        for _ in range(8):
+            with tempfile.TemporaryDirectory() as d:
+                code, record, path = self.wifi_compose(d, bytes(defaults))
+                self.assertEqual(code, 0)
+                self.assertEqual(len(record), 512)
+                self.assertEqual(record[:4] + record[10:], bytes(defaults[:4] + defaults[10:]))
+                self.assertEqual(record[4] & 3, 2)  # unicast, locally administered
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertFalse(path.with_name('wifi-record.new').exists())
+                seen.add(record[4:10])
+        self.assertGreater(len(seen), 1)
+
+    def test_nothing_without_a_wifi_build_or_the_defaults_and_a_record_is_kept(self):
+        defaults = bytes(512)
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_compose(d, defaults, wifi_build=False)[:2], (0, None))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_compose(d)[:2], (0, None))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_compose(d, bytes(511))[:2], (0, None))
+        kept = bytes(range(256)) * 2
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.wifi_compose(d, defaults, kept)[:2], (0, kept))
+
+    def test_thirty_fifth_tree_adds_only_the_wifi_window_and_interrupt(self):
+        def node(name):
+            tree = (ROOT / 'kernel/dts' / name).read_text()
+            body = tree[tree.index('connectivity@18070000 {'):]
+            return tree, body[:body.index('};')]
+        old_tree, old = node('innioasis-y1-thirty-fourth-boot.dts')
+        new_tree, new = node('innioasis-y1-thirty-fifth-boot.dts')
+        self.assertIn('<0x11000400 0x80>, <0x180f0000 0x5c>;', new)
+        self.assertIn('reg-names = "mcu", "conn-emi", "btif", "tx-dma", "rx-dma", "wifi";', new)
+        self.assertIn('<GIC_SPI 123 IRQ_TYPE_LEVEL_LOW>;', new)
+        self.assertIn('interrupt-names = "btif", "tx-dma", "rx-dma", "wake", "wifi";', new)
+        self.assertNotIn('wifi', old.replace('vcn33-wifi', '').replace('vcn33_wifi', ''))
+        # Outside the node the two trees differ only in the header comment.
+        strip = lambda tree, n: tree[tree.index('#include'):].replace(n, '')
+        self.assertEqual(strip(old_tree, old), strip(new_tree, new))
+
+    def test_thirty_fifth_fragment_is_the_thirty_fourth_with_the_wifi_lines(self):
+        def lines(name):
+            text = (ROOT / 'kernel/config' / name).read_text()
+            return [l for l in text.splitlines() if l.startswith('CONFIG_') or l.startswith('# CONFIG_')]
+        old, new = lines('y1-thirty-fourth-boot.config'), lines('y1-thirty-fifth-boot.config')
+        self.assertEqual(sorted(set(new) - set(old)), sorted([
+            'CONFIG_LOCALVERSION="-y1-thirty-fifth-boot"', 'CONFIG_WIRELESS=y', 'CONFIG_CFG80211=y',
+            'CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y', 'CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y',
+            'CONFIG_BT_INNIOASIS_Y1_WIFI=y']))
+        self.assertEqual(sorted(set(old) - set(new)),
+                         sorted(['CONFIG_LOCALVERSION="-y1-thirty-fourth-boot"', '# CONFIG_WIRELESS is not set']))
+        self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-thirty-fourth-boot.list"', new)
 
 
 class Y1RecordB7(unittest.TestCase):

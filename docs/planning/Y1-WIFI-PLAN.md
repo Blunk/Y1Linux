@@ -1,7 +1,8 @@
 # Y1 Wi-Fi
 
 Status: **W0–W2 done 2026-11-07** (owner-approved): the firmware source decided (F2, the owner's Y2 file, by hash
-comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); W3–W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
+comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); **W3 PASS**
+(§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered, no scan); W4–W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
 radio function, a transmitter, firmware not taken from this device): each stage has its own admission, and the
 roadmap audit is repeated before W3 (the first Wi-Fi power-on).
 
@@ -253,3 +254,110 @@ no Wi-Fi device is created. Nothing was built for or sent to the Y1.
   wifi` then runs the fullmac's probe: firmware download, `MCR_WCIR` chip ID, the firmware's ready event and
   `wlan0` up with **no scan** (W4). Open: whether the firmware boots beside the 2013 Bluetooth patch, whether it
   needs the WMT Wi-Fi function command (the Y2's), and the regulatory database on the Y1 rootfs.
+
+## 9. W3 build — 2026-11-07
+
+Owner-approved; roadmap audit first ("Y1 Wi-Fi W3, first Wi-Fi firmware boot"). One manual firmware boot:
+`wlan0` registered, then off. **No scan, no association, no transmission.**
+
+- **Variant thirty-fifth**: `kernel/config/y1-thirty-fifth-boot.config` (the thirty-fourth fragment, `WIRELESS`,
+  `CFG80211` with the signed regulatory database as the Y2, `BT_INNIOASIS_Y1_WIFI`, LOCALVERSION
+  `-y1-thirty-fifth-boot`; the thirty-fourth initramfs list), `kernel/dts/innioasis-y1-thirty-fifth-boot.dts` (the
+  thirty-fourth tree plus `<0x180f0000 0x5c>` "wifi" and `<GIC_SPI 123 IRQ_TYPE_LEVEL_LOW>` "wifi" in the
+  connectivity node, nothing else), `y1-boot.sh` and `y1_boot.py` (the node's two new lines checked in the
+  compiled tree). Build `out/y1-thirty-fifth-boot-1`: BOOTIMG
+  **`fc6cf8d4b0d8e663cd67dd8eb99f1b993531982a827ae97fbc5dc9e41e996ae2`** (4 157 440 bytes; build 5: 3 788 800),
+  zImage-dtb `96afec3f…a2ec`, DTB `6ba7ac9a…6316`, `.config` `6b48891c…7494`, `y1-init` `d278e15b…` (unchanged). The
+  47 warnings are the fullmac's own (§8).
+- **S41** (shared with the thirty-fourth, inert there): creates `/data/network/enabled` as `0` if absent (the Y2's
+  `S02y2-data` does this; the Y1 does not run it), so `y2-radiod` blocks every Wi-Fi switch at its start;
+  `wifi_compose` (once: `WIFI.defaults` bytes 0–3 and 10–511 around a random unicast, locally administered MAC);
+  `wifi_record` (root 0600 512 bytes to `wifi_factory` after the Bluetooth record, before `activate`; refused or
+  absent means Bluetooth only); `stop-wifi` as the Y2 (`y2-radio wifi off-runtime`).
+- **Why nothing transmits by itself**: on the Y1 no service starts `wpa_supplicant` (the Y2's
+  connectivity daemon is not in `y1-services`); the root filesystem's `/etc/network/interfaces` has only `lo`;
+  no hotplug or cron rule names `wlan0`; `y2-radiod` blocks Wi-Fi at its start and unblocks it only on a Reborn or
+  `y2-radio` request (do not open Reborn's Wi-Fi screen during W3). The driver's rfkill switch starts blocked.
+  Registering the interface leaves it down; nothing here sets it up.
+- **Firmware folder**: a later Bluetooth import (only while its firmware is missing) replaces the whole
+  `/data/firmware/mt6572` and would drop the two Wi-Fi files; copy them again then. `firmware status` ignores them.
+- **Tests** (sandbox): `test_y1_connectivity` 33 (4 new: `wifi_compose` from the real S41, nothing without a Wi-Fi
+  build or defaults and an existing record kept, the tree adds only the two node lines, the fragment only the
+  Wi-Fi lines); `test_y1_provision` 7, `test_y1_bt_record`, `test_wifi`, `test_overlays` OK; the ratchet passes.
+
+**Procedure** (owner; the Y1 on build 5 first; `Y1SSH='ssh -i out/y1-ssh/id_ed25519 -o
+UserKnownHostsFile=out/y1-ssh/known_hosts root@10.42.0.1'`):
+
+1. On the PC, stage the files with the provisioning tool. You need the Y1 3.0.2 `system.img` (raw ext4,
+   from the public `rom.zip`, as B7) and the Y2 package's `system.img` (`simg2img` first if it is sparse):
+
+       mkdir out/w3-in
+       debugfs -R "dump /etc/firmware/WMT_SOC.cfg out/w3-in/WMT_SOC.cfg" <Y1 system.img>
+       debugfs -R "dump /etc/firmware/mt6572_82_patch_e1_0_hdr.bin out/w3-in/mt6572_82_patch_e1_0_hdr.bin" <Y1 system.img>
+       debugfs -R "dump /etc/firmware/modem_1_2g_n.img out/w3-in/modem_1_2g_n.img" <Y1 system.img>
+       debugfs -R "dump /lib/libcustom_nvram.so out/w3-libcustom_nvram.so" <Y1 system.img>
+       debugfs -R "dump /etc/firmware/WIFI_RAM_CODE_MT6582 out/w3-in/WIFI_RAM_CODE_MT6582" <Y2 system.img>
+       python3 tools/connectivity/provision.py --profile y1 --owner-firmware out/w3-in \
+           --stock-custom-nvram out/w3-libcustom_nvram.so --output out/w3-firmware
+
+   It verifies every file against the inventory, the Y1 library and the record hash.
+2. Copy the two Wi-Fi files and check them:
+
+       scp -i out/y1-ssh/id_ed25519 -o UserKnownHostsFile=out/y1-ssh/known_hosts \
+           out/w3-firmware/WIFI_RAM_CODE_MT6582 out/w3-firmware/WIFI.defaults root@10.42.0.1:/data/firmware/mt6572/
+       $Y1SSH 'cd /data/firmware/mt6572 && chmod 600 WIFI_RAM_CODE_MT6582 WIFI.defaults && sha256sum WIFI_RAM_CODE_MT6582 WIFI.defaults && sync'
+
+   Expected: `4def3752…9b82` and `9cfed6e4…a8b4`.
+3. Flash BOOTIMG `fc6cf8d4…6ae2` as for build 5 (keep build 5, `01f78b58…`, for the way back) and boot.
+4. Read-only checks; Bluetooth must work as before:
+
+       $Y1SSH 'dmesg | grep -i -E "18070000|y2-mt6582-wifi|cfg80211|regulatory"; cat /sys/devices/platform/18070000.connectivity/status;
+               rfkill list; cat /data/network/enabled; ls -ln /data/connectivity/wifi-record; pgrep -l wpa_supplicant; ls /sys/class/net'
+
+   Expected: `MT6572 connectivity owner ready (Bluetooth, Wi-Fi)`; an rfkill entry `y2-wifi` (Wireless LAN),
+   **soft blocked: yes**; `0`; `-rw------- 1 0 0 512 …`; no `wpa_supplicant`; no `wlan0`.
+5. The firmware boot (keep a second session with `dmesg -w`). `<n>` is the `y2-wifi` ID from `rfkill list`:
+
+       $Y1SSH 'rfkill unblock <n>; sleep 15; dmesg | tail -60; cat /sys/devices/platform/18070000.connectivity/status; ip link show wlan0; iw dev'
+
+   Expected: if Bluetooth was off, the core's power-on (`CONN chip=6572`, the WMT commands, `WMT RF calibration`);
+   then `y2-mt6582-wifi y2-mt6582-wifi: Wi-Fi interface wlan0 registered`; `functions=` with bit 3 (`0x8`, or
+   `0x9` with Bluetooth on); `wlan0` **state DOWN**; `iw dev` shows `phy#0`/`wlan0` (its address expected to be
+   the one in `wifi-record`, INFERRED: the fullmac reads it from the record). **Do not** run `ip link set wlan0 up`, `iw … scan` or `wpa_supplicant` (W4).
+   A failure: `Wi-Fi enable failed: <error>` (the switch blocks itself again), `firmware request failed`, or
+   `connectivity failure … ` (then the core recovers; Bluetooth comes back with it).
+6. Off: `$Y1SSH 'rfkill block <n>; sleep 3; ls /sys/class/net; cat /sys/devices/platform/18070000.connectivity/status'`
+   (no `wlan0`; bit 3 cleared). Repeat 5–6 once more.
+7. Abort at any time: `rfkill block <n>`; if that hangs, power off by the 3 s centre hold and boot again; the way
+   back is build 5.
+
+Record every line in `evidence-private/2026-11-07-y1-wifi-w3/`: the whole `dmesg` from the unblock, the `status`
+lines, `iw dev`, any WMT or Wi-Fi error, and whether Bluetooth audio still plays afterwards.
+
+## 10. W3 run — PASS — 2026-11-07
+
+`evidence-private/2026-11-07-y1-wifi-w3/` (pre-unblock dmesg, `run1-unblock.txt`, `run1-phy.txt`,
+`run1-cycles.txt`, `run1-bluetooth.txt`). The Y1 on the thirty-fifth boot (BOOTIMG `fc6cf8d4…`).
+
+- **Firmware source**: `WIFI_RAM_CODE_MT6582` read out of `system.img` of the y1-community release `3.2.0-fm`
+  (`rom_y2`, the build `INSTALL.md` names as Innioasis's v3.2.0; SHA-256 `5ce2c81d…7b60` as published), the
+  pinned `4def3752…9b82`. The Y1 inputs from the owner's backup. `provision.py --profile y1` verified all five
+  files and cut `WIFI.defaults` (`9cfed6e4…`). The procedure's step 1 lacked the modem image, which the Y1
+  inventory requires; added.
+- **Before**: both Wi-Fi files in `/data/firmware/mt6572` (root 0600; `firmware status` still `Ready`); after a
+  reboot S41 composed `wifi-record` (with the MAC zeroed it hashes to the default; the MAC unicast and locally
+  administered) and the driver accepted it: `owner ready (Bluetooth, Wi-Fi)`, the `y2-mt6582-wifi` device, rfkill
+  `y2-wifi` soft blocked; `/data/network/enabled` 0, no `wpa_supplicant`, no `wlan0`.
+- **Unblock** (`rfkill unblock 1`, Bluetooth on): `<wifi> send Wi-Fi Start command`, 66 ms later `Wi-Fi interface
+  wlan0 registered`; `functions=0x9`, `error=0`, no recovery; rfkill `phy0` added; `wlan0` **DOWN**; its address is
+  the one in `wifi-record` (compared on the device). `iw phy`: managed mode, 2.4 GHz channels 1–14 at 20 dBm,
+  12–14 no-IR; `iw reg get`: `country 00` (the world domain: `regulatory.db` was not loaded, see below).
+- **The open W3 questions, answered**: the 2014-era Wi-Fi firmware (the Y2's, from the MT6572 phone set) runs
+  beside the Y1's 2013 Bluetooth patch; it needs **no WMT Wi-Fi function command** (`Y1_CONN_WIFI_WMT_FUNCTION 0`,
+  as MediaTek's MT6572 driver); the HIF window `0x180f0000` and SPI 123 are right.
+- **Block / repeat**: block removes `wlan0`, `functions=0x1`; a second unblock boots the firmware again (73 ms to
+  `wlan0`), a second block again clean. Bluetooth powered throughout (BlueZ `Powered: yes`), `error=0`,
+  `recoveries=0`, no WMT or Wi-Fi error in the whole log. **No scan, no association, `wlan0` never up.**
+- **For W4**: `cfg80211` (built in) tries `regulatory.db` at 1.2 s, before the root file system holds it
+  (`/lib/firmware/regulatory.db` and `.p7s` are there), so the domain stays the world default; before the scan,
+  `iw reg reload` (or the database in `/data/firmware`) and the owner's country. W4: passive scan first.

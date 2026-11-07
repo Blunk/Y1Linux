@@ -1,5 +1,19 @@
 # Roadmap gap audit
 
+## Y1 Wi-Fi W3, first Wi-Fi firmware boot — 2026-11-07
+
+Boundary review before the first Wi-Fi power on the Y1 ([plan](Y1-WIFI-PLAN.md) §9; owner-approved). Evidence: W2
+committed (`f6db0255`): the fullmac builds for the Y1, the Y2 byte-identical, the Bluetooth-only thirty-fourth
+configuration unchanged. Hardware facts carried from Bluetooth B4–B7 (real Y1 evidence): the CONN domain, rails and
+WMT boot work and recover; VCN33_WIFI is already switched for every RF calibration. W3 adds the HIF window
+`0x180f0000` and SPI 123 to the node, the Wi-Fi record (the Y1's default and a local address), the owner's Y2
+`WIFI_RAM_CODE_MT6582` in `/data/firmware/mt6572`, and one manual rfkill unblock: firmware download, chip ID,
+`wlan0` registered, then block. **No scan, no association, no transmission**: on the Y1 nothing starts
+`wpa_supplicant`, `/etc/network/interfaces` has only `lo`, no hotplug or cron rule touches `wlan0`, and `y2-radiod`
+blocks Wi-Fi at its start while `/data/network/enabled` is `0` (S41 now creates it as `0`). Risks: a crash of the
+radio core beside the 2013 Bluetooth patch (recovered by the core's power-off; Bluetooth recovers with it); the
+unknown WMT Wi-Fi command. Gaps unchanged: the board's Wi-Fi RF output (W4). Proceeding with W3 only.
+
 ## Y1 Wi-Fi W1–W2, firmware record and driver built — 2026-11-07
 
 Boundary review before preparing the Y1's Wi-Fi ([plan](Y1-WIFI-PLAN.md) §7–§8; owner-approved; offline, nothing
