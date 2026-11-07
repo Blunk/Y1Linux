@@ -1049,6 +1049,35 @@ class Y1WifiW3(unittest.TestCase):
         self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-thirty-fourth-boot.list"', new)
 
 
+class Y1WifiW4(unittest.TestCase):
+    """W4 (docs/planning/Y1-WIFI-PLAN.md): the Y1-only passive scan in the shared fullmac, the Y2 unchanged."""
+
+    WIFI = ROOT / 'kernel/platform/connectivity/wifi'
+
+    def test_the_flag_is_the_y1_options_only(self):
+        makefile = (self.WIFI / 'Makefile').read_text()
+        self.assertIn('ccflags-$(CONFIG_BT_INNIOASIS_Y1_WIFI) += -DY2_WIFI_PASSIVE_SCAN\n', makefile)
+        self.assertEqual(makefile.count('Y2_WIFI_PASSIVE_SCAN'), 1)
+        hif = (self.WIFI / 'hif.h').read_text()
+        self.assertIn('#define Y2_WIFI_SCAN_REQUEST(glue, request) ((void)0)', hif)
+        self.assertIn('#define Y2_WIFI_SCAN_TYPE(adapter, ais, msg) ((void)0)', hif)
+        self.assertIn('(request)->n_ssids == 0', hif)
+        self.assertIn('(ais)->eCurrentState == AIS_STATE_SCAN || (ais)->eCurrentState == AIS_STATE_ONLINE_SCAN', hif)
+
+    def test_hooks_end_existing_vendor_lines(self):
+        # Appended, never inserted: the vendor files keep every line number (their __LINE__ constants and so the
+        # Y2's objects; W4 build: Image a68fdffd, vmlinux b5ae438d, all 48 objects identical).
+        cases = {'os/linux/gl_cfg80211.c': ('    kalMemZero(&rScanRequest, sizeof(PARAM_SCAN_REQUEST_EXT_T)); '
+                                            'Y2_WIFI_SCAN_REQUEST(prGlueInfo, request);', 536),
+                 'mgmt/ais_fsm.c': ('            prScanReqMsg->eScanType         = SCAN_TYPE_ACTIVE_SCAN; '
+                                    'Y2_WIFI_SCAN_TYPE(prAdapter, prAisFsmInfo, prScanReqMsg);', 2297)}
+        for name, (line, number) in cases.items():
+            lines = (self.WIFI / name).read_text().split('\n')
+            self.assertEqual(lines[number - 1], line, name)
+            self.assertEqual(sum('Y2_WIFI_SCAN_' in l for l in lines), 1, name)
+        self.assertNotIn('PASSIVE', (self.WIFI / 'include/wlan_oid.h').read_text().split('SCAN_REQUEST_EXT_T')[1][:200])
+
+
 class Y1RecordB7(unittest.TestCase):
     """B7: S41 composes the record once from the platform's BT.defaults and a random address."""
 

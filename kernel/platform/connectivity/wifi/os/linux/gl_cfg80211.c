@@ -533,7 +533,7 @@ mtk_cfg80211_scan (
     ASSERT(prGlueInfo);
 
 	DBGLOG(REQ, INFO, ("mtk_cfg80211_scan\n"));
-    kalMemZero(&rScanRequest, sizeof(PARAM_SCAN_REQUEST_EXT_T));
+    kalMemZero(&rScanRequest, sizeof(PARAM_SCAN_REQUEST_EXT_T)); Y2_WIFI_SCAN_REQUEST(prGlueInfo, request);
 
     /* check if there is any pending scan not yet finished */
     if(prGlueInfo->prScanRequest != NULL) {
