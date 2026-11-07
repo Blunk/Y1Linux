@@ -1,5 +1,30 @@
 # Roadmap gap audit
 
+## Y1 Wi-Fi W1–W2, firmware record and driver built — 2026-11-07
+
+Boundary review before preparing the Y1's Wi-Fi ([plan](Y1-WIFI-PLAN.md) §7–§8; owner-approved; offline, nothing
+on the Y1). Evidence since W0: the owner-approved hash comparison (the Y2's `WIFI_RAM_CODE_MT6582` is the file an
+MT6572 phone ships); the owner's backup shows no factory Wi-Fi calibration and no Wi-Fi MAC (the stock userdata
+record is the library default). W2 compiles the Y2's fullmac for the Y1 in place, against the Y1's header, with
+the Y2's production kernel byte-identical (`a68fdffd…`, `b5ae438d…`, all 48 connectivity objects) and the Y1's
+thirty-fourth `.config` unchanged. No device tree carries the Wi-Fi resources, so nothing probes. Gaps unchanged:
+the radio's Wi-Fi output on this board, the firmware beside the 2013 Bluetooth patch, the WMT Wi-Fi command
+question (all W3/W4). Not proceeding past W2: W3 (first Wi-Fi firmware boot) needs its own admission and audit.
+
+## Y1 Wi-Fi W0, a new radio function — 2026-11-07
+
+Boundary review before a new hardware subsystem on the Y1 ([plan](Y1-WIFI-PLAN.md), W0; documentation only).
+Evidence, offline from the owner's backup and system partition: the Y1 was built with `MTK_WLAN_SUPPORT = no`
+and holds no Wi-Fi firmware or driver (no `WIFI_RAM_CODE` anywhere in the eMMC dump, no `wlan*.ko`, no WLAN code
+in the stock kernel). The MT6572 has the Wi-Fi core: MediaTek's MT6572 drop gives the HIF window `0x180f0000` (as
+the Y2) and SPI 123, and builds the Y2's "mt6582" WLAN driver (version 2.0.1.1) for the MT6572 with explicit
+MT6572 handling (chip ID `0x6572`); the Y2's copy already accepts `0x6572`. Both chips load a file named
+`WIFI_RAM_CODE_MT6582`. The owner-approved hash comparison found the Y2's exact file (`4def3752…9b82`) in a
+public MT6572 phone's (Micromax A102) firmware set, so the owner's own Y2 copy is the firmware source. Gaps: the
+Y1's older (2013) Bluetooth patch beside that Wi-Fi code, and whether the board carries the Wi-Fi RF output
+(decided only by a scan). Bluetooth B7 and the
+charging, MTP and Reborn results are unchanged. Not proceeding past W0: no build, no hardware write implied.
+
 ## Y1 Bluetooth B7, radio firmware from the owner's copy — 2026-11-06
 
 Boundary review before a production-scope change: the shared platform (`y2-platform firmware`) takes an

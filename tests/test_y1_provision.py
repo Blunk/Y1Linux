@@ -49,10 +49,61 @@ class Y1Provision(unittest.TestCase):
         for data in (patch(b'ALPS', 0x21), patch(b'1319', 0x21), patch(b'1319', 0x12), patch(b'ALPS', 0x11)):
             with self.assertRaises(ValueError):
                 self.run_profile({'mt6572_82_patch_e1_0_hdr.bin': data}, 'y1')
+        other = self.root / 'libcustom_nvram.so'
+        other.write_bytes(b'\x7fELF\x01\x01\x01' + bytes(51217))  # the Y2's size, not the Y1's library
         with self.assertRaises(ValueError):
-            self.run_profile({'WMT_SOC.cfg': b'x'}, 'y1', custom=self.root / 'libcustom_nvram.so')
+            self.run_profile({'WMT_SOC.cfg': b'x'}, 'y1', custom=other)
         with self.assertRaises(ValueError):
             self.run_profile({'WMT_SOC.cfg': b'x'}, 'y3')
+
+    def test_y1_optional_wifi_firmware_is_staged_only_when_supplied(self):
+        files = {'WMT_SOC.cfg': b'coex_wmt_ant_mode=1\n', 'mt6572_82_patch_e1_0_hdr.bin': patch(b'1319', 0x11),
+                 'WIFI_RAM_CODE_MT6582': b'MTKW' + bytes(60)}
+        path = self.inventory(files)
+        data = json.loads(path.read_text())
+        data['files'][2]['optional'] = True
+        path.write_text(json.dumps(data))
+        with mock.patch.object(provision, 'Y1_INVENTORY', path):
+            receipt = provision.provision(self.source, self.root / 'with', None, 'y1')
+            self.assertIn('WIFI_RAM_CODE_MT6582', [f['filename'] for f in receipt['files']])
+            (self.source / 'WIFI_RAM_CODE_MT6582').unlink()
+            receipt = provision.provision(self.source, self.root / 'without', None, 'y1')
+            self.assertNotIn('WIFI_RAM_CODE_MT6582', [f['filename'] for f in receipt['files']])
+            # Supplied but wrong is refused, as any inventory file.
+            (self.source / 'WIFI_RAM_CODE_MT6582').write_bytes(b'MTKW' + bytes(59) + b'x')
+            with self.assertRaises(ValueError):
+                provision.provision(self.source, self.root / 'wrong', None, 'y1')
+
+    def test_y1_wifi_defaults_from_the_y1_library(self):
+        record = bytearray(512)
+        record[0:2] = b'\x04\x01'
+        record[196] = 1
+        record[12:16] = b'\x26\x26\x00\x00'
+        library = bytearray(b'\x7fELF\x01\x01\x01' + bytes(0x4000))
+        library[0x3cf4:0x3ef4] = record
+        lib = self.root / 'y1-libcustom_nvram.so'
+        lib.write_bytes(library)
+        pins = {'Y1_CUSTOM_SIZE': len(library), 'Y1_CUSTOM_SHA': hashlib.sha256(library).hexdigest(),
+                'Y1_WIFI_DEFAULTS': (512, hashlib.sha256(record).hexdigest())}
+        files = {'WMT_SOC.cfg': b'coex_wmt_ant_mode=1\n', 'mt6572_82_patch_e1_0_hdr.bin': patch(b'1319', 0x11)}
+        with mock.patch.multiple(provision, **pins):
+            receipt = self.run_profile(files, 'y1', custom=lib)
+        self.assertEqual((self.root / 'out/WIFI.defaults').read_bytes(), bytes(record))
+        self.assertEqual(receipt['default_record_source_sha256'], pins['Y1_CUSTOM_SHA'])
+        self.assertNotIn('BT.defaults', [f['filename'] for f in receipt['files']])
+        # A record with an address, or any other byte changed, is refused.
+        for at, value in ((4, 0x02), (100, 0x55)):
+            changed = bytearray(library)
+            changed[0x3cf4 + at] = value
+            lib.write_bytes(changed)
+            pins['Y1_CUSTOM_SHA'] = hashlib.sha256(changed).hexdigest()
+            with mock.patch.multiple(provision, **pins), self.assertRaises(ValueError):
+                provision.provision(self.source, self.root / f'bad{at}', lib, 'y1')
+
+    def test_y1_wifi_default_pins_are_the_owner_backup_values(self):
+        self.assertEqual(provision.Y1_CUSTOM_SIZE, 37508)
+        self.assertTrue(provision.Y1_CUSTOM_SHA.startswith('0000ccf1'))
+        self.assertTrue(provision.Y1_WIFI_DEFAULTS[1].startswith('9cfed6e4'))
 
     def test_y2_two_part_rule_unchanged(self):
         receipt = self.run_profile({'mt6582_patch_e1_0_hdr.bin': patch(b'ALPS', 0x21),

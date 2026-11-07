@@ -8,7 +8,9 @@ No default address is allowed into the resulting files.
 
 Profile "y1" (Innioasis Y1, docs/planning/Y1-BLUETOOTH-PLAN.md): the Y1's own stock
 files (docs/knowledge/evidence/y1-firmware-inventory.json), one WMT patch part
-(platform "1319"), Bluetooth only, no Y2 default records.
+(platform "1319"), no Y2 default records. Inventory entries marked "optional" (the Wi-Fi
+firmware, from the owner's Y2 package: docs/planning/Y1-WIFI-PLAN.md) are staged only when
+supplied. The Y1's own libcustom_nvram.so gives its Wi-Fi default record (WIFI.defaults).
 """
 import argparse
 import hashlib
@@ -27,6 +29,11 @@ DEFAULTS = {
     'WIFI.defaults': (512, 'eb5e87224e3a493e825179f547fc13924f564a42730ea821b4359b5b36f4defe'),
     'BT.defaults': (64, 'f224ff4abfb45a612ef03249e87e4ecfa44b7c1f9f19ee3cc78ae354764d9472'),
 }
+# The Y1's stock /system/lib/libcustom_nvram.so and its Wi-Fi default (Y1-WIFI-PLAN.md W1): the
+# record the stock userdata kept unchanged since the factory (MAC all zero: never calibrated).
+Y1_CUSTOM_SHA = '0000ccf1a2d2a67c5836ebb5881eaf938b619566585523df1d702745c72b3ebd'
+Y1_CUSTOM_SIZE = 37508
+Y1_WIFI_DEFAULTS = (512, '9cfed6e4edabc7b6677d4e81972614fa67429006977d7910bfa24b33c68ba8b4')
 
 
 def verify_provision(directory):
@@ -97,16 +104,30 @@ def defaults(path):
     return {'WIFI.defaults': bytes(wifi), 'BT.defaults': bytes(bt)}
 
 
+def y1_defaults(path):
+    data = checked(path, Y1_CUSTOM_SIZE, Y1_CUSTOM_SHA)
+    # The second PT_LOAD maps file 0xe2c at VA 0x1e2c: the record is file 0x3cf4, VA 0x4cf4,
+    # the only 512-byte WIFI_CFG_PARAM_STRUCT (version 0x104, ucTxPwrValid 1) in the file.
+    if data[:7] != b'\x7fELF\x01\x01\x01':
+        raise ValueError('stock reader ELF format')
+    wifi = data[0x3cf4:0x3ef4]
+    if struct.unpack_from('<HH', wifi) != (0x104, 0) or wifi[196:198] != b'\x01\x00' or any(wifi[4:10]):
+        raise ValueError('stock Wi-Fi descriptor/default disagreement')
+    if hashlib.sha256(wifi).hexdigest() != Y1_WIFI_DEFAULTS[1]:
+        raise ValueError('stock Wi-Fi default mismatch')
+    return {'WIFI.defaults': wifi}
+
+
 def provision(source, destination, custom=None, profile='y2'):
     y1 = profile == 'y1'
     if profile not in ('y2', 'y1'):
         raise ValueError('unknown profile')
-    if y1 and custom:
-        raise ValueError('the Y2 default records do not apply to the Y1')
     inventory = json.loads((Y1_INVENTORY if y1 else INVENTORY).read_text())
     staged = {}
     for entry in inventory['files']:
         name = entry['filename']
+        if entry.get('optional') and not os.path.lexists(source / name):
+            continue
         staged[name] = checked(source / name, entry['bytes'], entry['sha256'])
     # Validate the actual patch headers, not filename sorting. The Y2's patch
     # comes in two parts ("ALPS"); the Y1's in one ("1319").
@@ -122,7 +143,7 @@ def provision(source, destination, custom=None, profile='y2'):
     if sorted(seq for seq, _ in patches) != list(range(1, count_expected + 1)):
         raise ValueError('incomplete patch set')
     if custom:
-        staged.update(defaults(custom))
+        staged.update(y1_defaults(custom) if y1 else defaults(custom))
     if destination.exists():
         raise ValueError('fresh owner staging directory required')
     destination.mkdir(parents=True, mode=0o700)
@@ -132,7 +153,7 @@ def provision(source, destination, custom=None, profile='y2'):
                'owner_supplied': True, 'contains_device_calibration': False,
                'contains_radio_addresses': False,
                'patch_order': [name for _, name in sorted(patches)],
-               'default_record_source_sha256': CUSTOM_SHA if custom else None,
+               'default_record_source_sha256': (Y1_CUSTOM_SHA if y1 else CUSTOM_SHA) if custom else None,
                'files': []}
     for name, data in staged.items():
         path = destination / name

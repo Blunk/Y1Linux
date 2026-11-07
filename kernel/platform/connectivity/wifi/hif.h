@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef Y2_WIFI_HIF_H
 #define Y2_WIFI_HIF_H
-#include "../conn.h"
+/* The connectivity owner's header: the Y2's (../conn.h, -I$(src)/..) or, in the Innioasis Y1
+ * build, the Y1's (Makefile). */
+#include "conn.h"
 struct y2_wifi;
 typedef struct _GL_HIF_INFO_T {
     struct device *Dev;

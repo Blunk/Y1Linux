@@ -214,7 +214,7 @@
     {
       "path": "drivers/bluetooth/Kconfig",
       "base_sha256": "a0b6ea9a78333069406f5e3fb7aa099ebb62917c0a6ffda0e0593f829f14cac7",
-      "result_sha256": "b2607551ff6aeace720692d8bbb51aa852f413417f391755b4721504cec3c22c",
+      "result_sha256": "7623354cb72abf6e8cf0d8294b6da3ba64d72bec1075d59c4cf00109321ec94e",
       "patch": "0036-innioasis-y1-bluetooth-kconfig.patch"
     },
     {
@@ -234,6 +234,12 @@
       "base_sha256": "3d3d11ad9dcf46e500b815249ac3a29c90b1f882c2e59e7e7c5e217256171d5e",
       "result_sha256": "0208b65da851b3c6ee3433381475a4faefada3acc46869e1db21d6649bc21125",
       "patch": "0039-mt6572-reserve-conn-textofs.patch"
+    },
+    {
+      "path": "drivers/Makefile",
+      "base_sha256": "32d5e6823a71712aaab73276e574a8c24c386602c2c05a4085d1e2abfa381d01",
+      "result_sha256": "c50511de5b3c568facc94a3fb9fd728d34c68b76e740f99d6d2d757c908c8f1b",
+      "patch": "0040-innioasis-y1-wifi-drivers-makefile.patch"
     }
   ],
   "added": [
@@ -435,12 +441,12 @@
     {
       "path": "drivers/bluetooth/conn.h",
       "source": "kernel/y1/connectivity/conn.h",
-      "sha256": "9590072ce6b16f8655fb34deb8d17c5a6481f526d0c815ebd0f526a8fd448628"
+      "sha256": "9c402199b68e3f6bfe242ee1a2944553dd0debd1dffa6bc343a8043d2fb9c2b8"
     },
     {
       "path": "drivers/bluetooth/y1-conn-policy.h",
       "source": "kernel/y1/connectivity/y1-conn-policy.h",
-      "sha256": "8c04b64b1b58e9df7fa626bf0d414a487859a4f8248504a8f29c192c1911ea0b"
+      "sha256": "b8aa70423d8ea5841f59201d4a0e8295dcdf670efa8d093a9571ece466b33f2f"
     },
     {
       "path": "drivers/bluetooth/protocol.h",
@@ -450,7 +456,7 @@
     {
       "path": "drivers/bluetooth/y1-conn-core.c",
       "source": "kernel/y1/connectivity/core.c",
-      "sha256": "7851a23b4e0ac228c80ac02da745cbcc38f4d241932679ff43efcac99eec52a4"
+      "sha256": "75a4af9bd577bf40112f9dd0d9df08cb8e0886cdfde77d3e57b498224cd96528"
     },
     {
       "path": "drivers/bluetooth/y1-conn-wmt.c",

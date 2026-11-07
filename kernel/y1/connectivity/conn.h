@@ -3,9 +3,10 @@
 #define Y2_CONN_H
 /*
  * Innioasis Y1 (MT6572) build of the Y2's connectivity owner (docs/planning/Y1-BLUETOOTH-PLAN.md
- * B2). The Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h are compiled unchanged against this
- * header (it keeps the Y2's names and include guard), so it carries every field they use; the
- * Y1's own core.c and wmt.c hold what differs. Bluetooth only: no Wi-Fi, no modem, no RGU reset.
+ * B2). The Y2's btif.c, stp.c, hci.c, firmware.c, protocol.h and its wifi/ fullmac
+ * (docs/planning/Y1-WIFI-PLAN.md W2) are compiled unchanged against this header (it keeps the Y2's
+ * names and include guard), so it carries every field they use; the Y1's own core.c and wmt.c hold
+ * what differs. Bluetooth and Wi-Fi; no modem, no RGU reset.
  */
 #include <linux/clk.h>
 #include <linux/completion.h>
@@ -24,13 +25,16 @@
 #include "y1-conn-policy.h"
 
 #define Y2_CONN_BT 0
+#define Y2_CONN_WIFI 3
 #define Y2_CONN_WMT 4
 #define Y2_CONN_DMA_SIZE 8192
 /* firmware_class.path=/data/firmware: the platform installs the owner's copy in /data/firmware/mt6572
  * (y2-platform firmware, the Y1 table; Y1-BLUETOOTH-PLAN.md §16). */
 #define Y2_CONN_FW "mt6572/"
-/* The owner's stock /system/etc/firmware (docs/knowledge/evidence/y1-firmware-inventory.json). */
+/* The owner's stock /system/etc/firmware (docs/knowledge/evidence/y1-firmware-inventory.json); the
+ * Wi-Fi firmware is the owner's Y2 copy (the Y1 has none; the same file an MT6572 phone ships). */
 #define Y2_CONN_FIRMWARE { \
+	{Y2_CONN_FW "WIFI_RAM_CODE_MT6582", 160368, {0x4d,0xef,0x37,0x52,0x2e,0x2b,0xfd,0x2d,0x4b,0x78,0xe0,0x1b,0xf9,0xf5,0x67,0xa3,0x7e,0x3f,0x67,0xab,0x3d,0x7b,0x66,0x46,0xff,0xb3,0x17,0xf5,0xb2,0xb4,0x9b,0x82}}, \
 	{Y2_CONN_FW "WMT_SOC.cfg", 82, {0x16,0x1f,0x18,0xb6,0x86,0xe5,0x9a,0x76,0x33,0x68,0xff,0xb1,0xd8,0x22,0x9f,0x15,0x8f,0xa6,0x14,0x93,0xec,0xc3,0xdf,0xf5,0xc6,0xef,0x8c,0x11,0xa7,0xf5,0xf1,0xe0}}, \
 	{Y2_CONN_FW "mt6572_82_patch_e1_0_hdr.bin", 39868, {0x5c,0x13,0xeb,0xad,0x70,0xfb,0xdd,0xc1,0x04,0x10,0xc6,0x75,0xfd,0xce,0x84,0xe8,0x9f,0x5d,0xb9,0xfa,0x13,0x23,0xf9,0xd7,0x87,0xec,0xa3,0xe9,0x6a,0x99,0xbf,0xc1}}, \
 }
@@ -46,13 +50,13 @@ struct y2_conn {
 	struct mutex lifecycle, command, stp_lock, dma_tx, dma_rx, recovery_lock;
 	/* spm, btif, dma: btif.c owns [1] and [2]; the SPM clock is never gated again (stock). */
 	struct clk_bulk_data clocks[3];
-	/* vcn18, vcn28, vcn33-bt, vcn33-wifi (the last only for RF calibration, as stock). */
+	/* vcn18, vcn28, vcn33-bt, vcn33-wifi (the last for RF calibration and while Wi-Fi runs, as stock). */
 	struct regulator_bulk_data rails[4];
 	struct regmap *pmic, *spm, *infracfg;
 	bool rail_on[4], clock_on, factory_ready, activated, recovering, pmic_ready;
 	unsigned long last_recovery;
 	unsigned automatic_recoveries;
-	bool hci_recovery_pending;
+	bool hci_recovery_pending, wifi_wanted, wifi_ready;
 	void __iomem *mcu, *emi, *btif, *txdma, *rxdma;
 	int irq[4];
 	unsigned char *txbuf, *rxbuf;
@@ -81,6 +85,8 @@ struct y2_conn {
 	unsigned char bt_address[6];
 	unsigned hci_needed;
 	unsigned char bt_factory[Y1_CONN_RECORD_SIZE];
+	unsigned char wifi_factory[Y1_CONN_WIFI_RECORD_SIZE];
+	struct platform_device *wifi;
 	/* Bring-up stages (B4/B5): the DT mode, a pending abort, the calibration event seen. */
 	unsigned mode, calibration_size, calibration_status;
 	bool abort;

@@ -199,4 +199,41 @@ static inline int y1_conn_rf_result(const unsigned char *p, unsigned size)
  * core then signals sleep on SPM 0x100063b4 bit 11 and the power-off's wait ends at once. */
 static const unsigned char y1_conn_wmt_sleep[] = {1, 3, 1, 0, 1};
 static const unsigned char y1_conn_wmt_sleep_reply[] = {2, 3, 2, 0, 0, 1};
+
+/*
+ * Wi-Fi (docs/planning/Y1-WIFI-PLAN.md W2). MediaTek's MT6572 HIF window and interrupt (the Acer MT6572
+ * drop: mt_reg_base.h CONN_HIF_BASE 0xF80F0000, i.e. 0x180f0000; mt_irq.h MT_WF_HIF_IRQ_ID = SPI 123;
+ * level-low INFERRED from the Y2). Both are optional in the node: without them the driver stays
+ * Bluetooth only and creates no Wi-Fi device; with them they must be exactly these.
+ */
+static const struct y1_conn_range y1_conn_wifi_range = {"wifi", 0x180f0000, 0x5c};
+static const struct y1_conn_irq y1_conn_wifi_irq = {"wifi", 123};
+/* MediaTek's MT6572 WMT core sends the function command (opcode 06) for Bluetooth, GPS and FM only:
+ * wmt_func_wifi_on just probes the WLAN driver ("in soc, wmt turn on wifi directly"). The Y2's MT6582
+ * driver sends 01 06 02 00 03 01. 0 = as MediaTek's MT6572; W3 decides. */
+#define Y1_CONN_WIFI_WMT_FUNCTION 0
+/*
+ * The Wi-Fi record handed to the fullmac (WIFI_CFG_PARAM_STRUCT, 512 bytes): the Y1's stock default from
+ * /system/lib/libcustom_nvram.so (file 0x3cf4), which its stock userdata kept unchanged (the MAC all
+ * zero: no factory Wi-Fi calibration, no Wi-Fi address). Accepted only as that default with a MAC put in
+ * at bytes 4-9: unicast, non-zero, not the Bluetooth record's address. digest = SHA-256 of the record
+ * with bytes 4-9 zeroed; it must be the default's (9cfed6e4…).
+ */
+#define Y1_CONN_WIFI_RECORD_SIZE 512
+#define Y1_CONN_WIFI_MAC 4
+#define Y1_CONN_WIFI_DEFAULT_SHA256 { \
+	0x9c,0xfe,0xd6,0xe4,0xed,0xab,0xc7,0xb6,0x67,0x7d,0x4e,0x81,0x97,0x26,0x14,0xfa, \
+	0x67,0x42,0x90,0x06,0x97,0x7d,0x79,0x10,0xbf,0xa2,0x4b,0x33,0xc6,0x8b,0xa8,0xb4, \
+}
+static inline int y1_conn_wifi_record_check(const unsigned char *record, unsigned size,
+					    const unsigned char digest[32], const unsigned char bt_address[6])
+{
+	static const unsigned char wanted[32] = Y1_CONN_WIFI_DEFAULT_SHA256;
+	const unsigned char *mac = record + Y1_CONN_WIFI_MAC;
+	unsigned any = 0, differs = 0, other = 0;
+	if (size != Y1_CONN_WIFI_RECORD_SIZE || (mac[0] & 1)) return -1;
+	for (unsigned i = 0; i < 6; i++) { any |= mac[i]; other |= mac[i] ^ bt_address[i]; }
+	for (unsigned i = 0; i < 32; i++) differs |= digest[i] ^ wanted[i];
+	return any && other && !differs ? 0 : -1;
+}
 #endif
