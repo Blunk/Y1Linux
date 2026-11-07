@@ -6,8 +6,8 @@ comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and bui
 find networks: the Y1's Wi-Fi receives and transmits); **W5 PASS, throughput open** (§13: WPA2 association,
 DHCP, DNS, Internet and intact transfers on the owner's network, but 1–8 Mbit/s); **W6 built** (§14, owner-approved
 before W5b: Wi-Fi as a product, the Y2's connectivity service and Reborn's screens, the firmware imported from the
-two packages; its userspace PASS live on build 3, BOOTIMG build 5 to flash, the platform part with the next
-Y2ROOT); W5b open. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
+two packages; its userspace PASS live on build 3, BOOTIMG build 5 PASS on the Y1 with the late Wi-Fi record, the
+platform part with the next Y2ROOT); W5b open. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
 radio function, a transmitter, firmware not taken from this device): each stage has its own admission, and the
 roadmap audit is repeated before W3 (the first Wi-Fi power-on).
 
@@ -533,6 +533,16 @@ live run (still `dns_unavailable` until the new root). With the next Y2ROOT on t
 `network.json`, no `y2-calibration`, and the import from `Music/Firmware` (Y1 package first, then the Y2's). Remove
 the B6 placeholders then (B7 §17).
 
-**Open**: W5b (throughput with one access point, an upload, Bluetooth audio during a transfer), the late Wi-Fi
-record on hardware (build 5 with an empty `/data/firmware/mt6572`), the platform part on the device (next Y2ROOT),
-the action hook's pid file.
+**Build 5 on the Y1 — PASS** (flashed by the owner; the overrides in the running root equal the repository's):
+
+- Boot: Bluetooth powered, the Wi-Fi device registered and blocked, Wi-Fi off as left. Running: `wpa_supplicant`,
+  radiod and the monitor; no readiness supervisor (beta 9.3.12's platform lacks the policy, so the guard
+  holds). `y2-calibration` is still restarted, as expected with that root.
+- **The late Wi-Fi record**: the record and `WIFI.defaults` were put aside on Y2DATA, then a reboot. Activation
+  registered Bluetooth only: no Wi-Fi device, supplicant or monitor. Both files back, then S41 stop/start (what an
+  import does): `Wi-Fi registered after activation`, rfkill `y2-wifi` blocked, the supplicant and monitor
+  started, Bluetooth powered, no error. Wi-Fi on: the same address as before (the record's MAC), `country AT`,
+  gateway and DNS. Then off again (`/data/network/enabled` 0).
+
+**Open**: W5b (throughput with one access point, an upload, Bluetooth audio during a transfer), the platform part
+on the device (next Y2ROOT), the action hook's pid file.
