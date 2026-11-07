@@ -1,10 +1,10 @@
-//! The seven radio files: read from a stock system.img or a directory, checked against the reviewed
-//! sizes and hashes (with the two board defaults derived from the stock reader library), installed
-//! on Y2DATA in one rename.
+//! The radio files (the Y2's seven, or an image's radio-firmware.json set): read from a stock
+//! system.img or a directory, checked against the reviewed sizes and hashes (with the board defaults
+//! derived from a stock library), installed on Y2DATA in one rename.
 // SPDX-License-Identifier: GPL-2.0-only
 use super::{
-    fs, os_path, py, sha256_hex, Error, Ext4, Files, Image, OpenOptions, Path, Result, Reviewed,
-    Root, DEFAULTS, FILES, TARGET,
+    fs, hex, os_path, py, sha256_hex, Error, Ext4, Files, Image, OpenOptions, Path, Result,
+    Reviewed, Root, Slice,
 };
 use std::io::Write;
 use std::os::unix::fs::DirBuilderExt;
@@ -43,6 +43,29 @@ pub(super) fn defaults(custom: &[u8]) -> Result<Files> {
     ])
 }
 
+/// The configured default records (radio-firmware.json): each slice of the library, which must
+/// start with its expected bytes, with its leading bytes cleared.
+pub(super) fn sliced(slices: &[Slice], library: &[u8]) -> Result<Files> {
+    let layout = || Error::Value("stock_reader_library_layout".into());
+    if !library.starts_with(b"\x7fELF") {
+        return Err(layout());
+    }
+    let mut out = Vec::new();
+    for slice in slices {
+        let end = slice
+            .offset
+            .checked_add(slice.size as usize)
+            .ok_or_else(layout)?;
+        let mut data = library.get(slice.offset..end).ok_or_else(layout)?.to_vec();
+        if !data.starts_with(&hex(&slice.expect).ok_or_else(layout)?) {
+            return Err(layout());
+        }
+        data[..slice.clear].fill(0);
+        out.push((slice.name.clone(), data));
+    }
+    Ok(out)
+}
+
 pub(super) fn get<'a>(files: &'a Files, name: &str) -> Option<&'a Vec<u8>> {
     files.iter().find(|(n, _)| n == name).map(|(_, d)| d)
 }
@@ -66,13 +89,13 @@ pub(super) fn checked(reviewed: &Reviewed, files: Files) -> Result<Files> {
         }
     }
     order.sort();
-    if order != [1, 2] {
+    if order != reviewed.patches {
         return Err(Error::Value("firmware_patch_order".into()));
     }
     Ok(files)
 }
 
-/// The seven files from the stock system.img (sparse or raw ext4).
+/// The radio files from the stock system.img (sparse or raw ext4).
 pub(super) fn from_system_image(reviewed: &Reviewed, path: &Path) -> Result<Files> {
     let mut fs = Ext4::new(Image::open(path)?)?;
     let mut files: Files = Vec::new();
@@ -84,13 +107,17 @@ pub(super) fn from_system_image(reviewed: &Reviewed, path: &Path) -> Result<File
     }
     let custom = fs.read(&reviewed.custom.0, reviewed.custom.1)?;
     if custom.len() as u64 != reviewed.custom.1 || sha256_hex(&custom) != reviewed.custom.2 {
-        return Err(Error::Value("firmware_mismatch:libcustom_nvram.so".into()));
+        let name = reviewed.custom.0.rsplit('/').next().unwrap_or_default();
+        return Err(Error::Value(format!("firmware_mismatch:{name}")));
     }
-    files.extend(defaults(&custom)?);
+    files.extend(match &reviewed.slices {
+        None => defaults(&custom)?,
+        Some(slices) => sliced(slices, &custom)?,
+    });
     checked(reviewed, files)
 }
 
-/// The seven files from a directory (a root's /lib/firmware/mediatek/mt6582).
+/// The radio files from a directory (a root's /lib/firmware/mediatek/mt6582).
 pub(super) fn from_directory(reviewed: &Reviewed, path: &Path) -> Result<Files> {
     let mut files = Vec::new();
     for (name, size, _) in reviewed.all() {
@@ -111,18 +138,22 @@ pub(super) fn from_directory(reviewed: &Reviewed, path: &Path) -> Result<Files> 
 ///
 /// The service and the USB views ask every pass: the reviewed tables as they are, nothing copied.
 pub fn present(root: &Root) -> bool {
-    let target = root.path(TARGET);
-    FILES.iter().chain(&DEFAULTS).all(|(name, size, _)| {
+    let Ok(reviewed) = Reviewed::of(root) else {
+        return false;
+    };
+    let target = root.path(&reviewed.target);
+    let every = reviewed.all().all(|(name, size, _)| {
         target
             .join(name)
             .symlink_metadata()
             .is_ok_and(|m| m.len() == *size && m.file_type().is_file())
-    })
+    });
+    every
 }
 
 /// Every reviewed file is in place with the reviewed hash.
 pub(super) fn installed(root: &Root, reviewed: &Reviewed) -> bool {
-    from_directory(reviewed, &root.path(TARGET)).is_ok()
+    from_directory(reviewed, &root.path(&reviewed.target)).is_ok()
 }
 
 /// `shutil.rmtree(path, ignore_errors=True)`.
@@ -138,13 +169,16 @@ fn rmtree(path: &Path) {
 /// Write the checked files to Y2DATA: a fresh directory, then one rename.
 pub(super) fn install(root: &Root, reviewed: &Reviewed, files: Files) -> Result<()> {
     let files = checked(reviewed, files)?;
-    let target = root.path(TARGET);
-    let Some(parent) = target.parent().map(Path::to_path_buf) else {
+    let target = root.path(&reviewed.target);
+    let (Some(parent), Some(name)) = (
+        target.parent().map(Path::to_path_buf),
+        target.file_name().map(|n| n.to_string_lossy().into_owned()),
+    ) else {
         return Err(Error::Value("firmware_target_unsafe".into()));
     };
     crate::reply::mkdir_parents(&parent, 0o700)?;
     let pid = std::process::id();
-    let staging = parent.join(format!(".mt6582.{pid}"));
+    let staging = parent.join(format!(".{name}.{pid}"));
     rmtree(&staging);
     fs::DirBuilder::new()
         .mode(0o700)
@@ -167,7 +201,7 @@ pub(super) fn install(root: &Root, reviewed: &Reviewed, files: Files) -> Result<
     {
         return Err(Error::Value("firmware_target_unsafe".into()));
     }
-    let old = parent.join(format!(".mt6582.old.{pid}"));
+    let old = parent.join(format!(".{name}.old.{pid}"));
     if target.exists() {
         fs::rename(&target, &old).map_err(|e| rename_error(e, &target, &old))?;
     }

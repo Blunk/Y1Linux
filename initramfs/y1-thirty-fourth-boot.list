@@ -1,6 +1,6 @@
 # Innioasis Y1 thirty-fourth-boot initramfs (usr/gen_init_cpio list): the twenty-eighth-boot list with Bluetooth
 # (initramfs/y1-bluetooth, docs/planning/Y1-BLUETOOTH-PLAN.md, B6): its service list (D-Bus, S41y2-connectivity) and
-# the Y1's S41y2-connectivity.
+# the Y1's S41y2-connectivity; B7: the Y1's radio firmware set (/etc/y2linux/radio-firmware.json).
 # Twenty-eighth-boot description: the twenty-fifth-boot list with the quiet boot
 # (docs/planning/Y1-BOOT-SPLASH-PLAN.md): /dev/ttyS0 for PID1's text and reborn-boot-services starting reborn-splash.
 # Twenty-fifth-boot description: the twenty-first-boot list with MTP
@@ -47,6 +47,7 @@ file /y1-system/etc/y2linux/audio-enabled.json /project/initramfs/y1-reborn/etc/
 file /y1-system/etc/init.d/S03y1-data /project/initramfs/y1-data/etc/init.d/S03y1-data 0755 0 0
 file /y1-system/etc/y2linux/battery-profile.json /project/initramfs/y1-power/etc/y2linux/battery-profile.json 0644 0 0
 file /y1-system/etc/y2linux/power-policy.json /project/initramfs/y1-power/etc/y2linux/power-policy.json 0644 0 0
+file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json 0644 0 0
 dir /y1-system/data 0755 0 0
 dir /y1-system/data/ssh 0755 0 0
 dir /y1-system/data/ssh/authorized_keys.d 0700 0 0

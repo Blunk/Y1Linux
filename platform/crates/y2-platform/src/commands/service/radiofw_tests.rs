@@ -160,6 +160,7 @@ impl Firmware {
             files: table(&files),
             defaults: table(&defaults(&custom).unwrap()),
             custom: (CUSTOM.0.into(), custom.len() as u64, sha256_hex(&custom)),
+            ..Reviewed::stock()
         };
         Self {
             fixture: Fixture::new().with_answers(radios()),

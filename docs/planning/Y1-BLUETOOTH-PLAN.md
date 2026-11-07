@@ -618,3 +618,85 @@ and a note in `/data/firmware/Y1-MT6582-PLACEHOLDERS.txt`; the status is then `R
 bytes: the Y1 driver loads the MT6572 set, `y2-factory` (the only reader of `/lib/firmware/mediatek/mt6582`) is not
 run, and the hash-checking scan/install runs only while the state is `Missing`. Still open: a Y1-aware firmware
 state in the platform.
+
+## 16. B7 plan: radio firmware from the owner's copy — 2026-11-06
+
+Owner-approved, roadmap audit first (`roadmap-gap-audit.md`, "Y1 Bluetooth B7"). Goal: a fresh Y1 gets Bluetooth
+the way a Y2 does (RELEASE-49). The owner copies `system.img` from the Y1's firmware package into a `Firmware`
+folder over USB, and the player checks it, installs the radio files, deletes the copy and starts Bluetooth. No
+hand-copied files, no extracted record, no placeholders.
+
+**The source** (verified offline): the public Y1 3.0.2 `rom.zip` (`7ee9aa5b…`, the same file as the 2026-11-04
+evidence) contains `system.img`, a raw ext4 image of 681 574 400 bytes (`5b617698…`, the ANDROID partition's size):
+
+| In `system.img` | Bytes | SHA-256 | Use |
+| --- | --- | --- | --- |
+| `/etc/firmware/WMT_SOC.cfg` | 82 | `161f18b6…f1e0` | as pinned since B0 |
+| `/etc/firmware/mt6572_82_patch_e1_0_hdr.bin` | 39 868 | `5c13ebad…bfc1` | as pinned; header byte 24 `0x11` (one part) |
+| `/lib/libbluetooth_mtk.so` | 13 452 | `36f2ea80…afd7` | the stock default `BT_Addr` record, once, at file `0x3004` |
+
+The library's record is the generic address `00:00:46:65:72:01` and then bytes 6–29 equal to the owner's own
+record (bytes 30–31, unused, differ). The stock record itself exists only in stock USRDATA (`/nvram`). It is in no
+raw partition (NVRAM, PROTECT_F/S searched in the backup), so an installed Y1 can no longer read it.
+
+**Design** (owner decisions, 2026-11-06/07: the platform's own import, configured by the image rather than by
+detecting the board; folder `/data/firmware/mt6572`, named like the Y2's `/data/firmware/mt6582`; a random
+per-device address when no stock record is supplied; **no Reborn change**, so on the Y1 Reborn's firmware page
+still names the Y2 package and the "Firmware drive"):
+
+1. **Platform** (`y2-platform firmware`, `radiofw`): an image may carry `/etc/y2linux/radio-firmware.json`. It
+   lists the target folder, the copy's folder and its note, the files of the stock `/etc/firmware` (name, size,
+   SHA-256), the stock library, the default records cut from it (offset, size, the expected leading bytes, the
+   bytes to clear, SHA-256) and the patch order. Without the file the Y2's built-in tables apply, byte for byte as
+   before. A file that is there but invalid is `Failed` (`radio_firmware_config`), never the Y2's tables. The root
+   is read-only, so the image vouches for the file like its other `/etc/y2linux` files.
+2. **Y1 image** (BOOTIMG overlay): `initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json` with the two files,
+   `/lib/libbluetooth_mtk.so` and `BT.defaults` (`0x3004`, 32 bytes, `000046657201` expected, 6 cleared), patch
+   order `[1]`, inbox `/data/music/Firmware` (Music, the Y1's one MTP storage), installed by PID1 like the Y1's
+   other `/etc/y2linux` overrides. The driver loads `mt6572/…` (`Y2_CONN_FW`), so from `/data/firmware/mt6572/`.
+   The Y1's `S41y2-connectivity`:
+   - moves the B5/B6 hand-copied `/data/firmware/mediatek/mt6572` to `/data/firmware/mt6572` once;
+   - while `firmware status` is not `Ready`, runs `y2-platform firmware scan` every 5 s in the background (the Y1
+     has no Y2 service daemon); the scan restarts S41 itself after an install;
+   - if `/data/connectivity/bt-record` is missing, composes it from `BT.defaults` and a new random address:
+     unicast, locally administered, from `/dev/urandom`, root 0600, written once. An owner-supplied stock record
+     always wins;
+   - then activates hci0 as in B6.
+3. **Delivery**: the BOOTIMG part works with any Y2ROOT. The platform part needs a new Y2ROOT on the Y1; until
+   then the B6 workaround (placeholders) stays on the owner's Y1.
+
+## 17. B7 build — 2026-11-07
+
+- **Platform** (`radiofw.rs`, `radiofw/files.rs`, `radiofw/copy.rs`): `Config`/`Entry`/`Slice` (serde,
+  `deny_unknown_fields`) and `Reviewed::of(root)`. Validation: schema 1, the target under `/data/firmware/`, absolute
+  paths without `..`, plain file names, 64-digit hashes, slices that fit. `Reviewed` gains the slices, the patch
+  order, the target, the inbox and the note; `sliced()` cuts the defaults. The staging names come from the target;
+  the library's name is in its mismatch reason. No contract change: `firmware status` answers as before.
+- **Tests**:
+  - platform: 4 new `radiofw` tests (no config keeps the Y2 tables; a set is read and nine bad ones refused, each
+    `Failed`/not present; the slices need the stock layout; a full scan install from a synthetic raw-ext4 image
+    through a config, into `/data/firmware/mt6572`, the configured note and folder gone afterwards), 15/15. The
+    whole platform suite passes. The golden suites fail exactly as at `HEAD` (the 20 pre-existing differential
+    failures, the 4 reports failures; `boot-evidence-rotation` is flaky on both).
+  - The Y1's config was checked against the real stock files (sizes, hashes, the expected bytes, the derived
+    `BT.defaults` hash) from the public `rom.zip`.
+  - Y1: `test_y1_connectivity` 28 (1 skipped) in the build userspace: the config equals the firmware inventory,
+    PID1 and the list install it, `Y1RecordB7`. `compose()` was also run with the Y1's BusyBox in a temporary
+    folder: 0600, settings kept, first octet `0x4a`.
+  - The code-quality ratchet passes.
+- **Build** `out/y1-thirty-fourth-boot-5`: BOOTIMG **`01f78b589490fea3f417c2bbe7c9f412dde6a11848c7c548e36f5c87af35ab0d`**,
+  zImage-dtb `b845699f…8234`, `y1-init` `d278e15b…5ba4` (the new override); DTB and `.config` as build 3. Build 4
+  (`be0596e2…`) was the board-detection variant, superseded and never flashed.
+- **Owner procedure:**
+  1. Flash build 5 now; with today's Y2ROOT Bluetooth keeps working (the folder is moved once, the record kept;
+     the old platform ignores the config and still sees the B6 placeholders as `Ready`).
+  2. The import itself arrives with the next Y2ROOT. Then:
+     - remove the B6 placeholders (`/data/firmware/mt6582`, `/data/firmware/Y1-MT6582-PLACEHOLDERS.txt`);
+     - `firmware status` answers `Missing`. Reborn names the Y2 package (owner decision), but
+       `Music/Firmware/README.txt` names the Y1's;
+     - copy `system.img` from the Y1 3.0.2 `rom.zip` into `Music/Firmware`. It is installed within about 10 s and
+       the copy deleted. `firmware status` answers `{"state":"Ready"}`, and Bluetooth works with the owner's
+       stock record kept;
+     - a fresh Y1 without a record gets a random address (`compose`).
+- **Not covered:** a second `system.img` copied after the install stays until deleted (on the Y2 the service
+  daemon's `leftover` removes it; the Y1 runs no scan once Ready).

@@ -26,7 +26,9 @@
 #define Y2_CONN_BT 0
 #define Y2_CONN_WMT 4
 #define Y2_CONN_DMA_SIZE 8192
-#define Y2_CONN_FW "mediatek/mt6572/"
+/* firmware_class.path=/data/firmware: the platform installs the owner's copy in /data/firmware/mt6572
+ * (y2-platform firmware, the Y1 table; Y1-BLUETOOTH-PLAN.md §16). */
+#define Y2_CONN_FW "mt6572/"
 /* The owner's stock /system/etc/firmware (docs/knowledge/evidence/y1-firmware-inventory.json). */
 #define Y2_CONN_FIRMWARE { \
 	{Y2_CONN_FW "WMT_SOC.cfg", 82, {0x16,0x1f,0x18,0xb6,0x86,0xe5,0x9a,0x76,0x33,0x68,0xff,0xb1,0xd8,0x22,0x9f,0x15,0x8f,0xa6,0x14,0x93,0xec,0xc3,0xdf,0xf5,0xc6,0xef,0x8c,0x11,0xa7,0xf5,0xf1,0xe0}}, \
