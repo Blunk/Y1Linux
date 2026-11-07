@@ -1,5 +1,17 @@
 # Roadmap gap audit
 
+## Y1 Wi-Fi W4, the first scans — 2026-11-07
+
+Boundary review before the Y1's first Wi-Fi reception and transmission ([plan](Y1-WIFI-PLAN.md) §11;
+owner-approved, country AT). Evidence: W3 passed on the Y1 (`b90ba27a`): the firmware boots and stops cleanly twice
+beside Bluetooth, `wlan0` registered with the record's address, no error. Found before W4: the fullmac's station
+scan is always active (`ais_fsm.c`, passive only in an RDD test build), so `iw … scan passive` would transmit;
+W4 therefore adds cfg80211's rule (a request without SSIDs listens only) behind a Y1-only build flag, the Y2
+byte-identical. Order: the regulatory database loaded and `AT` set, then a passive scan (receive only: does the
+board's Wi-Fi RF path reach an antenna?), and only if it finds networks an active scan. Bounds: no association,
+no `wpa_supplicant`, `wlan0` up only for the scans, the radio blocked afterwards. Gaps: the TX power and frequency
+offset are the stock defaults without factory calibration (W5 measures). Proceeding with W4 only.
+
 ## Y1 Wi-Fi W3, first Wi-Fi firmware boot — 2026-11-07
 
 Boundary review before the first Wi-Fi power on the Y1 ([plan](Y1-WIFI-PLAN.md) §9; owner-approved). Evidence: W2
