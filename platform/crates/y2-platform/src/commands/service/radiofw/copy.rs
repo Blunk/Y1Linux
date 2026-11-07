@@ -81,9 +81,24 @@ fn mkdir_exist_ok(path: &Path, mode: u32) -> Result<()> {
     }
 }
 
-/// Where the copy goes, created with its note when needed: the Firmware folder on
-/// Internal Storage, else the Firmware drive's folder on Y2DATA.
+/// The image's own place for the copy (radio-firmware.json `inbox`) and its note.
+fn configured(root: &Root) -> Option<(PathBuf, String)> {
+    let reviewed = Reviewed::of(root).ok()?;
+    let note = reviewed.note.unwrap_or_else(|| README.into());
+    Some((root.path(&reviewed.inbox?), note))
+}
+
+/// Where the copy goes, created with its note when needed: the image's configured folder, else the
+/// Firmware folder on Internal Storage, else the Firmware drive's folder on Y2DATA.
 pub(crate) fn inbox(root: &Root) -> Result<PathBuf> {
+    if let Some((folder, text)) = configured(root) {
+        mkdir_exist_ok(&folder, 0o755)?;
+        let note = folder.join("README.txt");
+        if !note.exists() {
+            fs::write(&note, text).map_err(|e| os_path(e, &note))?;
+        }
+        return Ok(folder);
+    }
     let folder = if internal(root) {
         let folder = root.path(INTERNAL_INBOX);
         mkdir_exist_ok(&folder, 0o755)?;
@@ -109,6 +124,9 @@ pub fn candidates(root: &Root) -> Vec<PathBuf> {
     let mut places = vec![root.path(INBOX), root.path(SD_INBOX)];
     if internal(root) {
         places.insert(0, root.path(INTERNAL_INBOX));
+    }
+    if let Some((folder, _)) = configured(root) {
+        places.insert(0, folder);
     }
     let inbox = root.path(INBOX);
     places.extend(
@@ -145,12 +163,17 @@ fn remove(root: &Root, source: &Path) {
     }
 }
 
-/// After the install the Internal Storage Firmware folder goes away again (only its
-/// note; anything the owner put there stays).
+/// After the install the Internal Storage (or the configured) Firmware folder goes away again (only
+/// its note; anything the owner put there stays).
 fn tidy(root: &Root) {
-    let folder = root.path(INTERNAL_INBOX);
-    if fs::remove_file(folder.join("README.txt")).is_ok() {
-        let _ = fs::remove_dir(&folder);
+    let configured = configured(root).map(|(folder, _)| folder);
+    for folder in [Some(root.path(INTERNAL_INBOX)), configured]
+        .into_iter()
+        .flatten()
+    {
+        if fs::remove_file(folder.join("README.txt")).is_ok() {
+            let _ = fs::remove_dir(&folder);
+        }
     }
 }
 
@@ -162,6 +185,9 @@ fn record_state(root: &Root, record: &Record) -> Result<()> {
 /// `firmware status`: Ready, the scan's Installing or Failed, or Missing with where the copy goes
 /// (and `no_space` when the computer's copy did not fit, #39).
 pub fn state(root: &Root) -> Status {
+    if let Err(error) = Reviewed::of(root) {
+        return Status::of("Failed", Some(error.text()));
+    }
     if present(root) {
         return Status::of("Ready", None);
     }

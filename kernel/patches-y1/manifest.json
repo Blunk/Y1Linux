@@ -435,7 +435,7 @@
     {
       "path": "drivers/bluetooth/conn.h",
       "source": "kernel/y1/connectivity/conn.h",
-      "sha256": "7cc3658bf9f563ebff487c3065a435625887e5e190b381b9e725386e79ef1df3"
+      "sha256": "9590072ce6b16f8655fb34deb8d17c5a6481f526d0c815ebd0f526a8fd448628"
     },
     {
       "path": "drivers/bluetooth/y1-conn-policy.h",

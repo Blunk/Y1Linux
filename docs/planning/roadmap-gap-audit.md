@@ -1,5 +1,20 @@
 # Roadmap gap audit
 
+## Y1 Bluetooth B7, radio firmware from the owner's copy — 2026-11-06
+
+Boundary review before a production-scope change: the shared platform (`y2-platform firmware`) takes an
+image-supplied radio firmware set (`/etc/y2linux/radio-firmware.json`) ([plan](Y1-BLUETOOTH-PLAN.md) §16, B7;
+owner-approved, owner decisions: configured by the image, no Reborn change, folder `/data/firmware/mt6572`, a random
+per-device address when no stock record is supplied). Evidence: B6 run 3
+on the Y1 (BOOTIMG `727315aa…`): hci0 up through BlueZ, powered by y2-radiod, inquiry finds the owner's headset,
+one pairing succeeded (not kept: adapter not pairable). Offline: the public Y1 3.0.2 `rom.zip` (`7ee9aa5b…`) holds
+a raw-ext4 `system.img` (`5b617698…`) whose `/etc/firmware` has the two pinned files, and whose
+`/lib/libbluetooth_mtk.so` (`36f2ea80…`) holds the stock default `BT_Addr` record once (`0x3004`); the stock record
+is in no raw partition (NVRAM, PROTECT_F/S) and is lost with USRDATA at install. Limits: the Y1 runs the Y2ROOT of
+1.0.0-beta.9.3.12 as written, so the platform change reaches it only with a new Y2ROOT; the Y2's outputs
+must stay byte-identical (no Y2 golden changes). Gaps unchanged (the platform gate's goldens failure). Proceeding
+with B7 only; no hardware write is implied.
+
 ## Y1 Bluetooth B4, first radio power — 2026-11-06
 
 Boundary review before the first power to the Y1's connectivity block ([plan](Y1-BLUETOOTH-PLAN.md), B4;

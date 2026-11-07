@@ -64,6 +64,8 @@ static const struct override overrides[] = {
 #ifdef Y1_THIRTY_FOURTH_BOOT
     /* Bluetooth: hci0 from the owner's record, then y2-radiod (docs/planning/Y1-BLUETOOTH-PLAN.md, B6). */
     { "/etc/init.d/S41y2-connectivity", 0755 },
+    /* B7: the Y1's radio firmware set for y2-platform firmware (/data/firmware/mt6572). */
+    { "/etc/y2linux/radio-firmware.json", 0644 },
 #endif
 };
 
