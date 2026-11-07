@@ -40,7 +40,7 @@ class Y1ConnectivityFacts(unittest.TestCase):
             self.assertIn(line, entry['function'])
         self.assertIn('no co_clock_flag', entry['function'])
 
-    def test_firmware_table_matches_the_inventory_and_has_no_modem_or_wifi(self):
+    def test_firmware_table_matches_the_inventory_and_has_no_modem(self):
         header = (Y1 / 'conn.h').read_text()
         self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
         rows = re.findall(r'\{Y2_CONN_FW "([^"]+)", (\d+), \{([^}]*)\}\}', header)
@@ -81,8 +81,16 @@ class Y1ConnectivityFacts(unittest.TestCase):
         for own in ('core.c', 'wmt.c'):
             self.assertEqual(added['drivers/bluetooth/y1-conn-' + own], 'kernel/y1/connectivity/' + own)
         self.assertEqual(added['drivers/bluetooth/conn.h'], 'kernel/y1/connectivity/conn.h')
-        # No Y2 modem, Wi-Fi or SPM code in the Y1 driver.
+        # No Y2 modem or SPM code in the Y1 driver; the Y2's Wi-Fi subtree is not copied either: the Y1 builds
+        # it in place (drivers/y2, mounted in every build) through overlay 0040, only with its own option.
         self.assertFalse(any(re.search(r'md\.c|wifi|domain\.h|spm', s) for s in added.values()))
+        makefile = (ROOT / 'kernel/patches-y1/0040-innioasis-y1-wifi-drivers-makefile.patch').read_text()
+        added_lines = [l[1:] for l in makefile.splitlines() if l.startswith('+') and not l.startswith('+++')]
+        self.assertEqual([l for l in added_lines if not l.startswith('#')],
+                         ['obj-$(CONFIG_BT_INNIOASIS_Y1_WIFI)\t+= y2/connectivity/wifi/'])
+        kconfig = (ROOT / 'kernel/patches-y1/0036-innioasis-y1-bluetooth-kconfig.patch').read_text()
+        self.assertIn('+config BT_INNIOASIS_Y1_WIFI\n+\tbool', kconfig)
+        self.assertIn('+\tdepends on BT_INNIOASIS_Y1 && CFG80211=y && RFKILL=y\n', kconfig)
 
     def test_only_the_b4_to_b6_trees_name_the_driver_each_with_its_limit(self):
         # B2 built it without a node; B4 admits the chip-id bring-up (no PA rail), B5 the wmt bring-up.
@@ -161,6 +169,10 @@ int main(void){
  for(unsigned i=0;i<4;i++)
   assert(!strcmp(y1_conn_irqs[i].name,irqs[i].name) && y1_conn_irqs[i].spi==irqs[i].spi);
  assert(Y1_CONN_CHIP==0x6572 && Y1_CONN_GIC_SPI==0 && Y1_CONN_LEVEL_LOW==8);
+ /* Wi-Fi (MediaTek's MT6572 CONN_HIF_BASE and MT_WF_HIF_IRQ_ID), optional in the node; no WMT command. */
+ assert(!strcmp(y1_conn_wifi_range.name,"wifi") && y1_conn_wifi_range.start==0x180f0000 &&
+        y1_conn_wifi_range.size==0x5c && !strcmp(y1_conn_wifi_irq.name,"wifi") && y1_conn_wifi_irq.spi==123);
+ assert(Y1_CONN_WIFI_WMT_FUNCTION==0 && Y1_CONN_WIFI_RECORD_SIZE==512 && Y1_CONN_WIFI_MAC==4);
 }
 ''')
 
@@ -368,6 +380,65 @@ int main(void){
             f'assert(y1_conn_record_check(r,{len(record)},d)=={want});}}'
             for record, want in cases)
         run_c('#include <assert.h>\n' + POLICY + 'int main(void){\n' + checks + '\n}\n')
+
+    def test_wifi_record_rule(self):
+        # A synthetic stand-in for the stock default: the rule compares the record, MAC zeroed, with the
+        # pinned hash, so the pin is swapped for this default's (the real pin is checked below).
+        default = bytearray(512)
+        default[0:2] = b'\x04\x01'
+        default[196] = 1
+        bt = bytes.fromhex('0a1b2c3d4e5f')
+        def record(mac, base=default):
+            r = bytearray(base)
+            r[4:10] = mac
+            return bytes(r)
+        changed = bytearray(default)
+        changed[12] = 0x30  # another TX power: not the stock default
+        cases = [(record(bytes.fromhex('020000aabbcc')), 0), (record(bytes(6)), -1),
+                 (record(bytes.fromhex('030000aabbcc')), -1), (record(bt), -1),
+                 (record(bytes.fromhex('020000aabbcc'), changed), -1), (record(bytes.fromhex('020000aabbcc'))[:511], -1)]
+        pin = c_bytes(hashlib.sha256(bytes(default)).digest())
+        policy = (Y1 / 'y1-conn-policy.h').read_text()
+        policy = re.sub(r'#define Y1_CONN_WIFI_DEFAULT_SHA256 \{[^}]*\}', '#define Y1_CONN_WIFI_DEFAULT_SHA256 ' + pin,
+                        policy)
+        checks = '\n'.join(
+            f' {{static const unsigned char r[]={c_bytes(rec + bytes(1))},d[]='
+            f'{c_bytes(hashlib.sha256(rec[:4] + bytes(6) + rec[10:]).digest())},b[]={c_bytes(bt)};'
+            f'assert(y1_conn_wifi_record_check(r,{len(rec)},d,b)=={want});}}'
+            for rec, want in cases)
+        run_c('#include <assert.h>\n#pragma clang diagnostic ignored "-Wunused-const-variable"\n'
+              '#pragma clang diagnostic ignored "-Wunused-function"\n' + policy + 'int main(void){\n' + checks + '\n}\n')
+
+    def test_wifi_default_pin_is_the_inventory_record(self):
+        policy = (Y1 / 'y1-conn-policy.h').read_text()
+        block = policy[policy.index('#define Y1_CONN_WIFI_DEFAULT_SHA256'):]
+        digest = bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', block[:block.index('}')]))
+        self.assertEqual(digest.hex(), INVENTORY['wifi_default_record']['sha256'])
+
+    def test_wifi_function_uses_its_pa_rail_and_no_wmt_command(self):
+        core = (Y1 / 'core.c').read_text().replace('int y2_conn_rail(', 'static int y2_conn_rail(')
+        run_c(MODEL + r"""
+static bool pmic_allowed(unsigned reg,unsigned mask){return (reg==0x416 && mask==BIT(5)) || (reg==0x418 && mask==BIT(14));}
+#define Y2_CONN_BT 0
+#define Y2_CONN_WIFI 3
+static unsigned switched[8],nswitched;
+static int y2_wmt_function(struct y2_conn *c,unsigned f,bool e){(void)c;switched[nswitched++]=f<<1|e;return 0;}
+""" + '\n'.join(function(core, name) for name in ('y2_conn_rail', 'function_rail', 'function_switch')) + r"""
+int main(void){
+ struct y2_conn c;
+ seed(&c,""" + str(BASELINE['ctl']) + r""",0x6572,false,Y1_MODE_FULL,true);
+ assert(function_rail(Y2_CONN_BT)==2 && function_rail(Y2_CONN_WIFI)==3);
+ /* Wi-Fi on: VCN33_WIFI enabled and under hardware control (MediaTek's HifAhbProbe), no WMT command. */
+ assert(!y2_conn_rail(&c,function_rail(Y2_CONN_WIFI),true) && !function_switch(&c,Y2_CONN_WIFI,true));
+ assert((pmic[0x418]&BIT(12)) && (pmic[0x418]&BIT(14)) && c.rail_on[3] && !c.rail_on[2] && !nswitched);
+ assert(!(pmic[0x416]&BIT(7)) && !(pmic[0x416]&BIT(5)));
+ /* Bluetooth still sends its function command. */
+ assert(!function_switch(&c,Y2_CONN_BT,true) && nswitched==1 && switched[0]==1);
+ /* Wi-Fi off: the rail and its hardware mode cleared, again no command. */
+ assert(!function_switch(&c,Y2_CONN_WIFI,false) && !y2_conn_rail(&c,function_rail(Y2_CONN_WIFI),false));
+ assert(!(pmic[0x418]&(BIT(12)|BIT(14))) && !c.rail_on[3] && nswitched==1);
+}
+""")
 
 
 # The B4 baseline (evidence-private/2026-11-06-y1-bt-b4/baseline.txt): CONN off, MD1 on from LK.
@@ -833,7 +904,7 @@ int main(void){
             .replace('int y2_conn_put(', 'static int y2_conn_put(')
         hci = (ROOT / 'kernel/platform/connectivity/hci.c').read_text()
         body = '\n'.join(function(core, n) for n in ('sleep_then_off', 'runtime_resume', 'runtime_suspend',
-                                                     'y2_conn_get', 'y2_conn_put'))
+                                                     'function_rail', 'function_switch', 'y2_conn_get', 'y2_conn_put'))
         body += '\n'.join(function(hci, n) for n in ('open', 'flush', 'close'))
         run_c(r"""
 #include <assert.h>
@@ -842,6 +913,8 @@ int main(void){
 #include <string.h>
 #define BIT(n) (1u<<(n))
 #define Y2_CONN_BT 0
+#define Y2_CONN_WIFI 3
+#define Y1_CONN_WIFI_WMT_FUNCTION 0
 #define READ_ONCE(x) (x)
 #define WRITE_ONCE(x,v) ((x)=(v))
 #define dev_warn(...) ((void)0)
@@ -938,8 +1011,9 @@ class Y1RecordB7(unittest.TestCase):
 
     def test_the_radio_firmware_set_is_the_inventory_and_the_stock_default_record(self):
         config = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json').read_text())
+        # The import is the Y1's own system.img: the optional Wi-Fi firmware comes from the Y2 package (W6).
         wanted = {f['filename']: (f['bytes'], f['sha256']) for f in INVENTORY['files']
-                  if f['filename'] != 'modem_1_2g_n.img'}
+                  if f['filename'] != 'modem_1_2g_n.img' and not f.get('optional')}
         self.assertEqual({f['name']: (f['size'], f['sha256']) for f in config['files']}, wanted)
         header = (Y1 / 'conn.h').read_text()
         self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
