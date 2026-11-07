@@ -6,20 +6,26 @@
 # (/data/connectivity/bt-record, root 0600: the owner's stock record from tools/connectivity/y1_bt_record.py,
 # else composed once from the stock defaults and a random address) handed to the driver, hci0 activated, then
 # y2-radiod, which powers Bluetooth through BlueZ and starts bluetoothd and BlueALSA itself.
+# Wi-Fi (docs/planning/Y1-WIFI-PLAN.md, W3), only with a Wi-Fi build (the driver's wifi_factory) and the owner's
+# WIFI.defaults in the firmware folder: the 512-byte record (/data/connectivity/wifi-record, root 0600: the Y1's
+# default with a random local address) handed over before activation. Wi-Fi then stays off until its rfkill switch
+# is unblocked: /data/network/enabled starts at 0, which y2-radiod applies at its start. No wpa_supplicant here.
 # The power daemon's shutdown calls stop-wifi, stop-bluetooth and stop-daemon one by one, as on the Y2.
 C=/sys/devices/platform/18070000.connectivity
 RECORD=/data/connectivity/bt-record
+WRECORD=/data/connectivity/wifi-record
 FIRMWARE=/data/firmware/mt6572
 WAIT=/run/y2/radio-firmware-wait.pid
 
 layout() {
 	umask 077
-	for dir in bluetooth bluetooth/bluez bluetooth/bluealsa connectivity system system/platform; do
+	for dir in network bluetooth bluetooth/bluez bluetooth/bluealsa connectivity system system/platform; do
 		[ ! -L "/data/$dir" ] || return 1
 		mkdir -p "/data/$dir" || return 1
 	done
-	chmod 700 /data/bluetooth /data/bluetooth/bluez /data/bluetooth/bluealsa /data/connectivity
+	chmod 700 /data/network /data/bluetooth /data/bluetooth/bluez /data/bluetooth/bluealsa /data/connectivity
 	[ -e /data/bluetooth/enabled ] || printf '0\n' > /data/bluetooth/enabled
+	[ -e /data/network/enabled ] || printf '0\n' > /data/network/enabled
 	# SBC and the build's qualified codecs only: no owner-private codec experiments on the MT6572.
 	[ -e /data/bluetooth/codec-policy.json ] ||
 		printf '{"schema":1,"experimental":false}\n' > /data/bluetooth/codec-policy.json
@@ -58,6 +64,29 @@ compose() {
 		> "$RECORD.new" && mv "$RECORD.new" "$RECORD"
 }
 
+# Once, with a Wi-Fi build and the owner's WIFI.defaults (512 bytes, MAC all zero): the default with a new random
+# address at bytes 4-9, unicast and locally administered as above. Without them nothing happens (Bluetooth only).
+wifi_compose() {
+	[ -e "$C/wifi_factory" ] && [ ! -e "$WRECORD" ] && [ ! -L "$WRECORD" ] || return 0
+	[ -f "$FIRMWARE/WIFI.defaults" ] && [ ! -L "$FIRMWARE/WIFI.defaults" ] || return 0
+	set -- $(ls -ln "$FIRMWARE/WIFI.defaults")
+	[ "$5" = 512 ] || return 0
+	set -- $(head -c 6 /dev/urandom | od -An -tu1)
+	[ $# = 6 ] || return 0
+	umask 077
+	{ head -c 4 "$FIRMWARE/WIFI.defaults"; printf "$(printf '\\%03o' $(( ($1 & 252) | 2 )) $2 $3 $4 $5 $6)"
+	  tail -c 502 "$FIRMWARE/WIFI.defaults"; } > "$WRECORD.new" && mv "$WRECORD.new" "$WRECORD"
+}
+
+# After the Bluetooth record, before activation; the driver checks it again (the Y1's default and a unicast address
+# other than Bluetooth's). Absent or refused: activation registers Bluetooth only.
+wifi_record() {
+	[ -e "$C/wifi_factory" ] && [ -f "$WRECORD" ] && [ ! -L "$WRECORD" ] || return 0
+	set -- $(ls -ln "$WRECORD")
+	[ "$1 $3 $5" = "-rw------- 0 512" ] || { echo "S41y2-connectivity: $WRECORD not root 0600 512 bytes" >&2; return 0; }
+	cat "$WRECORD" > "$C/wifi_factory" || echo "S41y2-connectivity: Wi-Fi record refused" >&2
+}
+
 # The driver checks the record again (32 bytes, unicast, not the generic default) and refuses a second write.
 activate() {
 	case "$(cat "$C/status")" in activated=1*) return 0;; esac
@@ -65,7 +94,9 @@ activate() {
 	# busybox has no stat(1) here: mode, owner and size from ls -ln.
 	set -- $(ls -ln "$RECORD")
 	[ "$1 $3 $5" = "-rw------- 0 32" ] || { echo "S41y2-connectivity: $RECORD not root 0600 32 bytes" >&2; return 1; }
-	cat "$RECORD" > "$C/factory" && echo 1 > "$C/activate"
+	cat "$RECORD" > "$C/factory" || return 1
+	wifi_record
+	echo 1 > "$C/activate"
 }
 
 case "$1" in
@@ -77,14 +108,15 @@ case "$1" in
 	migrate
 	firmware
 	compose
+	wifi_compose
 	activate || exit 1
 	mkdir -p /run/y2
 	start-stop-daemon -S -b -m -p /run/y2/radiod.pid -x /usr/sbin/y2-radiod
 	;;
  stop)
-	"$0" stop-bluetooth; "$0" stop-daemon
+	"$0" stop-wifi; "$0" stop-bluetooth; "$0" stop-daemon
 	;;
- stop-wifi) : ;;
+ stop-wifi) y2-radio wifi off-runtime 2>/dev/null || : ;;
  stop-bluetooth) y2-radio bluetooth off-runtime 2>/dev/null || : ;;
  stop-daemon)
 	start-stop-daemon -K -p "$WAIT" 2>/dev/null || :
