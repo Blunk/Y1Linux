@@ -544,5 +544,25 @@ the B6 placeholders then (B7 §17).
   started, Bluetooth powered, no error. Wi-Fi on: the same address as before (the record's MAC), `country AT`,
   gateway and DNS. Then off again (`/data/network/enabled` 0).
 
-**Open**: W5b (throughput with one access point, an upload, Bluetooth audio during a transfer), the platform part
-on the device (next Y2ROOT), the action hook's pid file.
+**The Y1's own Y2ROOT — 2026-11-07.** Owner decision: on the y1 branch's base, 9.3.7 (not the 9.3.12 release
+image the Y1 ran, nor upstream's 9.3.15). The Y1 therefore loses upstream's 9.3.8–9.3.12 Bluetooth fixes.
+
+- **Build**: `tools/production/build.py --output out/y1-root-w6 --public` at `23ca1612`, Y2Reborn `8fc6f69`
+  (9.3.7); no Last.fm or report-upload key on this machine. Buildroot's mesa download ran at about 10 KB/s, so the
+  same tarball came from the Gentoo mirror (ftp.fau.de), checked against Buildroot's pin (`bce5f7fb…`).
+- **Image**: `out/y1-root-w6/buildroot/images/rootfs.ext4` (512 MiB, label `Y2ROOT`, `os-release`
+  `baseline-215-41-g23ca1612`), SHA-256 **`dc99c957253d20b19b55edbabe5a429ad1120520374165b708f54660ec25e97b`**.
+  Way back: the 9.3.12 image `out/y2-release-220/rootfs.ext4` (`4ac13770…`).
+- **Its platform on the Y1 before the write** (its `y2-platform` bind-mounted over 9.3.12's in RAM, build 5):
+  - S41's guard started the readiness supervisor, and the service daemon ran network-only (`network.json`,
+    `dns.json`, `coexistence.json`, `time-status.json`; no storage or media records).
+  - Wi-Fi `Online` with `dns_ready`. No `y2-calibration` any more.
+  - **The import on hardware**: the owner's Y1 system partition (650 MB) copied into `Music/Firmware`, then S41's
+    firmware check (as the MTP hook runs it). Installed in about 12 s, the copy deleted, the folder tidied.
+    `BT.defaults` `a317b67f…` and `WIFI.defaults` `9cfed6e4…` cut from the image; the hand-copied Wi-Fi firmware
+    kept as the supplement; the unused modem image dropped. Then `Ready`, Bluetooth powered, Wi-Fi `Online`.
+  - Under the new rules the Y1 was `Missing` before (`BT.defaults` had never been installed). The B6
+    placeholders stay until the new root is written: 9.3.12's platform still needs them.
+
+**Open**: W5b (throughput with one access point, an upload, Bluetooth audio during a transfer), writing the root
+(owner), the action hook's pid file.
