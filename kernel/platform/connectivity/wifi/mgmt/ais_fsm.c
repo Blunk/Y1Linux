@@ -2294,7 +2294,7 @@ aisFsmSteps (
 #if CFG_SUPPORT_RDD_TEST_MODE
             prScanReqMsg->eScanType         = SCAN_TYPE_PASSIVE_SCAN;
 #else
-            prScanReqMsg->eScanType         = SCAN_TYPE_ACTIVE_SCAN;
+            prScanReqMsg->eScanType         = SCAN_TYPE_ACTIVE_SCAN; Y2_WIFI_SCAN_TYPE(prAdapter, prAisFsmInfo, prScanReqMsg);
 #endif
 
 #if CFG_SUPPORT_ROAMING_ENC

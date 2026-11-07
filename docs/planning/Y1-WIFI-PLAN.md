@@ -2,7 +2,8 @@
 
 Status: **W0–W2 done 2026-11-07** (owner-approved): the firmware source decided (F2, the owner's Y2 file, by hash
 comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); **W3 PASS**
-(§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered, no scan); W4–W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
+(§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered); **W4 PASS** (§11–§12: passive and active scans
+find networks: the Y1's Wi-Fi receives and transmits); W5–W6 not admitted. The Y1 ships with Wi-Fi disabled and no Wi-Fi firmware. New hardware scope (a
 radio function, a transmitter, firmware not taken from this device): each stage has its own admission, and the
 roadmap audit is repeated before W3 (the first Wi-Fi power-on).
 
@@ -361,3 +362,48 @@ lines, `iw dev`, any WMT or Wi-Fi error, and whether Bluetooth audio still plays
 - **For W4**: `cfg80211` (built in) tries `regulatory.db` at 1.2 s, before the root file system holds it
   (`/lib/firmware/regulatory.db` and `.p7s` are there), so the domain stays the world default; before the scan,
   `iw reg reload` (or the database in `/data/firmware`) and the owner's country. W4: passive scan first.
+
+## 11. W4 build — 2026-11-07
+
+Owner-approved, country AT; roadmap audit first ("Y1 Wi-Fi W4, the first scans").
+
+- **The fullmac has no passive station scan**: `ais_fsm.c` sets `SCAN_TYPE_ACTIVE_SCAN` for every AIS scan
+  (passive only with `CFG_SUPPORT_RDD_TEST_MODE`), and `mtk_cfg80211_scan` turns a request without SSIDs into a
+  wildcard probe. `iw … scan passive` would therefore transmit. Added, for the Y1 only (`-DY2_WIFI_PASSIVE_SCAN`
+  from the Wi-Fi Makefile with `BT_INNIOASIS_Y1_WIFI`): cfg80211's rule, a request without SSIDs listens only.
+  `gl_cfg80211.c` records it in the Y2 glue's `GL_HIF_INFO_T` (`hif.h`), and `ais_fsm.c` applies it to the user's
+  own scan (`AIS_STATE_SCAN`/`ONLINE_SCAN`, never a join's) and clears it; `wpa_supplicant` always sends the
+  wildcard SSID, so its scans stay active. The firmware already takes the type (`rCmdScanReq.ucScanType`) and
+  chooses the dwell time.
+- **The Y2 unchanged, by line numbers**: a first version inserted lines into `wlan_oid.c`, `ais_fsm.c` and
+  `gl_cfg80211.c` under `#ifdef`; the Y2's `vmlinux` changed (`4bb3ddaf…`) because the vendor's assert and log
+  macros carry `__LINE__`. The hooks now end two existing vendor lines (each file keeps its line count) and the
+  macros live in `hif.h`. Y2 production build `out/w4-y2-after`: `Image` `a68fdffd…aac21`, `vmlinux`
+  `b5ae438d…eb202`, all 48 objects identical to `out/w2-y2-before`.
+- **Build** `out/y1-thirty-fifth-boot-2`: BOOTIMG **`5a78d9d4b74153e59bbef6cc856902eb44152fda4d78e421f82699e27397eb75`**,
+  zImage-dtb `25fcf381…c327`; DTB, `.config` and `y1-init` as build 1; the fullmac's 47 known warnings.
+- **Regulatory database** (on build 1, the radio blocked): `iw reg reload` loads the root file system's signed
+  `regulatory.db`; `iw reg set AT` gives `country AT: DFS-ETSI`, 2400–2483 MHz at 20 dBm. Not kept across a
+  reboot: set again before each scan session (W6: at boot).
+- **Tests**: `Y1WifiW4` (the flag only with the Y1 option, the hooks end their two vendor lines at their old line
+  numbers, `wlan_oid.h` untouched).
+
+## 12. W4 run — PASS — 2026-11-07
+
+`evidence-private/2026-11-07-y1-wifi-w4/` (`passive-raw.txt`, `active-raw.txt`: neighbouring networks' names
+and addresses, private). The flashed `BOOTIMG` read back from the Y1 (physical `0x2b80000`, 4 157 440 bytes) is
+build 2, `5a78d9d4…eb75`. Domain set first: `iw reg reload`, `iw reg set AT` (`country AT: DFS-ETSI`).
+
+- **Passive** (`rfkill unblock 1`, `ip link set wlan0 up`, `iw dev wlan0 scan passive`, then down and blocked):
+  **3 networks** (channels 1, 1, 11; −34 to −88 dBm), 1.36 s for the band (about 100 ms per channel: beacon
+  listening), **no probe responses** in the result. **The board's Wi-Fi receive path reaches an antenna.**
+- **Active** (`iw dev wlan0 scan`, same wrap-around): **3 networks** (channels 1, 6, 11; −33 to −96 dBm) in
+  0.37 s, **all from probe responses**: the Y1's probe requests went out and were answered. **The Wi-Fi transmit
+  path works.** Two networks were seen by both scans, one only by each (the weakest ones). The shorter time also
+  shows the passive flag reaches the firmware.
+- **Each time**: firmware start and `wlan0` within 70 ms of the unblock; afterwards `functions=0x1`, `error=0`,
+  no recovery, no `wlan0`, the switch blocked; Bluetooth `Powered: yes`; no Wi-Fi, WMT or core error in the log.
+  No association, no `wpa_supplicant`.
+- **Open for W5**: association with the owner's network (WPA2, `wpa_supplicant` as on the Y2), DHCP, DNS, a bounded
+  transfer, coexistence with Bluetooth audio, RAM/CPU; the TX power and frequency offset are uncalibrated defaults
+  (signal levels equal to the passive scan's, so no obvious loss); the domain at boot (W6).
