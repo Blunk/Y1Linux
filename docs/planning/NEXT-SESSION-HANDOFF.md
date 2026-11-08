@@ -1,6 +1,13 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-08): BETA 9.3.18 (BASELINE 227) RELEASE.** USB host-mode trap fixed (F78, #102,
+> **START HERE (2026-11-08): BETA 9.3.19 (BASELINE 228) RELEASE.** Update Notifications (Y2Reborn #97, closed):
+> opt-in toggle, any screen observes every 120 s while online so the daily check's answer reaches Reborn, once per
+> version. Release text now follows docs/RELEASE-NOTES-TEMPLATE.md (`github-only` markers; Innioasis Updater PR
+> y1-community/Innioasis-Updater#62 open). Open: Song Info has no menu entry since UI v3, CBR/VBR (#87), #104
+> reporter. Next free label 229, sequence above 15300, next version 9.3.20
+> ([Beta 9.3.19 report](../validation/Y2-LINUX-1.0-BETA-9.3.19.md)).
+>
+> Previous entry: **START HERE (2026-11-08): BETA 9.3.18 (BASELINE 227) RELEASE.** USB host-mode trap fixed (F78, #102,
 > `kernel/usb/role.h`, device-reproduced and verified) plus Reborn enhancements: Luna XP, bitrate (#87), offline
 > update page (Y2Reborn #96), Quick Menu hold (#101), Artist's Albums (#75), Cover Flow follows the skin (#100),
 > unplayable counts (#104). Open: #104 reporter (hidden folder covers / mis-tagged FLAC suspected), CBR/VBR for #87,

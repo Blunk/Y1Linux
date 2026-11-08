@@ -1,6 +1,16 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.3.18, Baseline 227 — 2026-11-08 (latest, published)
+## Y2Linux 1.0 Beta 9.3.19, Baseline 228 — 2026-11-08 (latest, published)
+
+Release `1.0.0-beta.9.3.19`, tag `baseline-228`, Linux `d6c404e4`, Reborn `520c4b8`, sequence 15300, root v1.251.
+Update Notifications (Y2Reborn #97): a toggle on Software Update, off by default; with it on, Reborn observes the
+platform on any screen every 120 s while online and the screen is lit, and says "Software update available" once per
+version (`update_announced` persisted). Before, only Settings screens observed, so the daily `update auto-check`
+answer reached Reborn only when Settings was opened. Device-checked on test build 228 (switch off: nothing; named
+version: nothing; new version: toast after 64 s). Release text in the listener format with `github-only` markers
+(docs/RELEASE-NOTES-TEMPLATE.md). Details: [Beta 9.3.19 report](validation/Y2-LINUX-1.0-BETA-9.3.19.md).
+
+## Y2Linux 1.0 Beta 9.3.18, Baseline 227 — 2026-11-08 (published)
 
 Release `1.0.0-beta.9.3.18`, tag `baseline-227`, Linux `9e864a3d`, Reborn `56298e9`, sequence 15200, root v1.250.
 USB always enumerates again (F78, Y2Linux #102): a disconnect while no gadget was bound left musb in host mode
