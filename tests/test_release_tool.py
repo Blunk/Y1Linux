@@ -9,6 +9,19 @@ from tools.production import release
 
 
 class ReleaseTool(unittest.TestCase):
+    def test_release_notes_mark_what_only_the_github_page_needs(self):
+        good = ('**Beta**\n\n## What\'s new\n- x\n\n<!-- github-only -->\n\n## Install from stock\n1. y\n\n'
+                '<!-- /github-only -->\n\nBeta software.')
+        release.check_notes(good)
+        template = (Path(__file__).resolve().parents[1] / 'docs/RELEASE-NOTES-TEMPLATE.md').read_text()
+        release.check_notes(template.split('```markdown\n', 1)[1].split('\n```', 1)[0])
+        for bad in ('**Beta**\n\n## Install from stock',                      # no marker
+                    '<!-- github-only -->\n\n## Files',                        # never closed
+                    '<!-- /github-only -->\n\n<!-- github-only -->',           # out of order
+                    'text <!-- github-only -->\n\n<!-- /github-only -->'):     # inside a paragraph
+            with self.assertRaises(SystemExit, msg=bad):
+                release.check_notes(bad)
+
     def test_prune_keeps_the_workspace_and_two_release_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             out = Path(temporary) / 'out'
