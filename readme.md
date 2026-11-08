@@ -3,7 +3,7 @@
 **A new life for the Innioasis Y2.** Y2Linux replaces the player's stock Android system with a small, fast Linux
 system built only for music, and with [Reborn](https://github.com/SchulzCode/Y2Reborn), a music player made for the
 Y2's click wheel. Cover Flow, gapless playback, Bluetooth headphones with AAC and LDAC, internet radio, audiobooks,
-Last.fm and sixteen skins. Once it's installed, the player updates itself over Wi-Fi.
+Last.fm and seventeen skins. Once it's installed, the player updates itself over Wi-Fi.
 
 <p align="center">
   <img src="docs/images/reborn-hero.png" alt="Reborn on the Y2: the Home screen, Now Playing with its progress wave, and Cover Flow" width="100%">
@@ -26,7 +26,8 @@ Last.fm and sixteen skins. Once it's installed, the player updates itself over W
 - Japanese, Chinese and Korean titles shown properly.
 
 **Sound**
-- FLAC, ALAC, MP3, AAC/M4A, Opus, Ogg Vorbis, WAV, AIFF, APE and WavPack; gapless playback and crossfade.
+- FLAC, ALAC, MP3, AAC/M4A, Opus, Ogg Vorbis, WAV, AIFF, APE and WavPack; gapless playback and crossfade. Files in
+  other formats (WMA, DSD, …) are not added; Settings → Library says how many were left out.
 - A five-band equalizer with presets, **profiles for 47 popular headphones and IEMs** (AutoEq) and your own
   AutoEq files, Normalize Volume (ReplayGain), left/right balance, three headphone levels and the DAC's filters.
 - The internal speaker plays when no headphones are plugged in; plugging them in moves the music to them.
@@ -44,7 +45,7 @@ Last.fm and sixteen skins. Once it's installed, the player updates itself over W
   its own speed (0.75–2×) and has a sleep timer. Books stay out of your music shuffle.
 
 **Make it yours**
-- **Sixteen skins**, from Classic to Walkman, Winamp and Bunny Bow, and more you can copy onto the player.
+- **Seventeen skins**, from Classic to Walkman, Winamp, Bunny Bow and Luna XP, and more you can copy onto the player.
 - Choose what Home shows and in which order, Cover Flow on or off, lists that wrap around, what the wheel does on
   Now Playing, a wheel click, haptic ticks and what the buttons do while the screen is off.
 
@@ -76,8 +77,8 @@ Last.fm and sixteen skins. Once it's installed, the player updates itself over W
 </p>
 
 <p align="center">
-  <img src="docs/images/reborn-skins.png" alt="Now Playing in eight of the sixteen skins" width="100%">
-  <br><em>Now Playing in eight of the sixteen skins</em>
+  <img src="docs/images/reborn-skins.png" alt="Now Playing in eight of the seventeen skins" width="100%">
+  <br><em>Now Playing in eight of the seventeen skins</em>
 </p>
 
 *The pictures are drawn by Reborn's own drawing code with sample music (Beta 9.2.13).*
