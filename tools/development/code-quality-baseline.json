@@ -45,11 +45,11 @@
  },
  "long_files": {
   "Y2Reborn/app/reborn/src/bin/reborn-preview.rs": 2283,
-  "Y2Reborn/app/reborn/src/main_loop.rs": 2360,
-  "Y2Reborn/crates/reborn-core/src/lib.rs": 2400,
+  "Y2Reborn/app/reborn/src/main_loop.rs": 2366,
+  "Y2Reborn/crates/reborn-core/src/lib.rs": 2412,
   "Y2Reborn/crates/reborn-library/src/lib.rs": 2235,
   "Y2Reborn/crates/reborn-platform/src/client.rs": 1558,
-  "Y2Reborn/crates/reborn-ui/src/pages.rs": 1890
+  "Y2Reborn/crates/reborn-ui/src/pages.rs": 1903
  },
  "long_functions": {
   "Y2Linux/platform/crates/y2-platform/src/commands/connectivity/wifi/monitor.rs::event": 152,
@@ -67,13 +67,13 @@
   "Y2Reborn/app/reborn/src/bin/reborn-bench.rs::run": 368,
   "Y2Reborn/app/reborn/src/bin/reborn-preview.rs::main": 1878,
   "Y2Reborn/app/reborn/src/main_loop.rs::control_requests": 174,
-  "Y2Reborn/app/reborn/src/main_loop.rs::run": 545,
+  "Y2Reborn/app/reborn/src/main_loop.rs::run": 544,
   "Y2Reborn/app/reborn/src/main_loop.rs::workers": 178,
   "Y2Reborn/app/reborn/src/playback/decode.rs::crossfade": 179,
   "Y2Reborn/app/reborn/src/playback/decode.rs::play": 294,
   "Y2Reborn/app/reborn/src/playback/output.rs::wait_and_commands": 179,
-  "Y2Reborn/app/reborn/src/runtime/effects.rs::effect_inner": 306,
-  "Y2Reborn/app/reborn/src/runtime/platform.rs::poll_platform": 355,
+  "Y2Reborn/app/reborn/src/runtime/effects.rs::effect_inner": 307,
+  "Y2Reborn/app/reborn/src/runtime/platform.rs::poll_platform": 347,
   "Y2Reborn/crates/reborn-library/src/benchmark.rs::database": 171,
   "Y2Reborn/crates/reborn-library/src/benchmark.rs::platform_db_on_media": 376,
   "Y2Reborn/crates/reborn-library/src/lib.rs::scan_sources": 336,
