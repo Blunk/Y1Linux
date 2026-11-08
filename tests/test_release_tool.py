@@ -13,12 +13,15 @@ class ReleaseTool(unittest.TestCase):
         good = ('**Beta**\n\n## What\'s new\n- x\n\n<!-- github-only -->\n\n## Install from stock\n1. y\n\n'
                 '<!-- /github-only -->\n\nBeta software.')
         release.check_notes(good)
+        release.check_notes(good.replace('1. y', '1. ' + 'y' * 5000))  # GitHub-only may be long
         template = (Path(__file__).resolve().parents[1] / 'docs/RELEASE-NOTES-TEMPLATE.md').read_text()
         release.check_notes(template.split('```markdown\n', 1)[1].split('\n```', 1)[0])
         for bad in ('**Beta**\n\n## Install from stock',                      # no marker
                     '<!-- github-only -->\n\n## Files',                        # never closed
                     '<!-- /github-only -->\n\n<!-- github-only -->',           # out of order
-                    'text <!-- github-only -->\n\n<!-- /github-only -->'):     # inside a paragraph
+                    'text <!-- github-only -->\n\n<!-- /github-only -->',      # inside a paragraph
+                    good.replace('## What', '## Changes and what'),            # updater hides above it
+                    good.replace('- x', '- ' + 'x' * 4000)):                   # past the updater's cut
             with self.assertRaises(SystemExit, msg=bad):
                 release.check_notes(bad)
 

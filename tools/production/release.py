@@ -468,6 +468,7 @@ def published_assets():
 # docs/RELEASE-NOTES-TEMPLATE.md is the format.
 GITHUB_ONLY = '<!-- github-only -->'
 GITHUB_ONLY_END = '<!-- /github-only -->'
+UPDATER_LIMIT = 3800  # the Innioasis Updater app shows 4000 characters
 
 
 def check_notes(notes):
@@ -486,6 +487,20 @@ def check_notes(notes):
     if GITHUB_ONLY not in lines:
         raise SystemExit('release notes: mark the install steps and the file list with '
                          f'{GITHUB_ONLY} … {GITHUB_ONLY_END} (docs/RELEASE-NOTES-TEMPLATE.md)')
+    # What the Innioasis Updater app shows: it cuts the notes at 4000 characters and hides
+    # everything up to a line that starts with the word "Changes" (src/translate.py there).
+    shown, hiding = [], False
+    for line in notes.splitlines():
+        if line.strip() in (GITHUB_ONLY, GITHUB_ONLY_END):
+            hiding = line.strip() == GITHUB_ONLY
+        elif not hiding:
+            shown.append(line)
+    if len('\n'.join(shown)) > UPDATER_LIMIT:
+        raise SystemExit(f'release notes: the part updaters show is longer than {UPDATER_LIMIT} '
+                         'characters; shorten it or move detail into the GitHub-only part')
+    if any(re.match(r'\s*[#*_\->\s]*changes\b', line, re.IGNORECASE) for line in shown):
+        raise SystemExit('release notes: a line starting with "Changes" makes the Innioasis Updater '
+                         'hide everything above it; reword it')
 
 
 def publish(args):

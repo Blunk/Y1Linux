@@ -23,6 +23,8 @@ wraps the "Sources unchanged" section it adds itself.
   An issue number only where it helps the person who asked.
 - **Known issues**: short, with what to do about it. End with error reports and Restore Previous System.
 - Link the plain-words release report.
+- The part updaters show stays under 3800 characters (the Innioasis Updater app cuts at 4000), and no line in it
+  starts with the word "Changes" (that app hides everything up to such a line). `publish` checks both.
 - GitHub-only part, in this order: Already running Y2Linux (the update path), Install with the Innioasis Updater
   (Windows, macOS and Linux; the easiest way from stock), Install with SP Flash Tool, How it was tested, Files, then
   the beta disclaimer and licences.
