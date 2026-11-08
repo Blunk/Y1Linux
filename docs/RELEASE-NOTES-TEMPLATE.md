@@ -8,7 +8,8 @@ it, what was fixed, what to watch out for. Technical detail belongs in the relea
 
 Everything that only makes sense on the GitHub page goes between `<!-- github-only -->` and
 `<!-- /github-only -->`. That covers the update hint for players already on Y2Linux (they offer the update
-themselves, and an updater user is installing fresh), the SP Flash Tool install steps, how it was tested, the file
+themselves, and an updater user is installing fresh), both ways to install from stock (the Innioasis Updater and SP
+Flash Tool), how it was tested, the file
 list and the disclaimer. The updater shows only the title line, What's new, Fixed, Known issues and the report link. Each
 marker sits on a line of its own with a blank line before and after. GitHub hides the comments, and an updater that
 knows the markers leaves out what is between them. `release.py publish` refuses notes without balanced markers and
@@ -22,8 +23,9 @@ wraps the "Sources unchanged" section it adds itself.
   An issue number only where it helps the person who asked.
 - **Known issues**: short, with what to do about it. End with error reports and Restore Previous System.
 - Link the plain-words release report.
-- GitHub-only part, in this order: Already running Y2Linux (the update path), Install from stock, How it was
-  tested, Files, then the beta disclaimer and licences.
+- GitHub-only part, in this order: Already running Y2Linux (the update path), Install with the Innioasis Updater
+  (Windows, macOS and Linux; the easiest way from stock), Install with SP Flash Tool, How it was tested, Files, then
+  the beta disclaimer and licences.
 
 ## Template
 
@@ -47,7 +49,17 @@ More details in plain words: **[Beta X.Y report](https://github.com/SchulzCode/Y
 ## Already running Y2Linux
 Settings → System → Software Update → **Update Now**. Your music, playlists, settings, Wi-Fi networks and Bluetooth pairings stay. (On Beta 9.2.8 and older: Settings → About & Updates → Check for Updates → **Update Now**.)
 
-## Install from stock (SP Flash Tool)
+## Install with the Innioasis Updater (easiest)
+The community **Innioasis Updater CE** installs Y2Linux for you, on **Windows, macOS and Linux**. No SP Flash Tool needed.
+
+1. Download Innioasis Updater CE for your computer from [innioasis.app](https://innioasis.app/guide.html#download-updater) and open it.
+2. Choose **Y2**, then **Reborn (Y2Linux)** and the latest release.
+3. Click **Install / Restore**, switch the Y2 off and connect it when the updater asks. Wait until it confirms, then unplug.
+4. Connect the Y2 to the computer and **copy** `system.img` from the Innioasis Y2 firmware package v3.2.0 into the **Firmware** folder on **Internal Storage**. The player takes the Wi-Fi/Bluetooth firmware from it and turns the radios on.
+
+Step-by-step guides for each computer: [Reborn (Y2Linux) install guide](https://innioasis.app/guides/reborn-y2linux-y2.html). The way back to stock is in the updater too: choose **Y2** and **Original Software**.
+
+## Install with SP Flash Tool
 You need SP Flash Tool v5.2032, a USB cable, **`Y2Linux-1.0.0-beta.X.Y-first-install.zip`** below and the **Innioasis Y2 firmware package v3.2.0** from Innioasis (only this version works; it is also your way back to stock).
 
 1. Unpack both.
