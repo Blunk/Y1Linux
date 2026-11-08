@@ -192,7 +192,7 @@ python3 tools/production/release.py publish --label 73 --title "Y2Linux 1.0 Beta
 ```
 
 The release text follows [the release notes format](RELEASE-NOTES-TEMPLATE.md): written for listeners,
-with the install steps, the tests and the file list between `<!-- github-only -->` markers that
+with everything but the changes and known issues between `<!-- github-only -->` markers that
 updaters such as the Innioasis Updater leave out. `publish` refuses notes without them.
 
 `build` resumes the one build workspace `out/build` (`--clean` rebuilds it from scratch), runs

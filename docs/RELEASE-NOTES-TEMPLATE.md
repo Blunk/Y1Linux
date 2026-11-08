@@ -7,7 +7,9 @@ flashes the player itself. Write it for someone who uses the player, not for a d
 it, what was fixed, what to watch out for. Technical detail belongs in the release report under `docs/validation/`.
 
 Everything that only makes sense on the GitHub page goes between `<!-- github-only -->` and
-`<!-- /github-only -->`. That covers the SP Flash Tool install steps, how it was tested and the file list. Each
+`<!-- /github-only -->`. That covers the update hint for players already on Y2Linux (they offer the update
+themselves, and an updater user is installing fresh), the SP Flash Tool install steps, how it was tested, the file
+list and the disclaimer. The updater shows only the title line, What's new, Fixed, Known issues and the report link. Each
 marker sits on a line of its own with a blank line before and after. GitHub hides the comments, and an updater that
 knows the markers leaves out what is between them. `release.py publish` refuses notes without balanced markers and
 wraps the "Sources unchanged" section it adds itself.
@@ -15,22 +17,18 @@ wraps the "Sources unchanged" section it adds itself.
 ## Rules
 
 - First line: the version in bold and one short phrase of what it brings.
-- **How to update** comes first, because most readers already run Y2Linux.
 - **What's new** and **Fixed**: one bullet each, the name of the feature in bold, then where to find it on the
   player (the real menu path) and what it does for the listener. No internal names, file names or ledger numbers.
   An issue number only where it helps the person who asked.
 - **Known issues**: short, with what to do about it. End with error reports and Restore Previous System.
 - Link the plain-words release report.
-- GitHub-only part: Install from stock, How it was tested, Files.
-- Last line, outside the markers: the beta disclaimer and licences.
+- GitHub-only part, in this order: Already running Y2Linux (the update path), Install from stock, How it was
+  tested, Files, then the beta disclaimer and licences.
 
 ## Template
 
 ```markdown
 **Y2Linux 1.0 Beta X.Y**: one short phrase.
-
-## How to update
-Already on Y2Linux: Settings → System → Software Update → **Update Now**. Your music, playlists, settings, Wi-Fi networks and Bluetooth pairings stay. (On Beta 9.2.8 and older: Settings → About & Updates → Check for Updates → **Update Now**.)
 
 ## What's new
 - **Feature**: where to find it, and what it does for you.
@@ -45,6 +43,9 @@ Already on Y2Linux: Settings → System → Software Update → **Update Now**. 
 More details in plain words: **[Beta X.Y report](https://github.com/SchulzCode/Y2Linux/blob/main/docs/validation/Y2-LINUX-1.0-BETA-X.Y.md)**.
 
 <!-- github-only -->
+
+## Already running Y2Linux
+Settings → System → Software Update → **Update Now**. Your music, playlists, settings, Wi-Fi networks and Bluetooth pairings stay. (On Beta 9.2.8 and older: Settings → About & Updates → Check for Updates → **Update Now**.)
 
 ## Install from stock (SP Flash Tool)
 You need SP Flash Tool v5.2032, a USB cable, **`Y2Linux-1.0.0-beta.X.Y-first-install.zip`** below and the **Innioasis Y2 firmware package v3.2.0** from Innioasis (only this version works; it is also your way back to stock).
@@ -66,7 +67,7 @@ What was reproduced and checked on a player, the new tests, the platform's full 
 - `Y2Linux-1.0.0-beta.X.Y-sources-buildroot-legal-info.tar` (licences, manifests, this project's packages) and the third-party, toolchain and Linux sources linked below: corresponding sources. Our own code: Y2Linux and Y2Reborn at tag `baseline-N`. The speaker amplifier driver is Chris Hendrickson's GPL-2.0 AW87559 driver. The headphone profiles are AutoEq results (MIT, Jaakko Pasanen); their licence ships with them.
 - `SHA256SUMS` for the attached files.
 
-<!-- /github-only -->
-
 Beta software: use at your own risk. Not affiliated with Innioasis, MediaTek, Awinic, Last.fm, AutoEq, Strawberry, MusicBee or Google. Noto Sans CJK is licensed under the SIL Open Font License 1.1.
+
+<!-- /github-only -->
 ```
