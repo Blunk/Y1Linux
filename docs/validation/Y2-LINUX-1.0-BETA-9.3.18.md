@@ -10,7 +10,7 @@ This report is written for people who use the player. A short technical appendix
 
 **A computer always finds the player over USB again** (Y2Linux #102): after an unplug at the wrong moment the
 player's USB chip could believe it was the computer's host, and no computer saw the player until a restart. Beside
-that fix come a **new skin, Luna XP**, contributed by eNKay; the **bitrate** in Song Info and in skins (#87); a
+that fix come a **new skin, Luna XP**, contributed by eNKay; the **bitrate** for skins (#87); a
 **"Connect to Wi-Fi" step on the update page** when Wi-Fi is off (Y2Reborn #96); **holding Select on a Quick Menu
 tile** to open its settings (Y2Reborn #101); a choice of **how an artist's albums are sorted** (Y2Reborn #75);
 **Cover Flow in the skin's own style** (Y2Reborn #100); and a line in Settings → Library that says **which files the
@@ -25,8 +25,8 @@ player cannot play** (Y2Reborn #104).
   every reconnect.
 - **Luna XP skin:** blue title bars, green start button and rolling hills, by eNKay. Its fonts were trimmed to the
   letters the player needs (2 MB → 264 KB). There are now seventeen skins.
-- **Bitrate** (#87): Song Info's Format line shows it ("MP3 · 44.1 kHz · 320 kbps"), and skins can show it with
-  `{bitrate}`. It is the file's average; whether a file is CBR or VBR is not shown yet.
+- **Bitrate** (#87): skins can show a song's bitrate with `{bitrate}` ("320 kbps"). It is the file's average;
+  whether a file is CBR or VBR is not shown yet, and no shipped skin shows it yet.
 - **Updates without Wi-Fi** (Y2Reborn #96): with Wi-Fi off or not connected, Software Update shows **Connect to
   Wi-Fi** ("Updates need the internet"), which opens the Wi-Fi settings, instead of a check that cannot work.
 - **Quick Menu** (Y2Reborn #101): hold Select on the Wi-Fi, Bluetooth or Brightness tile to open that page of
@@ -69,7 +69,7 @@ Everything listed for [Beta 9.0](Y2-LINUX-1.0-BETA-9.0.md#known-issues-and-what-
 
 - A charge-only USB cable (no data wires) only charges; the player cannot tell it apart from a wall charger.
 - Skins that bring their own fonts (Luna XP, Winamp and others) show boxes for Chinese, Japanese and Korean titles.
-- Bitrate shows the average only; CBR or VBR is not shown yet (#87).
+- Bitrate is the average only, and only skins that use `{bitrate}` show it; CBR or VBR is not shown yet (#87).
 
 ## Technical appendix
 

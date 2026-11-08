@@ -6,8 +6,8 @@ Release `1.0.0-beta.9.3.18`, tag `baseline-227`, Linux `9e864a3d`, Reborn `56298
 USB always enumerates again (F78, Y2Linux #102): a disconnect while no gadget was bound left musb in host mode
 (`musb_g_disconnect` default case), so every bus reset was "Babble" until a restart; `kernel/usb/role.h` keeps the
 controller a peripheral after every disconnect and before every reconnect (device repro: 226 Babble + no enumeration,
-227 configured 0.5 s after reconnect). Reborn: Luna XP skin (eNKay, seventeen skins), bitrate in Song Info and
-`{bitrate}` (#87), update page "Connect to Wi-Fi" offline (Y2Reborn #96), Quick Menu hold opens settings (#101),
+227 configured 0.5 s after reconnect). Reborn: Luna XP skin (eNKay, seventeen skins), skin var
+`{bitrate}` (#87; the Song Info page that also shows it has no menu entry since UI v3), update page "Connect to Wi-Fi" offline (Y2Reborn #96), Quick Menu hold opens settings (#101),
 Artist's Albums order (#75), Cover Flow follows the skin (`cover_shape`, captions; #100), unplayable files counted
 and named in Settings → Library (#104). Installed on the developer's player as test build 227. Details:
 [Beta 9.3.18 report](validation/Y2-LINUX-1.0-BETA-9.3.18.md).
