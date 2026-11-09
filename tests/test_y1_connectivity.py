@@ -92,31 +92,22 @@ class Y1ConnectivityFacts(unittest.TestCase):
         self.assertIn('+config BT_INNIOASIS_Y1_WIFI\n+\tbool', kconfig)
         self.assertIn('+\tdepends on BT_INNIOASIS_Y1 && CFG80211=y && RFKILL=y\n', kconfig)
 
-    def test_only_the_b4_to_b6_trees_name_the_driver_each_with_its_limit(self):
-        # B2 built it without a node; B4 admits the chip-id bring-up (no PA rail), B5 the wmt bring-up.
+    def test_only_the_y1_tree_names_the_driver_without_a_bring_up_limit(self):
+        # The full driver (B6, docs/planning/Y1-BLUETOOTH-PLAN.md): no "innioasis,bring-up" limit.
         compatible = re.search(r'compatible="([^"]+)"', (Y1 / 'core.c').read_text()).group(1)
         self.assertEqual(compatible, 'innioasis,y1-mt6572-connectivity')
         naming = [t.name for t in sorted((ROOT / 'kernel/dts').glob('*y1*')) if compatible in t.read_text()]
-        # B6 (thirty-fourth): the full driver, no limit.
-        # W3 (thirty-fifth, docs/planning/Y1-WIFI-PLAN.md): the full driver with the Wi-Fi window and interrupt.
-        limits = {'innioasis-y1-thirty-second-boot.dts': 'chip-id', 'innioasis-y1-thirty-third-boot.dts': 'wmt',
-                  'innioasis-y1-thirty-fourth-boot.dts': None, 'innioasis-y1-thirty-fifth-boot.dts': None}
-        self.assertEqual(naming, sorted(limits))
-        for name, limit in limits.items():
-            tree = (ROOT / 'kernel/dts' / name).read_text()
-            node = tree[tree.index('connectivity@18070000 {'):]
-            node = node[:node.index('};')]
-            if limit:
-                self.assertIn(f'innioasis,bring-up = "{limit}";', node)
-            else:
-                self.assertNotIn('innioasis,bring-up', node)
-            # The PA rails only from B5 on; no supply of the connectivity core ever always-on or boot-on.
-            self.assertEqual('vcn33' in tree, limit != 'chip-id', name)
-            for rail in ('vcn18', 'vcn28') + (('vcn33_bt', 'vcn33_wifi') if limit != 'chip-id' else ()):
-                block = tree[tree.index(f'{rail}: ldo_{rail} {{'):]
-                block = block[:block.index('};')]
-                self.assertNotIn('always-on', block)
-                self.assertNotIn('boot-on', block)
+        self.assertEqual(naming, ['innioasis-y1.dts'])
+        tree = (ROOT / 'kernel/dts/innioasis-y1.dts').read_text()
+        node = tree[tree.index('connectivity@18070000 {'):]
+        node = node[:node.index('};')]
+        self.assertNotIn('innioasis,bring-up', node)
+        # No supply of the connectivity core always-on or boot-on, the PA rails included.
+        for rail in ('vcn18', 'vcn28', 'vcn33_bt', 'vcn33_wifi'):
+            block = tree[tree.index(f'{rail}: ldo_{rail} {{'):]
+            block = block[:block.index('};')]
+            self.assertNotIn('always-on', block)
+            self.assertNotIn('boot-on', block)
 
     def test_b6_services_with_the_w6_wifi_service(self):
         # The Y2's S41 runs y2-factory and MD calibration: never on the Y1. W6 adds the supplicant and the
@@ -149,11 +140,11 @@ class Y1ConnectivityFacts(unittest.TestCase):
         body = re.search(r'^services\(\) \{\n.*?^\}\n', script, re.M | re.S)[0]
         self.assertLess(body.index('[ -n "$wifi" ] || return 0'), body.index('connectivity-daemon'))
         self.assertLess(body.index('if [ -n "$wifi" ]'), body.index('wpa_supplicant -B'))
-        listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
+        listing = (ROOT / 'initramfs/y1-production.list').read_text()
         self.assertIn('/y1-system/etc/init.d/S41y2-connectivity /project/initramfs/y1-bluetooth/etc/init.d/'
                       'S41y2-connectivity 0755', listing)
-        pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
-        self.assertIn('#ifdef Y1_THIRTY_FOURTH_BOOT\n    /* Bluetooth', pid1)
+        pid1 = (ROOT / 'initramfs/y1-system.h').read_text()
+        self.assertIn('    /* Bluetooth: hci0 from the owner\'s record, then y2-radiod', pid1)
         self.assertIn('{ "/etc/y2linux/radio-firmware.json", 0644 },\n', pid1)
         self.assertIn('file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/'
                       'radio-firmware.json 0644', listing)
@@ -1049,9 +1040,9 @@ class Y1WifiW6(unittest.TestCase):
     def test_the_service_daemon_runs_its_network_part_only_with_a_platform_that_knows_it(self):
         policy = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/service-policy.json').read_text())
         self.assertEqual(policy, {'schema': 1, 'network_only': True})
-        pid1 = (ROOT / 'initramfs/y1-tenth-boot.h').read_text()
-        self.assertIn('{ "/etc/y2linux/service-policy.json", 0644 },\n#endif', pid1)
-        listing = (ROOT / 'initramfs/y1-thirty-fourth-boot.list').read_text()
+        pid1 = (ROOT / 'initramfs/y1-system.h').read_text()
+        self.assertIn('{ "/etc/y2linux/service-policy.json", 0644 },\n};', pid1)
+        listing = (ROOT / 'initramfs/y1-production.list').read_text()
         self.assertIn('file /y1-system/etc/y2linux/service-policy.json /project/initramfs/y1-bluetooth/etc/y2linux/'
                       'service-policy.json 0644', listing)
         daemon = (ROOT / 'platform/crates/y2-platform/src/commands/service/daemon.rs').read_text()
@@ -1125,34 +1116,24 @@ class Y1WifiW3(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(self.wifi_compose(d, defaults, kept)[:2], (0, kept))
 
-    def test_thirty_fifth_tree_adds_only_the_wifi_window_and_interrupt(self):
-        def node(name):
-            tree = (ROOT / 'kernel/dts' / name).read_text()
-            body = tree[tree.index('connectivity@18070000 {'):]
-            return tree, body[:body.index('};')]
-        old_tree, old = node('innioasis-y1-thirty-fourth-boot.dts')
-        new_tree, new = node('innioasis-y1-thirty-fifth-boot.dts')
-        self.assertIn('<0x11000400 0x80>, <0x180f0000 0x5c>;', new)
-        self.assertIn('reg-names = "mcu", "conn-emi", "btif", "tx-dma", "rx-dma", "wifi";', new)
-        self.assertIn('<GIC_SPI 123 IRQ_TYPE_LEVEL_LOW>;', new)
-        self.assertIn('interrupt-names = "btif", "tx-dma", "rx-dma", "wake", "wifi";', new)
-        self.assertNotIn('wifi', old.replace('vcn33-wifi', '').replace('vcn33_wifi', ''))
-        # Outside the node the two trees differ only in the header comment.
-        strip = lambda tree, n: tree[tree.index('#include'):].replace(n, '')
-        self.assertEqual(strip(old_tree, old), strip(new_tree, new))
+    def test_the_tree_carries_the_wifi_window_and_interrupt(self):
+        # W3 (docs/planning/Y1-WIFI-PLAN.md): MediaTek's MT6572 CONN_HIF_BASE and MT_WF_HIF_IRQ_ID.
+        tree = (ROOT / 'kernel/dts/innioasis-y1.dts').read_text()
+        node = tree[tree.index('connectivity@18070000 {'):]
+        node = node[:node.index('};')]
+        self.assertIn('<0x11000400 0x80>, <0x180f0000 0x5c>;', node)
+        self.assertIn('reg-names = "mcu", "conn-emi", "btif", "tx-dma", "rx-dma", "wifi";', node)
+        self.assertIn('<GIC_SPI 123 IRQ_TYPE_LEVEL_LOW>;', node)
+        self.assertIn('interrupt-names = "btif", "tx-dma", "rx-dma", "wake", "wifi";', node)
 
-    def test_thirty_fifth_fragment_is_the_thirty_fourth_with_the_wifi_lines(self):
-        def lines(name):
-            text = (ROOT / 'kernel/config' / name).read_text()
-            return [l for l in text.splitlines() if l.startswith('CONFIG_') or l.startswith('# CONFIG_')]
-        old, new = lines('y1-thirty-fourth-boot.config'), lines('y1-thirty-fifth-boot.config')
-        self.assertEqual(sorted(set(new) - set(old)), sorted([
-            'CONFIG_LOCALVERSION="-y1-thirty-fifth-boot"', 'CONFIG_WIRELESS=y', 'CONFIG_CFG80211=y',
-            'CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y', 'CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y',
-            'CONFIG_BT_INNIOASIS_Y1_WIFI=y', 'CONFIG_PACKET=y']))
-        self.assertEqual(sorted(set(old) - set(new)),
-                         sorted(['CONFIG_LOCALVERSION="-y1-thirty-fourth-boot"', '# CONFIG_WIRELESS is not set']))
-        self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-thirty-fourth-boot.list"', new)
+    def test_the_fragment_carries_the_wifi_lines_and_the_y1_initramfs(self):
+        text = (ROOT / 'kernel/config/y1-production.config').read_text()
+        lines = {l for l in text.splitlines() if l.startswith('CONFIG_') or l.startswith('# CONFIG_')}
+        self.assertLessEqual({
+            'CONFIG_WIRELESS=y', 'CONFIG_CFG80211=y', 'CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y',
+            'CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y', 'CONFIG_BT_INNIOASIS_Y1_WIFI=y', 'CONFIG_PACKET=y'}, lines)
+        self.assertNotIn('# CONFIG_WIRELESS is not set', lines)
+        self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-production.list"', lines)
 
 
 class Y1WifiW4(unittest.TestCase):

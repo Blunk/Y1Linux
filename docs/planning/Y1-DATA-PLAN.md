@@ -1,5 +1,9 @@
 # Y1 persistent data: Y2DATA (system milestone B)
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **B0 done, B1 PASS, B2 PASS** (2026-11-05, owner-approved; [B2 run](#9-b2-run--pass--2026-11-05)); B3 (music) next. The owner chose milestone B after D2. Today `/data` is a 64 MiB
 ext4 image in RAM (`S90y1-reborn data`, run early by `S03y1-data`): Reborn's settings and library, the power
 daemon's journals and the SSH host keys are lost at every boot, and there is nowhere to keep music. Each stage

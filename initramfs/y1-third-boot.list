@@ -1,9 +1,0 @@
-# Innioasis Y1 third-boot initramfs (usr/gen_init_cpio list), built into the kernel by
-# CONFIG_INITRAMFS_SOURCE; /build/y1-init comes from initramfs/y1-init.c (Y1_THIRD_BOOT).
-dir /dev 0755 0 0
-nod /dev/console 0600 0 0 c 5 1
-nod /dev/tty0 0620 0 0 c 4 0
-nod /dev/watchdog 0600 0 0 c 10 130
-dir /proc 0755 0 0
-dir /sys 0755 0 0
-file /init /build/y1-init 0755 0 0

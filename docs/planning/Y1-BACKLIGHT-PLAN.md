@@ -1,5 +1,9 @@
 # Y1 backlight: brightness and screen-off through the MT6323 current sinks
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **PASS** on the owner's player (2026-11-05, [run](#7-run--pass--2026-11-05)); approved by the
 owner with both admission items the same day. Follows the
 [display plan](Y1-DISPLAY-PLAN.md) (stage B PASS: Linux's DRM pipeline drives the panel; the backlight is
