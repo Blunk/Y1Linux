@@ -1,15 +1,24 @@
 --- a/drivers/input/keyboard/mtk-pmic-keys.c
 +++ b/drivers/input/keyboard/mtk-pmic-keys.c
-@@ -20,6 +20,8 @@
+@@ -20,6 +20,9 @@
  #include <linux/of.h>
  #include <linux/platform_device.h>
  #include <linux/regmap.h>
++#include <linux/backlight.h>
 +#include <linux/devm-helpers.h>
 +#include <linux/workqueue.h>
  
  #define MTK_PMIC_RST_DU_MASK	GENMASK(9, 8)
  #define MTK_PMIC_PWRKEY_RST	BIT(6)
-@@ -148,8 +150,26 @@
+@@ -141,6 +144,7 @@
+ 	int irq;
+ 	int irq_r; /* optional: release irq if different */
+ 	bool wakeup:1;
++	bool dark_press:1; /* Innioasis Y1: this press was the dark screen's Power */
+ };
+ 
+ struct mtk_pmic_keys {
+@@ -148,8 +152,58 @@
  	struct device *dev;
  	struct regmap *regmap;
  	struct mtk_pmic_keys_info keys[MTK_PMIC_MAX_KEY_COUNT];
@@ -22,8 +31,40 @@
 +	struct delayed_work hold_work;
 +	unsigned int hold_ms;
 +	bool hold_down;
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-REBORN-PLAN.md, screen timeout): with a "backlight" phandle as well, a
++	 * press while that backlight's bl_power is off (Reborn's dark screen) is a Power tap on the hold device
++	 * and the key itself reports nothing until its release, so the press wakes the screen as Power does on
++	 * the Y2 and does not select. Only bl_power counts: PID1's charge screen blanks with brightness 0 and
++	 * FBIOBLANK and keeps reading the key. Looked up at the first press, so the keys never wait for it.
++	 */
++	struct device_node *dark_bl_node;
++	struct backlight_device *dark_bl;
  };
  
++static bool mtk_pmic_keys_dark(struct mtk_pmic_keys *keys)
++{
++	struct backlight_device *bl = READ_ONCE(keys->dark_bl);
++
++	if (!bl && keys->dark_bl_node) {
++		bl = of_find_backlight_by_node(keys->dark_bl_node);
++		if (bl && cmpxchg(&keys->dark_bl, NULL, bl)) {
++			put_device(&bl->dev);
++			bl = READ_ONCE(keys->dark_bl);
++		}
++	}
++	return bl && READ_ONCE(bl->props.power) != BACKLIGHT_POWER_ON;
++}
++
++static void mtk_pmic_keys_dark_release(void *data)
++{
++	struct mtk_pmic_keys *keys = data;
++
++	if (keys->dark_bl)
++		put_device(&keys->dark_bl->dev);
++	of_node_put(keys->dark_bl_node);
++}
++
 +static void mtk_pmic_keys_hold_work(struct work_struct *work)
 +{
 +	struct mtk_pmic_keys *keys = container_of(to_delayed_work(work), struct mtk_pmic_keys, hold_work);
@@ -36,10 +77,25 @@
  enum mtk_pmic_keys_lp_mode {
  	LP_DISABLE,
  	LP_ONEKEY,
-@@ -216,6 +236,21 @@
- 	input_report_key(info->keys->input_dev, info->keycode, pressed);
- 	input_sync(info->keys->input_dev);
+@@ -213,8 +267,33 @@
  
+ 	pressed = !key_deb;
+ 
+-	input_report_key(info->keys->input_dev, info->keycode, pressed);
+-	input_sync(info->keys->input_dev);
++	if (pressed && info->keys->hold_dev && mtk_pmic_keys_dark(info->keys)) {
++		info->dark_press = true;
++		input_report_key(info->keys->hold_dev, KEY_POWER, 1);
++		input_sync(info->keys->hold_dev);
++		input_report_key(info->keys->hold_dev, KEY_POWER, 0);
++		input_sync(info->keys->hold_dev);
++	} else if (pressed || !info->dark_press) {
++		input_report_key(info->keys->input_dev, info->keycode, pressed);
++		input_sync(info->keys->input_dev);
++	}
++	if (!pressed)
++		info->dark_press = false;
++
 +	if (info->keys->hold_dev) {
 +		struct mtk_pmic_keys *keys = info->keys;
 +
@@ -54,11 +110,10 @@
 +			}
 +		}
 +	}
-+
+ 
  	dev_dbg(info->keys->dev, "(%s) key =%d using PMIC\n",
  		 pressed ? "pressed" : "released", info->keycode);
- 
-@@ -351,6 +386,8 @@
+@@ -351,6 +430,8 @@
  	}
  
  	input_dev->name = "mtk-pmic-keys";
@@ -67,7 +122,7 @@
  	input_dev->id.bustype = BUS_HOST;
  	input_dev->id.vendor = 0x0001;
  	input_dev->id.product = 0x0001;
-@@ -405,6 +442,22 @@
+@@ -405,6 +486,28 @@
  		return error;
  	}
  
@@ -85,6 +140,12 @@
 +		if (error)
 +			return error;
 +		dev_info(keys->dev, "a %u ms hold also reports KEY_POWER\n", keys->hold_ms);
++		keys->dark_bl_node = of_parse_phandle(node, "backlight", 0);
++		error = devm_add_action_or_reset(keys->dev, mtk_pmic_keys_dark_release, keys);
++		if (error)
++			return error;
++		if (keys->dark_bl_node)
++			dev_info(keys->dev, "a press with the backlight powered down is a KEY_POWER tap\n");
 +	}
 +
  	mtk_pmic_keys_lp_reset_setup(keys, mtk_pmic_regs);

@@ -213,7 +213,7 @@
 		};
 
 		/* Stock lcd-backlight: MT6323 PMIC mode, ISINK0 and ISINK1 in parallel (display stage 0). */
-		backlight {
+		panel_backlight: backlight {
 			compatible = "innioasis,y2-backlight";
 			innioasis,isink-mask = <0x3>;
 		};
@@ -228,6 +228,9 @@
 			label = "Y2 navigation buttons";
 			/* Held this long, the centre button is also Reborn's Power (overlay 0033). */
 			innioasis,hold-power-ms = <3000>;
+			/* While Reborn has the screen off (bl_power), a centre press is a Power tap: it wakes the
+			 * screen, as Power does on the Y2, and does not select (overlay 0033). */
+			backlight = <&panel_backlight>;
 			/* The centre button (the Y1 has no power button). */
 			power {
 				linux,keycodes = <KEY_ENTER>;
