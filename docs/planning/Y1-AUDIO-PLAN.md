@@ -258,3 +258,25 @@ owner reports the jack detection working: **PASS** (owner-observed; no log kept)
 "Y2Audio Headphone"; plug and unplug with Reborn's Speaker setting on: music moves to the headphones on a plug
 (the kernel log says `speaker off`) and pauses on an unplug; idle with the jack empty, playback starts on the
 speaker; with headphones in, in the headphones.
+
+### 14.1 Reborn reads the jack as plain ALSA — 2026-11-09
+
+**Why.** The owner wants no hardware-dependent jack code in userspace. Reborn found the jack by the input
+device name "Y2Audio Headphone" and read the Y2-only `*-0030/y2_hp/jack` file to learn whether the CS43131
+poll had read the detector yet; the Y1 needed its own case for that file (Reborn `b23f8dd`).
+
+**Change.** Both kernels already create the jack with `snd_soc_card_jack_new()`, which adds the card's ALSA
+control "Headphone Jack" (iface CARD, read-only boolean, a change event on each report: what PipeWire and
+PulseAudio read).
+- Y2 kernel (`0030-cs43130-system-pm.patch`, `y2_jack_get`): the poll's first read powers the codec itself
+  if it is down (`pm_runtime_resume_and_get`), so the reported state is never a guess; after that it reads
+  only while the codec is on, as before. In practice the codec is still on then (powered at I2C probe,
+  120 s autosuspend; the first poll runs 200 ms after the card binds), so this only covers a late bind.
+- Reborn `jack.rs`: the first card (`/dev/snd/controlC*`) with a "Headphone Jack" control; its value
+  (`SNDRV_CTL_IOCTL_ELEM_READ`) at start and after each value event (`SUBSCRIBE_EVENTS`). The structure
+  sizes and ioctl numbers are checked against `<sound/asound.h>` (arm-linux-gcc: 712 bytes; x86_64: 1224).
+  No input device name, no sysfs, no I2C bus search. `y2_hp/jack` stays for diagnostics.
+
+**Test (needed on both).** `amixer -c 0 cget iface=CARD,name='Headphone Jack'` follows plug and unplug, and
+Reborn behaves as in the §14 test (speaker when empty, a plug moves the music to the headphones, an unplug
+pauses). The Y2 additionally right after boot with the screen off: the state must already be right.
