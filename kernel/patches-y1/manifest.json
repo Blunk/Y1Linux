@@ -276,7 +276,7 @@
     {
       "path": "drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
       "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
-      "sha256": "5a1644785519c0195a7649abff6fa6c64c96a27f02ab6cd8e7bb66f66188c24c"
+      "sha256": "7b55526e1b9aec21ed7af067cd75bda074b6f5c7db2483737fe89cdf857f6ab5"
     },
     {
       "path": "include/dt-bindings/clock/mediatek,mt6572-clk.h",
@@ -416,7 +416,7 @@
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",
       "source": "kernel/y1/mt6323-codec.c",
-      "sha256": "9744baa55fee7a0f683008de377c25f007243db9762195d7a303d9380f5bc7fa"
+      "sha256": "555a3ff52336b5705890b891b8883ecb35d70bbe63c603a7138071f9591f6dd8"
     },
     {
       "path": "drivers/soc/mediatek/pmic-audio-policy.h",

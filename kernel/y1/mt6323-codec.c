@@ -10,12 +10,20 @@
  * Reborn (docs/planning/Y1-REBORN-PLAN.md, stage R3) sets a "Master" element by dB, so the gain is that
  * control with a dB scale: step 7 = 0 dB, 2 dB a step (the steps are the stock HAL's; the absolute level is
  * not measured). Reborn's -24 dB for headphones clamps to step 0.
+ * The headphone jack: stock's ACCDET plug switch, EINT0 on GPIO135, read as a GPIO (low with a plug in, measured on
+ * the owner's Y1, 2026-11-09). Each edge restarts a 250 ms quiet period (stock: 256 ms EINT debounce), then the
+ * level is reported on the card's jack "Headphone" (input "Y2Audio Headphone", SW_HEADPHONE_INSERT), the Y2's
+ * name, so Reborn follows it unchanged. Stock's ACCDET block (headset type, the hook key) is not used.
  */
 #include <linux/delay.h>
+#include <linux/devm-helpers.h>
+#include <linux/gpio/consumer.h>
+#include <linux/interrupt.h>
 #include <linux/mfd/mt6397/core.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <sound/jack.h>
 #include <sound/soc.h>
 #include <sound/tlv.h>
 
@@ -37,11 +45,19 @@
 #define RATE_44100	9	/* ABB_AFE_CON1, as the AFE's fs code */
 #define NEWIF_44100	7
 
+#define JACK_QUIET_MS	250
+
 struct y1_codec {
 	struct regmap *map;
 	struct mutex lock;
 	unsigned int volume;	/* 0..7 */
 	bool on;
+	struct gpio_desc *hp_det;	/* NULL: no jack described */
+	int hp_irq;
+	struct snd_soc_component *component;	/* set while the card is bound */
+	struct snd_soc_jack jack;
+	struct delayed_work jack_work;
+	int jack_state;	/* -1 not read yet, 0 empty, 1 headphones */
 };
 
 static int y1_codec_power_up(struct y1_codec *c)
@@ -167,17 +183,122 @@ static const struct snd_kcontrol_new y1_codec_controls[] = {
 	  .info = y1_volume_info, .get = y1_volume_get, .put = y1_volume_put },
 };
 
+/*
+ * The speaker amplifier is fed from HPOUT, so headphones plugged in while the speaker plays hear the speaker's
+ * gain. As on the Y2, a plug first turns the gain down to step 0 and the speaker off; Reborn then moves the
+ * stream to the headphones with their own gain.
+ */
+static void y1_jack_quiet_speaker(struct y1_codec *c, struct snd_soc_card *card)
+{
+	struct snd_kcontrol *kctl;
+	bool lowered;
+
+	if (!snd_soc_dapm_get_pin_status(&card->dapm, "Speaker"))
+		return;
+	mutex_lock(&c->lock);
+	lowered = c->volume != 0;
+	c->volume = 0;
+	if (lowered && c->on)
+		regmap_update_bits(c->map, AUDTOP_CON5, 0x7700, 0);
+	mutex_unlock(&c->lock);
+	kctl = snd_soc_card_get_kcontrol(card, "Master Playback Volume");
+	if (lowered && kctl)
+		snd_ctl_notify(card->snd_card, SNDRV_CTL_EVENT_MASK_VALUE, &kctl->id);
+	snd_soc_dapm_disable_pin(&card->dapm, "Speaker");
+	snd_soc_dapm_sync(&card->dapm);
+	dev_info(c->component->dev, "headphones plugged: speaker off\n");
+}
+
+static void y1_jack_read(struct y1_codec *c)
+{
+	int plugged = gpiod_get_value_cansleep(c->hp_det);
+
+	if (plugged < 0 || plugged == c->jack_state)
+		return;
+	if (plugged)
+		y1_jack_quiet_speaker(c, c->component->card);
+	c->jack_state = plugged;
+	snd_soc_jack_report(&c->jack, plugged ? SND_JACK_HEADPHONE : 0, SND_JACK_HEADPHONE);
+}
+
+static void y1_jack_work(struct work_struct *work)
+{
+	y1_jack_read(container_of(to_delayed_work(work), struct y1_codec, jack_work));
+}
+
+static irqreturn_t y1_jack_irq(int irq, void *data)
+{
+	struct y1_codec *c = data;
+
+	mod_delayed_work(system_percpu_wq, &c->jack_work, msecs_to_jiffies(JACK_QUIET_MS));
+	return IRQ_HANDLED;
+}
+
+/* The jack exists once the card does: read it at once, so Reborn starts with a known state, then follow edges. */
+static int y1_codec_component_probe(struct snd_soc_component *component)
+{
+	struct y1_codec *c = snd_soc_component_get_drvdata(component);
+	int ret;
+
+	if (!c->hp_det)
+		return 0;
+	ret = snd_soc_card_jack_new(component->card, "Headphone", SND_JACK_HEADPHONE, &c->jack);
+	if (ret)
+		return ret;
+	c->component = component;
+	c->jack_state = -1;
+	y1_jack_read(c);
+	enable_irq(c->hp_irq);
+	return 0;
+}
+
+static void y1_codec_component_remove(struct snd_soc_component *component)
+{
+	struct y1_codec *c = snd_soc_component_get_drvdata(component);
+
+	if (!c->hp_det)
+		return;
+	disable_irq(c->hp_irq);
+	cancel_delayed_work_sync(&c->jack_work);
+	c->component = NULL;
+}
+
 static const struct snd_soc_component_driver y1_codec_component = {
 	.name = "y1-mt6323-codec",
+	.probe = y1_codec_component_probe,
+	.remove = y1_codec_component_remove,
 	.controls = y1_codec_controls, .num_controls = ARRAY_SIZE(y1_codec_controls),
 	.dapm_widgets = y1_codec_widgets, .num_dapm_widgets = ARRAY_SIZE(y1_codec_widgets),
 	.dapm_routes = y1_codec_routes, .num_dapm_routes = ARRAY_SIZE(y1_codec_routes),
 };
 
+/*
+ * The GPIO request sets the pin to GPIO mode; the interrupt's request puts it back in EINT0 mode, the pin's mode
+ * as LK leaves it. The pull stays as LK left it (stock: none). Off until the card's jack exists.
+ */
+static int y1_jack_init(struct platform_device *pdev, struct y1_codec *c)
+{
+	int ret;
+
+	c->hp_det = devm_gpiod_get_optional(&pdev->dev, "hp-det", GPIOD_IN);
+	if (IS_ERR_OR_NULL(c->hp_det))
+		return PTR_ERR_OR_ZERO(c->hp_det);
+	ret = devm_delayed_work_autocancel(&pdev->dev, &c->jack_work, y1_jack_work);
+	if (ret)
+		return ret;
+	c->hp_irq = gpiod_to_irq(c->hp_det);
+	if (c->hp_irq < 0)
+		return dev_err_probe(&pdev->dev, c->hp_irq, "headphone jack: no interrupt\n");
+	ret = devm_request_irq(&pdev->dev, c->hp_irq, y1_jack_irq, IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+			       IRQF_NO_AUTOEN, "y1-headphone-jack", c);
+	return ret ? dev_err_probe(&pdev->dev, ret, "headphone jack interrupt\n") : 0;
+}
+
 static int y1_codec_probe(struct platform_device *pdev)
 {
 	struct mt6397_chip *chip = dev_get_drvdata(pdev->dev.parent);
 	struct y1_codec *c;
+	int ret;
 
 	if (!chip || !chip->regmap)
 		return -EPROBE_DEFER;
@@ -188,6 +309,9 @@ static int y1_codec_probe(struct platform_device *pdev)
 	c->volume = 2; /* stock's power-up gain */
 	mutex_init(&c->lock);
 	platform_set_drvdata(pdev, c);
+	ret = y1_jack_init(pdev, c);
+	if (ret)
+		return ret;
 	/* Nothing is written at probe: the codec stays as LK left it until the first playback. */
 	return devm_snd_soc_register_component(&pdev->dev, &y1_codec_component, &y1_codec_dai, 1);
 }
@@ -199,5 +323,5 @@ static struct platform_driver y1_codec_driver = {
 	.driver = { .name = "y1-mt6323-codec", .of_match_table = y1_codec_match },
 };
 module_platform_driver(y1_codec_driver);
-MODULE_DESCRIPTION("Innioasis Y1 MT6323 audio codec (headphones)");
+MODULE_DESCRIPTION("Innioasis Y1 MT6323 audio codec (headphones, headphone jack)");
 MODULE_LICENSE("GPL");

@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **stage B PASS** (2026-11-05, [§10](#10-stage-b-run-1--headphone-playback-pass--2026-11-05)): ALSA
+Status: jack detection **PASS** (2026-11-09, [§14](#14-jack-detection--2026-11-09)). **stage B PASS** (2026-11-05, [§10](#10-stage-b-run-1--headphone-playback-pass--2026-11-05)): ALSA
 headphone playback on the Y1 through the MT6572 AFE and the MT6323 codec. **Stage C PASS** (2026-11-05,
 [§13](#13-stage-c-run-1--2026-11-05)): the speaker through the OCA72559 amplifier, switchable against the
 headphones. The owner chose audio before data and
@@ -223,3 +223,38 @@ driver drives with its own table (stock does the same). Controls: "Headphones Sw
 "Headphone Playback Volume". Speaker only (headphones off, gain step 2): the owner heard both the −40 dBFS and
 the −30 dBFS tone from the speaker. No kernel error; charging continued. Headphone recheck (speaker switch off,
 headphones on, gain step 2, −40 dBFS): heard in the headphones, the speaker silent. **Stage C: PASS.**
+
+## 14. Jack detection — 2026-11-09
+
+**Evidence.** Stock (§2): ACCDET with its plug switch on EINT0, GPIO135 mode 4, no pull, 256 ms debounce,
+polarity 0. On the owner's Y1 (single-build era, the thirty-fifth build running; read-only `devmem`): GPIO135 is
+in mode 4 as LK leaves it; its input bit (`0x10005240` bit 7) reads **1 with the jack empty and 0 with
+headphones in**, three changes each way, one bounce while re-seating the plug. The plug switch alone is enough to
+pick headphones or the speaker; the ACCDET block (headset type, hook key) stays unused.
+
+**Design.** The Reborn interface is the Y2's: the card's jack "Headphone" (input "Y2Audio Headphone",
+`SW_HEADPHONE_INSERT`).
+- `kernel/mt6572/.../pinctrl-mtk-mt6572.h`: pin 135 carries EINT0 in mode 4 (pin 30, the other EINT0 pin, is
+  not claimed).
+- `kernel/y1/mt6323-codec.c`: `hp-det-gpios` (GPIO135, active low). At card bind the jack is created and read at
+  once, then each edge restarts a 250 ms quiet period before the next read. On a plug while the "Speaker" pin is
+  on, the HPOUT gain first drops to step 0 (the amplifier is fed from HPOUT, so the headphones would otherwise
+  hear the speaker's gain) and the speaker pin goes off, as the Y2's kernel does; Reborn then moves the stream.
+- `innioasis-y1.dts`: the codec's `hp-det-gpios = <&pio 135 GPIO_ACTIVE_LOW>`.
+- Reborn `crates/reborn-platform/src/jack.rs`: without the Y2's poll state file (`*-0030/y2_hp/jack`) the jack
+  switch is believed from the start (the Y1 reads it before the jack input exists).
+
+**Build** `out/y1-jack-1` (the single build plus the above), BOOTIMG sha256
+`ac5a8ab34b571d7139022b34b0dc82b08e449070d29be1be24a0aec31d40fa85`; no new compiler warning. Root
+`out/y1-root-jack` (the working tree with Reborn 9.3.19 and the `jack.rs` change), `rootfs.ext4` sha256
+`3f9a2023bc4f7f6deca9f4a99159c11500a3b3704aac2bc185856d67c1e3d29a`.
+
+**Run 1 (2026-11-09).** The first write put `BOOTIMG.img` into ANDROID (a mistyped partition): build 5 booted
+and stopped without a root (`loop0: Can't find ext4 filesystem`); the rescue shell showed `ANDROID!` at the start
+of Y2ROOT, matching the new BOOTIMG. With the root above in ANDROID and the build in BOOTIMG the Y1 boots, and the
+owner reports the jack detection working: **PASS** (owner-observed; no log kept).
+
+**Test.** `/proc/interrupts` lists `y1-headphone-jack`; `cat /sys/class/input/*/name` lists
+"Y2Audio Headphone"; plug and unplug with Reborn's Speaker setting on: music moves to the headphones on a plug
+(the kernel log says `speaker off`) and pauses on an unplug; idle with the jack empty, playback starts on the
+speaker; with headphones in, in the headphones.

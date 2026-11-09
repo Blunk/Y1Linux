@@ -1272,7 +1272,9 @@ static const struct mtk_pin_desc mtk_pins_mt6572[] = {
     ),
     MTK_PIN(
         135, "GPIO135",
-        MTK_EINT_FUNCTION(NO_EINT_SUPPORT, NO_EINT_SUPPORT),
+        /* Y2Linux: EINT0 in mode 4 (MT6572_PIN_135_BPI_BUS5__FUNC_EINT0; Innioasis Y1 headphone jack, stock
+         * 3.0.2 accdet_setup_eint). Only this pin claims EINT0, which pin 30 can also carry. */
+        MTK_EINT_FUNCTION(4, 0),
         DRV_GRP0,
         MTK_FUNCTION(0, "GPIO135"),
         MTK_FUNCTION(1, "BPI_BUS5"),
