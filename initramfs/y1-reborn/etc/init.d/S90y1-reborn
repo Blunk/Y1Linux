@@ -2,8 +2,8 @@
 # Innioasis Y1: Reborn's first UI (docs/planning/Y1-REBORN-PLAN.md, stage R2), in place of the Y2's
 # S90reborn, boot-gate and reborn-supervise. /data is a 64 MiB ext4 image on its own tmpfs (Reborn accepts
 # only an ext4 /data with schema 1), so nothing survives a reboot. The SSH files already in the RAM
-# overlay's /data are copied in first. The screen timeout is seeded as 0: the Y1 has no Power key to wake a
-# dark screen; the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
+# overlay's /data are copied in first. The screen timeout is Reborn's default, as on the Y2 (a centre press wakes
+# the dark screen: overlay 0033); the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
 # no report, no power-off. With the power daemon (docs/planning/Y1-POWER-PLAN.md, D2) /data must exist before
 # it starts, so S03y1-data runs "data" early; a requested shutdown (/run/y2/shutdown.json) ends the restarts.
 RAM=/run/y1-ram
@@ -25,10 +25,9 @@ make_data() {
 	echo 1 > /data/.y2data-schema &&
 	mkdir -p -m 0700 /data/music /data/reborn/state /data/reborn/logs &&
 	/usr/bin/reborn --default-settings |
-		sed -e 's/"screen_timeout_seconds": *[0-9]*/"screen_timeout_seconds": 0/' \
-		    -e 's/"speaker": *true/"speaker": false/' \
+		sed -e 's/"speaker": *true/"speaker": false/' \
 		> /data/reborn/state/session.json &&
-	grep -q '"screen_timeout_seconds": *0' /data/reborn/state/session.json
+	grep -q '"speaker": *false' /data/reborn/state/session.json
 }
 
 supervise() {

@@ -300,3 +300,34 @@ Build `out/y1-thirtieth-boot-1` (the twenty-ninth plus the hold), BOOTIMG sha256
 `c62483c23d56a78f84e79a5a9f220d7777ced76a430a1843f120dabcf2fb9932`.
 **Run — PASS — 2026-11-06**: on battery, a centre hold of about 5 s in Reborn showed the turn-off ring and the player
 powered off; it came back with the usual hold (owner: "works").
+
+## 16. Screen timeout — 2026-11-09
+
+The owner asked for the Y2's automatic screen-off on the Y1. On the Y2 it is Reborn's alone
+(`app/reborn/src/main_loop.rs`): with no input for `screen_timeout_seconds` (default 60) it writes `bl_power` 4
+(`crates/reborn-platform/src/power.rs`) and stops the CRTC (`rb_graphics_sleep`); a short Power press wakes it.
+The same Reborn runs on the Y1; only the seeded timeout of 0 (R2, above: nothing could wake a dark screen) kept
+it from doing so. Design:
+
+- **Wake**: overlay `0033` gains, with a `backlight` phandle next to `innioasis,hold-power-ms`, a dark-press rule:
+  a centre press while that backlight's `bl_power` is off is a `KEY_POWER` tap on the hold device (Reborn: a short
+  Power in the dark → `ScreenWake`), and the press reports no `KEY_ENTER`, nor does its release (no Select on the
+  woken screen). The 3 s hold still runs from the same press: held on, it is Reborn's Power hold as before (turn-off
+  at about 4.9 s). Only `bl_power` counts, not `backlight_is_blank()`: PID1's charge screen blanks with
+  brightness 0 and `FBIOBLANK` (which marks every backlight fb-blanked) and reads `KEY_ENTER` itself. The
+  backlight is looked up at the first press, so the keys never wait for it. Y1 tree: `backlight =
+  <&panel_backlight>` in `keys`.
+- **Timeout**: Reborn's default, as on the Y2: `S90y1-reborn` (RAM `/data`) and `tools/build/y1_data.py` (the
+  USRDATA seed) no longer seed it. The owner's flashed USRDATA keeps its saved 0 until changed in Settings >
+  Screen Timeout (Reborn keeps the setting).
+- Lost on the Y1 by design: Select in the dark playing/pausing (`WheelAndButtons`); the one button wakes.
+- After the screen goes dark Reborn asks the platform for sleep; the Y1 refuses it (no SPM sleep) and the screen
+  stays dark (Reborn's F47 path), retrying with Reborn's back-off.
+
+Not yet seen on the Y1: the CRTC off/on (the DSI link and MIPI TX powered down and up again with LK's panel
+left initialised; display stage B did not cover blanking). Run: set a 30 s timeout in Reborn; the screen goes
+dark; a short centre press lights it on the same page with nothing selected; a centre hold from dark powers off
+as before; repeat several cycles, also during playback; the charge screen still lights on a centre press.
+Build `out/y1-build-screen-timeout`, BOOTIMG sha256
+`d664e5e82845d3747de081b1b549e57208f12ea5885863f839fd174513725039` (BOOTIMG only; the root and USRDATA unchanged).
+**Run — PASS — 2026-11-09**: the screen went dark after the timeout and a centre press woke it (owner: "works").
