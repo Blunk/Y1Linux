@@ -878,7 +878,7 @@
  	if (cs43130->hpload_dc[HP_LEFT] >= CS43130_LINEOUT_LOAD)
  		snd_soc_jack_report(&cs43130->jack, CS43130_JACK_LINEOUT,
  				    CS43130_JACK_MASK);
-@@ -2216,12 +2776,289 @@
+@@ -2216,12 +2776,300 @@
  			       ARRAY_SIZE(hp_cln_seq));
  
  	mutex_lock(&cs43130->clk_mutex);
@@ -1106,6 +1106,9 @@
 + * its EINT16). A plug is reported at once and first turns a playing speaker
 + * off, before the headphones get the speaker's level; an unplug needs two
 + * reads. Powered down, nothing polls and the last state stays reported.
++ * The first read powers the codec itself if it is down, so the card's
++ * "Headphone Jack" control never shows a guess: userspace reads it as is,
++ * like any ALSA jack, without a Y2-only "known yet" file.
 + */
 +#define Y2_JACK_POLL_MS		200
 +static struct cs43130_private *y2_jack_codec;
@@ -1113,6 +1116,14 @@
 +static unsigned int y2_jack_empty_reads, y2_jack_speaker_offs;
 +static void y2_jack_poll(struct work_struct *work);
 +static DECLARE_DELAYED_WORK(y2_jack_work, y2_jack_poll);
++
++/* The codec for one read: powered up for the first, else only if it is on. */
++static bool y2_jack_get(struct device *dev)
++{
++	if (y2_jack_state < 0)
++		return !pm_runtime_resume_and_get(dev);
++	return pm_runtime_get_if_active(dev) > 0;
++}
 +
 +static void y2_jack_poll(struct work_struct *work)
 +{
@@ -1122,7 +1133,7 @@
 +	bool plugged;
 +
 +	/* Powered down: stop; the next runtime resume starts polling again. */
-+	if (!cs43130 || pm_runtime_get_if_active(cs43130->dev) <= 0)
++	if (!cs43130 || !y2_jack_get(cs43130->dev))
 +		return;
 +	if (!regmap_read(cs43130->regmap, CS43130_HP_STATUS, &status)) {
 +		plugged = status & Y2_HP_STATUS_PLUGGED;
@@ -1171,7 +1182,7 @@
  
  static irqreturn_t cs43130_irq_thread(int irq, void *data)
  {
-@@ -2357,6 +3194,12 @@
+@@ -2357,6 +3205,12 @@
  		regmap_update_bits(cs43130->regmap, CS43130_INT_MASK_1,
  				   CS43130_XTAL_ERR_INT, 0);
  	}
@@ -1184,7 +1195,7 @@
  
  	ret = snd_soc_card_jack_new(card, "Headphone", CS43130_JACK_MASK,
  				    &cs43130->jack);
-@@ -2388,6 +3231,10 @@
+@@ -2388,6 +3242,10 @@
  	regmap_update_bits(cs43130->regmap, CS43130_HP_DETECT,
  			   CS43130_HP_DETECT_CTRL_MASK,
  			   CS43130_HP_DETECT_CTRL_MASK);
@@ -1195,7 +1206,7 @@
  
  	return 0;
  }
-@@ -2475,13 +3322,16 @@
+@@ -2475,13 +3333,16 @@
  	cs43130->dc_meas = device_property_read_bool(cs43130->dev, "cirrus,dc-measure");
  	cs43130->ac_meas = device_property_read_bool(cs43130->dev, "cirrus,ac-measure");
  
@@ -1214,7 +1225,7 @@
  				       cs43130->dc_threshold,
  				       CS43130_DC_THRESHOLD)) {
  		for (i = 0; i < CS43130_DC_THRESHOLD; i++)
-@@ -2529,11 +3379,31 @@
+@@ -2529,11 +3390,31 @@
  		dev_err(cs43130->dev, "Failed to request supplies: %d\n", ret);
  		return ret;
  	}
@@ -1246,7 +1257,7 @@
  	}
  
  	cs43130->reset_gpio = devm_gpiod_get_optional(cs43130->dev,
-@@ -2603,10 +3473,23 @@
+@@ -2603,10 +3484,23 @@
  
  	cs43130->mclk_int_src = CS43130_MCLK_SRC_RCO;
  
@@ -1271,7 +1282,7 @@
  
  	switch (cs43130->dev_id) {
  	case CS43130_CHIP_ID:
-@@ -2647,6 +3530,8 @@
+@@ -2647,6 +3541,8 @@
  {
  	struct cs43130_private *cs43130 = i2c_get_clientdata(client);
  
@@ -1280,7 +1291,7 @@
  	if (cs43130->xtal_ibias != CS43130_XTAL_UNUSED)
  		regmap_update_bits(cs43130->regmap, CS43130_INT_MASK_1,
  				   CS43130_XTAL_ERR_INT,
-@@ -2672,23 +3557,119 @@
+@@ -2672,23 +3568,119 @@
  	regulator_bulk_disable(CS43130_NUM_SUPPLIES, cs43130->supplies);
  }
  
@@ -1407,7 +1418,7 @@
  }
  
  static int cs43130_runtime_resume(struct device *dev)
-@@ -2696,38 +3677,43 @@
+@@ -2696,38 +3688,43 @@
  	struct cs43130_private *cs43130 = dev_get_drvdata(dev);
  	int ret;
  
