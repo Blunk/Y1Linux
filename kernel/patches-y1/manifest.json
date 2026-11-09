@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -196,7 +196,7 @@
     {
       "path": "drivers/input/keyboard/mtk-pmic-keys.c",
       "base_sha256": "4a085e49f16e12cc6c00f7b74b7c1e7e18735b45eccd26f0b24e076d9f940d1e",
-      "result_sha256": "02abf513b9753d55fb6a3bcba00ab3eea92b128fa53d49c889779e1631c68004",
+      "result_sha256": "300681bea377b82c462cc7ee6bc94af9b14ec175c1bebe1e919ecd13866e9f18",
       "patch": "0033-mtk-pmic-keys-label-hold.patch"
     },
     {

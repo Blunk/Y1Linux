@@ -1,8 +1,8 @@
 """Build the Innioasis Y1's Y2DATA seed image for USRDATA (docs/planning/Y1-DATA-PLAN.md, stage B0) into a fresh
 directory below out/; never access a device. Like the Y2's (tools/production/package.py) it is created offline and
 flashed once: ext4 labelled Y2DATA with a fixed Y1 UUID over all of USRDATA, the schema file, the owner's
-authorised SSH key, empty host-key and music directories, and Reborn's seeded settings (no screen timeout: the Y1
-has no Power key to wake the screen; the speaker off). Owned by root without host privilege: debugfs sets the
+authorised SSH key, empty host-key and music directories, and Reborn's seeded settings (the speaker off; the screen
+timeout is Reborn's default, as on the Y2, since a centre press wakes the dark screen). Owned by root without host privilege: debugfs sets the
 owners after mkfs. The power daemon's override files are never seeded (they would replace the Y1's in /etc).
 
     python3 -m tools.build.y1_data out/y1-data-1
@@ -19,7 +19,7 @@ USRDATA_BYTES = 0x80000000
 LABEL = 'Y2DATA'
 UUID = '79314c69-6e75-4801-8000-000000000102'
 KEY = Path('out/y1-ssh/id_ed25519.pub')
-SESSION = {'session_schema': 3, 'settings': {'screen_timeout_seconds': 0, 'speaker': False}}
+SESSION = {'session_schema': 3, 'settings': {'speaker': False}}
 DIRECTORIES = {'ssh': 0o700, 'ssh/authorized_keys.d': 0o700, 'ssh/host-keys': 0o700, 'music': 0o700,
                'reborn': 0o700, 'reborn/state': 0o700, 'system': 0o755, 'system/platform': 0o700}
 FILES = {'.y2data-schema': 0o644, 'ssh/authorized_keys.d/authorized_keys': 0o600,
