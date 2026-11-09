@@ -20,7 +20,8 @@
  * - GPU: the SPM power controller with only the MFG domain (the display domain stays as LK left it), Mali-400
  *   clocked from WHPLL at 500.5 MHz as stock, no OPP table, no MFG reset.
  * - Audio: the MT6572 AFE (DL1 -> ADDA), the MT6323 codec and the AW87559 speaker amplifier on I2C0, fed from the
- *   MT6323's HPOUT, in a simple card named as Reborn expects ("Y2Audio", pins "Headphone" and "Speaker").
+ *   MT6323's HPOUT, in a simple card named as Reborn expects ("Y2Audio", pins "Headphone" and "Speaker"); the
+ *   headphone jack (GPIO135, EINT0) on the codec, reported as the card's jack "Headphone".
  * - Connectivity: the core's memory reserved (0x80000000, 1 MiB, no-map), the MT6572 connectivity owner with its
  *   supplies VCN18, VCN28 and the PA supplies VCN33_BT/VCN33_WIFI (none always-on or boot-on): hci0 once userspace
  *   hands it the 32-byte BT_Addr record and activates it; with the Wi-Fi record handed over before activation,
@@ -203,10 +204,12 @@
 			innioasis,max-charge-current-microamp = <450000>;
 		};
 
-		/* The MT6323's audio codec, headphone path (the AW87559 speaker path is stage C). */
+		/* The MT6323's audio codec, headphone path (the AW87559 speaker path is stage C). The jack's plug
+		 * switch: stock's ACCDET EINT0 on GPIO135, low with headphones in (measured 2026-11-09). */
 		mt6323_codec: codec {
 			compatible = "innioasis,y1-mt6323-codec";
 			#sound-dai-cells = <0>;
+			hp-det-gpios = <&pio 135 GPIO_ACTIVE_LOW>;
 		};
 
 		/* Stock lcd-backlight: MT6323 PMIC mode, ISINK0 and ISINK1 in parallel (display stage 0). */
