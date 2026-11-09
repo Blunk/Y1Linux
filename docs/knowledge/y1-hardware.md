@@ -13,6 +13,44 @@ session, no flash, no device read. Nothing here is Y1 implementation or hardware
 Vocabulary as in [M0](../planning/M0-evidence-and-recovery.md): CONFIRMED applies to the named
 artifact; a fact about the owner's player stays INFERRED until read on that player.
 
+## Single build — 2026-11-09
+
+The Y1 port was developed as a sequence of numbered test builds ("first boot" to "thirty-fifth boot"), each a
+`y1-boot.sh <variant>` with its own device tree, kernel fragment, initramfs list and PID1 header behind a
+`Y1_<N>_BOOT` define. They are folded into **one build**, the thirty-fifth (Wi-Fi W6, BOOTIMG build 5,
+`eeede6ed…5ac5`), with no intermediate variant kept. The dated sections below and in `docs/planning/Y1-*-PLAN.md`
+keep the step names as hardware history; the files they name map to the single build as follows.
+
+| Step builds | Single build |
+| --- | --- |
+| `tools/build/y1-boot.sh <variant>`, `tools/build/y1_boot.py` | `tools/build/y1-build.sh` (no argument), `tools/build/y1_package.py`; output `BOOTIMG.img`, `y1.dtb`, `zImage-dtb`, `y1-init`, `kernel.config`, `SHA256SUMS` |
+| `kernel/dts/innioasis-y1-<N>-boot.dts` | `kernel/dts/innioasis-y1.dts` |
+| `kernel/config/y1-<N>-boot.config` | `kernel/config/y1-production.config` |
+| `initramfs/y1-<N>-boot.list` | `initramfs/y1-production.list` |
+| `initramfs/y1-second-boot.h` | `initramfs/y1-storage.h` (SHA-256, read-only disks, key names) |
+| `initramfs/y1-third-boot.h` | `initramfs/y1-session.h` (the session and its USB shell) |
+| `initramfs/y1-fourth-boot.h`, `y1-fifth-boot.h` | `initramfs/y1-charging.h` |
+| `initramfs/y1-sixth-boot.h`, `y1-seventh-boot.h`, `y1-eighth-boot.h` | `initramfs/y1-display.h` (`regs`, `bars`, `bl`) |
+| `initramfs/y1-ninth-boot.h` | `initramfs/y1-root.h` (Y2ROOT, Y2DATA, `rootsh`) |
+| `initramfs/y1-tenth-boot.h` | `initramfs/y1-system.h` (the Y1 overrides, the hand-over to busybox init) |
+| `initramfs/y1-twenty-second-boot.h` | `initramfs/y1-gadget.h` |
+| `initramfs/y1-twenty-third-boot.h` | `initramfs/y1-charge-mode.h` |
+| `initramfs/y1-twenty-eighth-boot.h` | `initramfs/y1-console.h` |
+| `initramfs/y1-twenty-ninth-boot.h` | `initramfs/y1-charge-screen.h` |
+
+PID1 keeps exactly the thirty-fifth's code paths: the defines were resolved with `unifdef`, and the functions
+only earlier variants called (the storage digests, the 60 s key test, the first boot's watchdog and heartbeat)
+were removed. With the step names still in place, the single build reproduced build 5's BOOTIMG byte for byte.
+It then took its own names: kernel release `-y1linux`, device-tree model `Innioasis Y1`, PID1 messages
+prefixed `y1-init:`, the PID1 functions named by subsystem.
+
+| Build | BOOTIMG sha256 | Differs from build 5 |
+| --- | --- | --- |
+| Step names kept (`out/y1-stage-a`) | `eeede6ed2bb7387ab1a5fca1c2bb0a5ef9b955e58bdeefe7ee008f8658aa5ac5` | nothing: BOOTIMG, zImage-dtb, DTB and `y1-init` identical; `.config` only in the initramfs list's path |
+| Single build (`out/y1-build`) | `7534e874bcdb39eabbd9072ac2fe019127f63f538aac738aebc39a931e355abe` (4,177,920 bytes) | `.config` only in `LOCALVERSION`; DTB only in `model`; the initramfs in one syslogd comment; `y1-init` (`10dab4f2…60a8`) only in the names above, the low-battery line (`connect a charger`) and the dropped unreachable heartbeat |
+
+The single build has not run on the player yet (physical status NOT_RUN); build 5 stays the way back.
+
 ## Owner's player
 
 | Fact | Status |
@@ -117,27 +155,26 @@ Not observed in the photo: the rest of the heartbeats and the reboot at 120 s.
 
 ## Second-boot result — 2026-11-05
 
-Five runs of the second boot ([plan](../planning/Y1-SECOND-BOOT-PLAN.md) §9–13, photos in
-`evidence-private/2026-11-04-y1-second-boot/`) established on the device:
+Five runs of the second test boot (photos in `evidence-private/2026-11-04-y1-second-boot/`) established on the
+device:
 
 | Observation | Establishes |
 | --- | --- |
 | The `mt6572-mainline` clock, pinctrl and PMIC-wrapper drivers, backported to 6.18.56, bind; the LK frame buffer stays lit with `clk_ignore_unused` | MT6572 SoC base for the Y1 (CONFIRMED) |
-| `mtk-sd` reads `mmcblk0` (3696 MiB), `mmcblk0boot0`/`boot1` (2 MiB each) and the microSD once each has a fixed 3.3 V `vmmc` description | eMMC and SD host work at 50 MHz, 8/4 bit (CONFIRMED) |
+| `mtk-sd` reads `mmcblk0` (3696 MiB), `mmcblk0boot0`/`boot1` (2 MiB each) and the microSD once each has a fixed 3.3 V `vmmc` description (6.18 `mtk-sd` sets `ocr_avail` only from `vmmc`; without one every card voltage is rejected: `no support for card's volts`) | eMMC and SD host work at 50 MHz, 8/4 bit (CONFIRMED) |
 | Six digests equal the backup at physical = dump − `0x600000` | The read path is correct and the backup is right (CONFIRMED) |
-| `apt32f-wheel 0-0051: firmware 1`; wheel scroll `KEY_UP`/`KEY_DOWN`; reg3 bits 0–3 = bottom `KEY_PLAYPAUSE`, right `KEY_NEXTSONG`, top `KEY_BACK`, left `KEY_PREVIOUSSONG` | APT32F on I2C1 `0x51`, reset GPIO134, EINT2 on GPIO136 (needs `input-schmitt-enable` for the input direction), supply VGP1 3.0 V (CONFIRMED) |
+| `apt32f-wheel 0-0051: firmware 1`; wheel scroll `KEY_UP`/`KEY_DOWN`; reg3 bits 0–3 = bottom `KEY_PLAYPAUSE`, right `KEY_NEXTSONG`, top `KEY_BACK`, left `KEY_PREVIOUSSONG` | APT32F on I2C1 `0x51`, reset GPIO134, EINT2 on GPIO136 (the fork's pin table maps an EINT for only 2 of 154 pins: GPIO136 gains `MTK_EINT_FUNCTION(4, 2)`; it needs `input-schmitt-enable` for the input direction), supply VGP1 3.0 V (CONFIRMED) |
 | `key 28 ENTER (centre)` from `mtk-pmic-keys` | Centre button = MT6323 power key, PMIC interrupt EINT16 level-high (CONFIRMED) |
 | No charging under the test kernels | Charging needs a charger/battery driver; not yet attempted |
 
 ## Third-boot result — 2026-11-05
 
-Two runs of the third boot ([plan](../planning/Y1-THIRD-BOOT-PLAN.md) §10–11, evidence in
-`evidence-private/2026-11-05-y1-third-boot/`):
+Two runs of the third test boot (evidence in `evidence-private/2026-11-05-y1-third-boot/`):
 
 | Observation | Establishes |
 | --- | --- |
 | Mainline MUSB glue + T-PHY, peripheral mode, PIO: `not attached` until the PHY forces the session (overlay `0015`, stock `usb_phy_recover` bits), then `configured`; the PC enumerates a high-speed `0525:a4a7` ACM gadget | USB device mode works on 6.18; the MT6572 PHY does not sense VBUS on this board (CONFIRMED) |
-| MT6323 VUSB 3.3 V on; T-PHY slew-rate calibration skipped (`eye-src` 4) | Enough for high-speed enumeration (CONFIRMED) |
+| MT6323 VUSB 3.3 V on; T-PHY slew-rate calibration skipped (`eye-src` 4: mainline's v1 T-PHY looks for the frequency meter at `sif + 0x100`, the MT6572's is at `0x11110f00`; 4 is the stock kernel's own timeout value) | Enough for high-speed enumeration (CONFIRMED) |
 | AUXADC (`0x714` BATSNS, `0x716` ISENSE, `0x718` VCDT, `0x71a` BATON1, `0x71c` die): battery 3.69–3.80 V, ISENSE = battery (no current), VCDT pin ×369/39 = 113 mV unplugged / 5222 mV plugged, BATON1 553 mV, die 31–34 °C | Telemetry channels and the charger-input divider (CONFIRMED); BATON/NTC meaning still unvalidated |
 | `vgp1: Bringing 2800000uV into 3000000-3000000uV` | LK leaves VGP1 at 2.8 V; stock kernel and Linux use 3.0 V |
 | MT6323 chip ID `0x2023`, die-temperature fuses valid | Calibrated PMIC temperature available |

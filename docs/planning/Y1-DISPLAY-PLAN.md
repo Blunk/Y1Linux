@@ -1,5 +1,9 @@
 # Y1 display: from LK's frame buffer to a Linux DRM pipeline
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **stage B PASS** on the owner's player (2026-11-05, [run 3](#15-stage-b-run-3--pass--2026-11-05)):
 Linux's MediaTek DRM driver drives the Y1's display. Next milestones (panel re-init, backlight, power
 domain, IOMMU) each need their own plan. Follows the

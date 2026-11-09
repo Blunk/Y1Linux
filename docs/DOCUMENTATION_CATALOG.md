@@ -255,7 +255,7 @@ Indexed pages: **352**. Explicit scope notices: **228**.
 | [Hardware Final USB DMA observations](knowledge/usb-dma-observation.md) | Retained research / scoped evidence |
 | [Host-readable USB logging — minimal path and controller gate](knowledge/usb-logging.md) | Retained research / scoped evidence |
 | [Wi-Fi, Bluetooth and firmware evidence](knowledge/wifi-bluetooth.md) | Retained research / scoped evidence |
-| [Innioasis Y1 (MT6572) hardware evidence](knowledge/y1-hardware.md) | Retained research / scoped evidence |
+| [Innioasis Y1 (MT6572) hardware evidence](knowledge/y1-hardware.md) | Retained research / scoped evidence; the single Y1 build and its map from the step builds |
 | [Y2 hardware evidence baseline](knowledge/y2-hardware.md) | Retained research / scoped evidence |
 | [Y2B-245 — Real screen result and sleep failure](knowledge/y2b245-hardware-result.md) | Retained research / scoped evidence |
 | [DEV-02 live platform qualification — 2026-09-10](knowledge/y2linux-dev02-live-qualification.md) | Retained research / scoped evidence |
@@ -360,8 +360,6 @@ Indexed pages: **352**. Explicit scope notices: **228**.
 | [Error reports](ERROR-REPORTS.md) | User guide: save a report, send it, what is in it and what never is |
 | [Ideas that won't be built, and why](NOT-PLANNED.md) | User guide: requests declined so far with the reason and the issue, linked from the issue forms |
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
-| [Y1 second boot plan](planning/Y1-SECOND-BOOT-PLAN.md) | MT6572 base drivers from the mainline fork, read-only eMMC/SD, wheel and centre button; tooling, safety and admission items |
-| [Y1 third boot plan](planning/Y1-THIRD-BOOT-PLAN.md) | USB serial shell (MUSB + T-PHY, peripheral only), VUSB, read-only battery telemetry; charging evidence; admission items |
 | [Y1 charging plan](planning/Y1-CHARGING-PLAN.md) | Read-only PMIC observation boot, then a first PC-port charging boot on the shared Y2 charger; Y1 vs Y2 stock values; staged admission |
 | [Y1 display plan](planning/Y1-DISPLAY-PLAN.md) | Fork MT6572 DRM data vs the Y2 MT6582 stack; offline stage, read-only display register dump, first DRM milestone adopting LK's panel |
 | [Y1 backlight plan](planning/Y1-BACKLIGHT-PLAN.md) | Brightness and screen-off on MT6323 ISINK0/1 with the shared Y2 driver, never above LK's duty; write policy; admission |

@@ -1,5 +1,9 @@
 # Y1 Wi-Fi
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **W0–W2 done 2026-11-07** (owner-approved): the firmware source decided (F2, the owner's Y2 file, by hash
 comparison, §2), the Y1's Wi-Fi record found (§7), the driver extended and built, not loaded (§8); **W3 PASS**
 (§9–§10: the Wi-Fi firmware boots on the Y1, `wlan0` registered); **W4 PASS** (§11–§12: passive and active scans

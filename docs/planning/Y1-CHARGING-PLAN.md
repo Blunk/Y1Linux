@@ -1,10 +1,14 @@
 # Y1 charging: observation boot, then a first charging boot
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: stage A done; stage B approved and **charging works** on the owner's player (2026-11-05,
 [run 3](#13-stage-b-run-3--linux-charges-the-y1--2026-11-05): constant current at the 450 mA step, no
 fault). Open: the constant-voltage phase, termination at 4.175 V and the timers (a full supervised charge),
 deferred by the owner. Follows the
-[third boot](Y1-THIRD-BOOT-PLAN.md) (PASS 2026-11-05: USB shell, read-only telemetry, charger input
+[third test boot](../knowledge/y1-hardware.md#third-boot-result--2026-11-05) (PASS 2026-11-05: USB shell, read-only telemetry, charger input
 measured).
 
 ## 1. Goal

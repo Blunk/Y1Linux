@@ -1,5 +1,9 @@
 # Y1 audio: ALSA playback through the MT6572 AFE and the MT6323 codec
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **stage B PASS** (2026-11-05, [§10](#10-stage-b-run-1--headphone-playback-pass--2026-11-05)): ALSA
 headphone playback on the Y1 through the MT6572 AFE and the MT6323 codec. **Stage C PASS** (2026-11-05,
 [§13](#13-stage-c-run-1--2026-11-05)): the speaker through the OCA72559 amplifier, switchable against the

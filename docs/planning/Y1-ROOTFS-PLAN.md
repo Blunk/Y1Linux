@@ -1,5 +1,9 @@
 # Y1 root filesystem: the Y2's Buildroot userspace from the microSD
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **step 1 PASS** (2026-11-05, [run 2](#10-run-2--pass--2026-11-05)): the Y2's Buildroot userspace runs
 on the Y1 from the eMMC's `ANDROID` partition ([§8](#8-redesign-the-card-is-built-in--2026-11-05): the card
 is built in), read-only below a RAM overlay. Next: the Y2's init and services (review first), persistent

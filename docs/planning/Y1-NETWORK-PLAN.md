@@ -1,5 +1,9 @@
 # Y1 USB networking and SSH (system milestone C)
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **PASS** on the owner's player (2026-11-05, [run](#8-run--pass--2026-11-05)): USB networking and key-only
 SSH at the Y2's `10.42.0.1`; approved by the owner with all four admission items the same day. Follows the
 [system plan](Y1-SYSTEM-PLAN.md) (milestone A PASS: the Y2's init and a Y1-safe service set; a shell on

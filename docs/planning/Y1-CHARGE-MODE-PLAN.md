@@ -1,5 +1,9 @@
 # Y1 robust charging: a charge-only mode
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **planned** (2026-11-06), not admitted. The owner asked to make charging robust before anything else.
 
 ## 1. The incident (2026-11-05/06)
