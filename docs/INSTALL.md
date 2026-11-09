@@ -56,7 +56,7 @@ match. Bluetooth works without the Y2 package; Wi-Fi needs both.
 
 | Partition (stock name) | Written with | Holds afterwards |
 | --- | --- | --- |
-| BOOTIMG | `BOOTIMG-y1-thirty-fifth-boot.img` | the Y1 kernel and its init, the Y1's `/etc/y2linux` overrides |
+| BOOTIMG | `BOOTIMG.img` (Y1 build) | the Y1 kernel and its init, the Y1's `/etc/y2linux` overrides |
 | ANDROID (`/system`) | `rootfs.ext4` (512 MiB of the 650 MiB partition) | Y2ROOT, the Y2's userspace, read-only |
 | USRDATA (`/data`, 2 GiB) | `Y2DATA-y1.img` | Y2DATA: settings, library, music, SSH keys, the radio firmware |
 | Preloader, MBR/EBR1, LK, RECOVERY, NVRAM, PROTECT_F/S, SECCFG, FAT, the built-in microSD | **never written** | stock |
@@ -89,14 +89,15 @@ From the repository root on the `y1` branch:
    mkdir -p out/y1-ssh && ssh-keygen -t ed25519 -N '' -f out/y1-ssh/id_ed25519
    ```
 
-2. **BOOTIMG** (the thirty-fifth variant: Bluetooth, Wi-Fi, MTP, charging, Reborn):
+2. **BOOTIMG** (the Y1 kernel with Bluetooth, Wi-Fi, MTP, charging and Reborn's devices; `out/y1-boot` must not
+   exist yet):
 
    ```sh
    python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/y1-boot \
-       -- sh /project/tools/build/y1-boot.sh thirty-fifth
+       -- sh /project/tools/build/y1-build.sh
    ```
 
-   Result: `out/y1-boot/BOOTIMG-y1-thirty-fifth-boot.img` with its `SHA256SUMS`.
+   Result: `out/y1-boot/BOOTIMG.img` with its `SHA256SUMS`.
 
 3. **Y2ROOT** from this branch (the firmware import from two packages needs this branch's platform; the Y2's
    release root images do not have it):
@@ -122,7 +123,7 @@ Connect the switched-off Y1 for each command (mtkclient waits for it), from the 
 ```sh
 python mtk.py w USRDATA <repo>/out/y1-data/Y2DATA-y1.img
 python mtk.py w ANDROID <repo>/out/y1-root/buildroot/images/rootfs.ext4
-python mtk.py w BOOTIMG <repo>/out/y1-boot/BOOTIMG-y1-thirty-fifth-boot.img
+python mtk.py w BOOTIMG <repo>/out/y1-boot/BOOTIMG.img
 ```
 
 `w` finds the partition by name and stops if it is absent. Never write PRELOADER, MBR, EBR1, UBOOT, NVRAM,

@@ -1,5 +1,19 @@
 # Roadmap gap audit
 
+## Y1 single build — 2026-11-09
+
+Repository change, no hardware, memory-layout or production-scope change and no flash. The Y1's numbered test
+builds ("first boot" to "thirty-fifth boot": 35 device trees, 35 kernel fragments, 12 initramfs lists, 13 PID1
+headers behind `Y1_<N>_BOOT` defines, a variant-taking `y1-boot.sh`) are folded into one build named after the
+Y2's: `tools/build/y1-build.sh`, `kernel/dts/innioasis-y1.dts`, `kernel/config/y1-production.config`,
+`initramfs/y1-production.list`, PID1 headers by subsystem, output `BOOTIMG.img`
+([map](../knowledge/y1-hardware.md#single-build--2026-11-09)). The second- and third-boot plans are removed; their
+results stay in the Y1 hardware evidence. Evidence: with the step names kept, the build reproduced build 5
+(`eeede6ed…5ac5`, the image on the player) byte for byte; the renamed build (`7534e874…5abe`) differs only in the
+kernel release (`-y1linux`), the device-tree model, PID1's message and function names (with its unreachable
+heartbeat dropped) and one syslogd comment in the initramfs. Gap: the renamed image
+is NOT_RUN on the player. Proceeding with the repository change only.
+
 ## Y1 Wi-Fi W6, Wi-Fi as a product — 2026-11-07
 
 Boundary review before a production-scope change on the Y1 ([plan](Y1-WIFI-PLAN.md) §14; owner-approved: "continue
@@ -274,7 +288,7 @@ Open: a full charge (CV phase, termination, timers), deferred.
 
 Boundary review on the second boot's physical PASS (2026-11-05). New hardware scope proposed, not admitted:
 USB device mode (MUSB + T-PHY, peripheral only), MT6323 VUSB 3.3 V, PMIC AUXADC sampling, a shell built into PID1
-over USB ([third boot plan](Y1-THIRD-BOOT-PLAN.md)). Evidence: the 3.0.2 disassembly of the USB, PHY and
+over USB (the third test boot, [result](../knowledge/y1-hardware.md#third-boot-result--2026-11-05)). Evidence: the 3.0.2 disassembly of the USB, PHY and
 charging paths ([Y1 hardware](../knowledge/y1-hardware.md#offline-disassembly-usb-and-charging--2026-11-05)),
 mainline 6.18.56's USB glue and T-PHY byte-identical to the MT6572 fork's, one T-PHY calibration address
 mismatch avoided in the board tree. Charging stays out of scope. Owner approved all four items
@@ -286,7 +300,7 @@ read-only and matching. No storage write, no charger register written. Next boun
 
 Boundary review on the first boot's physical PASS (same day): mainline 6.18 runs on the Y1 with LK's frame
 buffer, the RAM map and the watchdog confirmed. The owner approved the
-[second boot plan](Y1-SECOND-BOOT-PLAN.md) and its three admission items: the test kernel **reads** the eMMC
+second test boot plan and its three admission items ([result](../knowledge/y1-hardware.md#second-boot-result--2026-11-05)): the test kernel **reads** the eMMC
 and the SD card (no filesystem, `BLKROSET` before reading, conservative bus modes); it uses the PMIC wrapper
 and the MT6323 for the power key only; it enables exactly **VGP1 at 3.0 V** (stock wheel supply). Also
 admitted: backporting the needed MT6572 drivers from `mt6572-mainline` to 6.18.56 as a Y1 overlay set

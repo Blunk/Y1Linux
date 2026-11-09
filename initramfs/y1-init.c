@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * Innioasis Y1 first-boot PID1: shows on the player's screen that Linux reached userspace, then reboots
- * after the observation window, so the owner can restore BOOTIMG through the preloader (the Y1 has no
- * power button). It holds /dev/watchdog open and feeds it on every heartbeat, so a hang from here on
- * ends in a reset within the 15 s timeout. No storage or network access. ARM EABI numbers: upstream v6.18
- * arch/arm/tools/syscall.tbl. Entry: initramfs/start.S calls diag_start with the initial stack.
+ * Innioasis Y1 PID1 (docs/knowledge/y1-hardware.md): prepares the Y2 root on the Y1's eMMC and hands over to
+ * the Y2's busybox init, or keeps its own session with a USB shell when that fails (y1-session.h). Built into
+ * the kernel's initramfs (initramfs/y1-production.list); `--selftest` runs the build's checks under QEMU.
+ * ARM EABI numbers: upstream v6.18 arch/arm/tools/syscall.tbl. Entry: initramfs/start.S calls diag_start with
+ * the initial stack.
  */
 typedef long long s64;
 
@@ -12,7 +12,6 @@ enum {
     SYS_REBOOT = 88, SYS_CLOCK_NANOSLEEP_TIME64 = 407,
 };
 enum { CLOCK_MONOTONIC = 1, EINTR = 4, O_WRONLY = 1 };
-enum { HEARTBEATS = 24, HEARTBEAT_SECONDS = 5 };
 
 struct timespec64 {
     s64 sec;
@@ -90,107 +89,42 @@ static int is_selftest(long *stack)
     return *arg == *want;
 }
 
-/* Opening starts the watchdog if LK left it stopped; any write feeds it. Never closed. */
-__attribute__((unused)) static long arm_watchdog(void)
-{
-    long fd = call5(SYS_OPEN, (long)"/dev/watchdog", O_WRONLY, 0, 0, 0);
-    say(fd < 0 ? "watchdog: unavailable\n" : "watchdog: armed, fed every heartbeat\n");
-    return fd;
-}
-
-#ifdef Y1_SECOND_BOOT
-#include "y1-second-boot.h"
-#endif
-#ifdef Y1_THIRD_BOOT
-#include "y1-third-boot.h"
-#endif
-#ifdef Y1_FOURTH_BOOT
-#include "y1-fourth-boot.h"
-#endif
-#ifdef Y1_FIFTH_BOOT
-#include "y1-fifth-boot.h"
-#endif
-#ifdef Y1_SIXTH_BOOT
-#include "y1-sixth-boot.h"
-#endif
-#ifdef Y1_SEVENTH_BOOT
-#include "y1-seventh-boot.h"
-#endif
-#ifdef Y1_EIGHTH_BOOT
-#include "y1-eighth-boot.h"
-#endif
-#ifdef Y1_NINTH_BOOT
-#include "y1-ninth-boot.h"
-#endif
-#ifdef Y1_TENTH_BOOT
-#include "y1-tenth-boot.h"
-#endif
-#ifdef Y1_TWENTY_SECOND_BOOT
-#include "y1-twenty-second-boot.h"
-#endif
-#ifdef Y1_TWENTY_THIRD_BOOT
-#include "y1-twenty-third-boot.h"
-#endif
-#ifdef Y1_TWENTY_EIGHTH_BOOT
-#include "y1-twenty-eighth-boot.h"
-#endif
-#ifdef Y1_TWENTY_NINTH_BOOT
-#include "y1-twenty-ninth-boot.h"
-#endif
+#include "y1-storage.h"
+#include "y1-session.h"
+#include "y1-charging.h"
+#include "y1-display.h"
+#include "y1-root.h"
+#include "y1-system.h"
+#include "y1-gadget.h"
+#include "y1-charge-mode.h"
+#include "y1-console.h"
+#include "y1-charge-screen.h"
 
 static void observe(void)
 {
-#ifdef Y1_TWENTY_EIGHTH_BOOT
     console_to("/dev/ttyS0"); /* a quiet screen until the splash; the list carries the node */
-#endif
-    say("\nY1 FIRST BOOT: Linux reached userspace on the Innioasis Y1.\n");
-#ifdef Y1_TENTH_BOOT
+    say("\ny1-init: Linux reached userspace on the Innioasis Y1.\n");
     /* Left to the kernel's boot handler, as on the Y2: the Y2's init never feeds it. */
     long watchdog = -1;
     say("watchdog: left to the kernel's boot handler\n");
-#else
-    long watchdog = arm_watchdog();
-#endif
     if (call5(SYS_MOUNT, (long)"proc", (long)"/proc", (long)"proc", 0, 0) == 0) {
         show_first_line("kernel: ", "/proc/version");
         show_first_line("memory: ", "/proc/meminfo");
     } else {
         say("proc: mount failed\n");
     }
-#if defined(Y1_THIRD_BOOT)
-    third_boot(watchdog);
-#elif defined(Y1_SECOND_BOOT)
-    second_boot(watchdog);
-#endif
-    for (unsigned beat = 1; beat <= HEARTBEATS; ++beat) {
-        sleep_seconds(HEARTBEAT_SECONDS);
-        if (watchdog >= 0) call5(SYS_WRITE, watchdog, (long)"k", 1, 0, 0);
-        say("Y1 FIRST BOOT: alive ");
-        say_number(beat * HEARTBEAT_SECONDS);
-        say(" s\n");
-    }
+    run_session(watchdog); /* never returns: busybox init takes PID 1, or the session keeps it */
 }
 
 void diag_start(long *stack)
 {
     if (is_selftest(stack)) {
-#ifdef Y1_SECOND_BOOT
         if (!sha256_selftest()) { say("Y1INIT SELFTEST SHA-256 FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
-#endif
-#ifdef Y1_THIRD_BOOT
-        if (!third_boot_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
-#endif
-#ifdef Y1_FOURTH_BOOT
-        if (!fourth_boot_selftest()) { say("Y1INIT SELFTEST PACK TEMPERATURE FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
-#endif
+        if (!telemetry_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+        if (!pack_temperature_selftest()) { say("Y1INIT SELFTEST PACK TEMPERATURE FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);
     }
     observe();
-    say("Y1 FIRST BOOT: rebooting now; restore BOOTIMG through the preloader.\n");
-    sleep_seconds(2);
-    /* LINUX_REBOOT_MAGIC1, MAGIC2, CMD_RESTART: the MediaTek watchdog's restart handler. */
-    call5(SYS_REBOOT, (long)0xfee1dead, 0x28121969, 0x01234567, 0, 0);
-    say("Y1 FIRST BOOT: reboot refused; the unfed watchdog resets the player\n");
-    for (;;) sleep_seconds(3600);
+    for (;;) sleep_seconds(3600); /* not reached */
 }

@@ -1,5 +1,9 @@
 # Y1 system: the Y2's init and a Y1-safe service set
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **milestone A PASS** on the owner's player (2026-11-05, [run 3](#10-run-3--milestone-a-pass--2026-11-05)):
 the Y1 boots into the Y2's own init with a Y1-safe service set, nothing written to storage. Next milestones
 (data, USB networking, power, player) each need their own admission.

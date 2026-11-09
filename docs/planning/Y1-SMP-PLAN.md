@@ -1,5 +1,9 @@
 # Y1 second CPU core (SMP)
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **PASS** on the owner's player (2026-11-05, [run](#7-run--pass--2026-11-05)): both Cortex-A7 cores run;
 approved by the owner the same day. Every Y1 kernel so
 far was built without SMP (`# CONFIG_SMP is not set`; boot log "DT /cpu 2 nodes greater than max cores

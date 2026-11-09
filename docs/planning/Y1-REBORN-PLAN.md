@@ -1,5 +1,9 @@
 # Y1 player UI: Y2Reborn (system milestone E)
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **planned** (2026-11-05), not admitted. The owner asked to run Y2Reborn after the power-off PASS
 (D2 and D3 of [the power plan](Y1-POWER-PLAN.md) and milestone B are not done). Each stage has its own admission.
 

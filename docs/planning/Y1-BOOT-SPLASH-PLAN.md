@@ -1,5 +1,9 @@
 # Y1 quiet boot with the Reborn splash
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **PASS** (2026-11-06, [run](#3-run--pass--2026-11-06)). The owner asked for the Y2's boot screen instead of kernel text. No new
 hardware scope: the kernel console level, PID1's output and a userspace program already on the rootfs.
 

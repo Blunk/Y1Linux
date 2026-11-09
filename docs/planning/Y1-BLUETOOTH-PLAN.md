@@ -1,5 +1,9 @@
 # Y1 Bluetooth
 
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
 Status: **B0–B4 done, B5 PASS** (2026-11-06, owner-approved): firmware, WMT boot and RF calibration on the Y1 without the modem; B6 (hci0) not admitted; B7 not needed.
 (its connectivity driver with firmware from the stock system image). New hardware scope (a radio, a new power
 domain, a memory-layout change): each stage has its own admission, and the roadmap audit is repeated before stage
