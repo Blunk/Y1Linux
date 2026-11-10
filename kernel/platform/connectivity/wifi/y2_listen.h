@@ -6,9 +6,9 @@
  * channels out completely, so a network on channel 13 never appeared (Y2Linux #110, Australia;
  * the same holds for most of Europe and Asia). Now every scan is followed by a second pass that
  * only listens on them. A beacon heard there makes cfg80211 lift the restriction for that
- * channel (its beacon hint), the regulatory notifier runs again, and from then on the channel
- * is an ordinary one: scanned actively and joined. Nothing is ever sent on a listen-only
- * channel before that. Pure helpers; the state lives in regulatory.c. */
+ * channel (its beacon hint); the flags are read again before every scan, and from then on the
+ * channel is an ordinary one: scanned actively and joined. Nothing is ever sent on a
+ * listen-only channel before that. Pure helpers; the state lives in regulatory.c. */
 #ifndef Y2_LISTEN_H
 #define Y2_LISTEN_H
 

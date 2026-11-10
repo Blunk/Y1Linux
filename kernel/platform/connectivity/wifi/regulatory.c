@@ -88,12 +88,28 @@ void y2_wifi_reg_notifier(struct wiphy *wiphy, struct regulatory_request *reques
 		y2_wifi_error(glue);
 	}
 }
+/* Which channels are listen-only right now, from cfg80211's flags. Read before every scan: a
+ * beacon heard on such a channel clears its flag (the beacon hint) without the notifier
+ * running, and the firmware needs nothing new for it, since its domain has both kinds. */
+static void y2_listen_refresh(P_ADAPTER_T adapter)
+{
+	struct ieee80211_supported_band *band=priv_to_wiphy(adapter->prGlueInfo)->bands[NL80211_BAND_2GHZ];
+	u8 channel[14]={0};
+	if (!band) return;
+	for (unsigned i=0;i<band->n_channels;i++) {
+		const struct ieee80211_channel *ch=&band->channels[i]; unsigned n=ch->hw_value;
+		if (n>=1 && n<=14) channel[n-1]=y2_channel_use(n,!!(ch->flags & IEEE80211_CHAN_DISABLED),
+			!!(ch->flags & IEEE80211_CHAN_RADAR),!!(ch->flags & IEEE80211_CHAN_NO_IR))==Y2_CHANNEL_LISTEN;
+	}
+	memcpy(y2_listen.channel,channel,sizeof(channel));
+}
 /* The channels of the scan request being built: the ordinary ones, sent on as the request
  * says, or in the listen pass the listen-only ones, received on only. */
 unsigned y2_wifi_scan_channels(P_ADAPTER_T adapter, P_MSG_SCN_SCAN_REQ scan)
 {
 	RF_CHANNEL_INFO_T all[MAXIMUM_OPERATION_CHANNEL_LIST];
 	UINT_8 total=0, count=0;
+	if (!y2_listen.pass) y2_listen_refresh(adapter);
 	rlmDomainGetChnlList(adapter,BAND_2G4,ARRAY_SIZE(all),&total,all);
 	for (unsigned i=0;i<total && count<ARRAY_SIZE(scan->arChnlInfoList);i++)
 		if (y2_listen_takes(&y2_listen,all[i].ucChannelNum)) scan->arChnlInfoList[count++]=all[i];

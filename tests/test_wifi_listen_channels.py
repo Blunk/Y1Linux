@@ -91,10 +91,14 @@ int main(void) {
         done = ais[ais.index('aisFsmRunEventScanDone ('):]
         self.assertLess(done.index('y2_wifi_scan_listen(prAdapter, prAisFsmInfo->eCurrentState)'),
                         done.index('kalScanDone('))
-        # Beacon hints are on and reach the notifier; each new device starts from nothing.
+        # Beacon hints are on; each new device starts from nothing.
         init = (WIFI / 'os/linux/gl_init.c').read_text()
-        self.assertNotIn('REGULATORY_DISABLE_BEACON_HINTS', init)
-        self.assertIn('WIPHY_FLAG_SUPPORTS_FW_ROAM | WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON', init)
+        self.assertIn('prWdev->wiphy->regulatory_flags = 0;', init)
+        # The notifier waits for the driver's thread and cfg80211 calls it under a spinlock for a
+        # hint ("BUG: scheduling while atomic" on build 231): it is not asked to run for one, and
+        # the flags a hint changes are read before every ordinary pass instead.
+        self.assertIn('prWdev->wiphy->flags            = WIPHY_FLAG_SUPPORTS_FW_ROAM;', init)
+        self.assertIn('if (!y2_listen.pass) y2_listen_refresh(adapter);', regulatory)
         self.assertLess(init.index('y2_wifi_reg_reset();'), init.index('wiphy->reg_notifier = y2_wifi_reg_notifier;'))
 
 
