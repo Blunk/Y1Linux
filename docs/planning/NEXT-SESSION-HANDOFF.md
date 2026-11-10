@@ -1,6 +1,12 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-10): BETA 9.3.21 (BASELINE 232) RELEASE.** Bluetooth measured on a player and fixed where
+> **START HERE (2026-11-10): BETA 9.3.22 (BASELINE 233) RELEASE.** A failed sleep before kernel entry restores
+> dark (Y2Player #132, Y2Reborn #116); issue forms, `docs/NOT-PLANNED.md` and the similar-issues workflow. Still
+> owed from 9.3.21: the weak-signal capture, a join on channel 12/13, other headsets, reporter answers. Next free
+> label 234, sequence above 15800, next version 9.3.23
+> ([Beta 9.3.22 report](../validation/Y2-LINUX-1.0-BETA-9.3.22.md)).
+>
+> Previous entry: **START HERE (2026-11-10): BETA 9.3.21 (BASELINE 232) RELEASE.** Bluetooth measured on a player and fixed where
 > it burst after a stalled link (BlueALSA 0009, 0010), AFH mask from the Wi-Fi channel, real-time audio threads,
 > exFAT highmem oops (kernel 0072), sleep without radios (Y2Reborn #116), channels 12 and 13 (#110), FLAC and Opus
 > bitrate (#87). Owed on a player: the weak-signal capture with this build, a join on channel 12/13, a listening
