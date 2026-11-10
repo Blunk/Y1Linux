@@ -13,7 +13,7 @@ document links, rather than relocating or deleting proof. See the
 [shared knowledge rules](KNOWLEDGE_BASE.md)
 and the other repository's catalog for product-wide context.
 
-Indexed pages: **348**. Explicit scope notices: **228**.
+Indexed pages: **349**. Explicit scope notices: **228**.
 
 ## Entry
 
@@ -357,6 +357,7 @@ Indexed pages: **348**. Explicit scope notices: **228**.
 | [Last.fm scrobbling plan](planning/LASTFM-SCROBBLE-PLAN.md) | Last.fm sign-in, scrobble queue and offline plays |
 | [Error reports plan](planning/ERROR-REPORTS-PLAN.md) | Opt-in error reports: content, scrubbing, triggers, Cloudflare Worker + R2 receiver |
 | [Error reports](ERROR-REPORTS.md) | User guide: save a report, send it, what is in it and what never is |
+| [Ideas that won't be built, and why](NOT-PLANNED.md) | User guide: requests declined so far with the reason and the issue, linked from the issue forms |
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
