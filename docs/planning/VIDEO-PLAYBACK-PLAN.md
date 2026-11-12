@@ -1,9 +1,22 @@
 # Video playback plan
 
-Status: **in work since 2026-11-12** (owner: "do the full thing"). Step 0 (audit entry VIDEO) and step 1 for
-H.264 ([register read-out](../knowledge/video-decoder.md)) are done; the driver source exists and compiles; nothing
-has decoded a picture on the player yet. Video adds a hardware subsystem (the SoC's video decoder), so the
-[standing roadmap/gap audit](roadmap-gap-audit.md#standing-milestone-boundary-rule) came first.
+Status: **owner test build 243 plays films (2026-11-12).** What works, what was measured and what is open:
+[Videos on the Y2](../VIDEO.md). Nothing is published; every commit is local.
+
+| Step | State |
+|---|---|
+| 0 Audit and roadmap | Done (audit entry VIDEO) |
+| 1 Decoder reverse engineering | Done for H.264 ([register read-out](../knowledge/video-decoder.md)); MPEG-4 Part 2 not read out |
+| 2 Bring-up | Done: gate B met (pictures byte-identical to FFmpeg); no M4U needed |
+| 3 Kernel driver | H.264 progressive done (`kernel/platform/vdec*.c`); MPEG-4 on the hardware, field pictures and the sleep/wake part of gate C open |
+| 4 Userspace decode | Done: FFmpeg with our hardware path and the software decoders; hardware against software compared on nine files |
+| 5 Playback engine | Done as a second reader following the sound's position (Reborn `app/reborn/src/video.rs`) |
+| 6 Renderer | Done: one picture texture; shrinking and colour on the CPU |
+| 7 Library and UI | Videos place and list, thumbnails, film view on Now Playing, resume; no track or subtitle choice |
+| 8 Subtitles | Text tracks and files beside the film; no switch |
+| 9 Skins | Open: the film view is Reborn's own in every skin |
+| 10 Power and sleep | Screen stays on, decoder off when idle; drain and sleep/wake not measured |
+| 11 Qualification and install | Test builds 236 to 243 installed on the owner's player; the device tour by the owner is open |
 
 ## Decisions taken while building (2026-11-12, to be confirmed by the owner)
 
