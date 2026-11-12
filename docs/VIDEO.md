@@ -22,8 +22,8 @@ Films never appear among the songs, in the albums or artists, in shuffles of the
 | | |
 |---|---|
 | Containers | `.mp4` `.m4v` `.mov` `.mkv` `.webm` `.avi` |
-| Picture, on the hardware decoder | H.264 (Baseline, Main, High), progressive, 4:2:0, 8 bit, up to 1920×1088 |
-| Picture, in software | H.264 the hardware refuses (interlaced, other formats), MPEG-4 Part 2 (Xvid, DivX 4/5), DivX 3, H.263, VP8, VP9 |
+| Picture, on the hardware decoder | H.264 (Baseline, Main, High), frames and fields (interlaced too), 4:2:0, 8 bit, up to 1920×1088 |
+| Picture, in software | H.264 the hardware refuses (other chroma formats, 10 bit), MPEG-4 Part 2 (Xvid, DivX 4/5), DivX 3, H.263, VP8, VP9 |
 | Sound | what songs use (AAC, MP3, FLAC, Vorbis, Opus, ALAC, PCM), and AC-3 |
 | Subtitles | SubRip, ASS/SSA, WebVTT, MP4 timed text; shown as plain text |
 | Not played | HEVC (H.265), AV1, DTS sound, picture subtitles (DVD, Blu-ray), files with a picture and no sound |

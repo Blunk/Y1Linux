@@ -198,10 +198,29 @@ references; 640×480 without B pictures (picture order type 2). An interlaced 72
 hardware path at start and plays in software. One 1280×720 picture takes about 4 ms in the driver call
 (`vdec-run`: 30 pictures, 4.11 ms each), a 640×368 picture 1.2 ms.
 
+### Fields, MBAFF and the conformance streams (test build 245, same day)
+
+The driver also decodes field pictures and MBAFF frames: reference lists per field parity as the stock library
+builds them (a field entry has one word in `AVC_MV + 4i`, bit 22 and a bit in `MC+0x564/0x568/0x56c` for a
+bottom field, PicNum `2 * FrameNumWrap + 1` for the parity being decoded), `0x80000` in the word of a reference
+coded as fields and `0x40000` for one coded as an MBAFF frame, `MaxFrameNum * 2` and `CurrPicNum = 2 * frame_num
++ 1` for a field, half the macroblock rows in `MC+0x264` and `VLD_TOP+0x6c`, the bottom field's motion vectors
+at the frame's buffer plus 4 (2 with direct_8x8_inference), and only the field's own picture order in
+`AVC_MV+0x200`.
+
+The public JVT conformance streams (FFmpeg's FATE copy, `h264-conformance/`, remuxed to Matroska) were each
+decoded on the hardware and in software by `vdec-ffmpeg` on the player: **130 of 135 are identical in every
+picture**, among them the field, PAFF, MBAFF, long-term reference, reference marking and weighted prediction
+streams. The others: `sp1_bt_a` and `sp2_bt_b` (SP slices) and `FM1_FT_E` (slice groups) are Extended-profile
+features the hardware reports as errors; `CVFC1_Sony_C` (frame cropping at the top and left) decodes, the
+comparison tool and Reborn's picture conversion do not shift by the crop offset yet; one stream was refused by
+the hardware path at start and decoded in software. Per-file results:
+[video-h264-conformance-245.txt](evidence/video-h264-conformance-245.txt). The High-profile part of the suite
+(`FRExt/`) has not been run.
+
 ## Still open
 
 - The chip-type value on this unit (7 assumed; the 6/9/10 branches were left out and nothing missed them).
-- Long-term references and picture order type 1 have not been in a test file yet (x264 does not produce them);
-  damaged streams have not been tried.
+- Damaged streams have not been tried; top/left cropping is not applied to hardware pictures.
 - Timing and power per picture size; sleep and wake with an open decoder.
 - MPEG-4 Part 2: the sequence is in `mpeg4_part2_risc_settings` and `mpeg4_hw_reg_init`; not read out yet.
