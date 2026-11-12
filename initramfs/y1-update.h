@@ -362,6 +362,19 @@ static void recovery_finish(const char *outcome)
 }
 
 /* Returns only when the recovery needs a person (recovery_stuck); otherwise restarts or turns off. */
+/* The core's result is its whole journal with "outcome" last; the backup's segment list alone is up to 650 entries
+ * for ANDROID (about 5 KiB). R5 on the Y1: a 1 KiB buffer cut a 4 KiB record before the outcome, and an installed
+ * update ended on the unknown-outcome screen. A record that fills the buffer stays unknown. */
+enum { RESULT_BYTES = 32768 };
+static char result_record[RESULT_BYTES];
+
+static void recovery_outcome(char *outcome, unsigned size)
+{
+    long n = read_text("/run/y2/recovery-result.json", result_record, sizeof(result_record));
+    if (n < 0 || n >= (long)sizeof(result_record) - 1) result_record[0] = 0;
+    json_word(result_record, "outcome", outcome, size);
+}
+
 static void recovery_run(void)
 {
     static const char *const installing[] = { "Installing Update", "Don't turn off the player.",
@@ -370,7 +383,7 @@ static void recovery_run(void)
     static const char *const too_low[] = { "Battery too low", "Charge the player, then", "press Power to continue.", 0 };
     static const char *const ui[] = { "/sbin/y2-recovery-ui", 0 };
     static const char *const install[] = { "/sbin/y1-update-core", "recovery", 0 };
-    char result[1024], outcome[24], restart[256];
+    char outcome[24], restart[256];
     runtime_dir();
     recovery_watchdog = call5(SYS_OPEN, (long)"/dev/watchdog", O_WRONLY, 0, 0, 0);
     screen(installing);
@@ -382,8 +395,7 @@ static void recovery_run(void)
     restart_after = !(read_text("/newdata/updates/restart.json", restart, sizeof(restart)) > 0 && wants_poweroff(restart));
     for (;;) {
         int code = wait_watched(spawn(install, "/run/y2/recovery-result.json"), "/run/y2/recovery-progress", STALL_INSTALL);
-        if (read_text("/run/y2/recovery-result.json", result, sizeof(result)) < 0) result[0] = 0;
-        json_word(result, "outcome", outcome, sizeof(outcome));
+        recovery_outcome(outcome, sizeof(outcome));
         put("y1-recovery: core exit "); put_number(code); put(", outcome "); put(outcome[0] ? outcome : "none"); put("\n");
         send(SCREEN);
         log_kernel("outcome=", outcome[0] ? outcome : "none");
@@ -424,6 +436,16 @@ static int update_selftest(void)
     if (word[0]) return 0;
     json_word("{\"outcome\":\"failed_unchanged_and_a_much_longer_tail\"}", "outcome", word, 8);
     if (!same(word, "failed_")) return 0;
+    /* A record as long as an ANDROID backup's (650 segments) with the outcome last, as the core writes it. */
+    unsigned n = 0;
+    for (const char *s = "{\"backup\":{\"root\":{\"segments\":["; *s; ++s) result_record[n++] = *s;
+    for (unsigned i = 0; i < 650; ++i)
+        for (const char *s = "1048835,"; *s; ++s) result_record[n++] = *s;
+    for (const char *s = "4590]}},\"outcome\":\"installed\"}"; *s; ++s) result_record[n++] = *s;
+    result_record[n] = 0;
+    if (n < 5000 || n >= RESULT_BYTES - 1) return 0;
+    json_word(result_record, "outcome", word, sizeof(word));
+    if (!same(word, "installed")) return 0;
     return wants_poweroff("{\"mode\": \"poweroff\"}") && wants_poweroff("{\"mode\":\"poweroff\"}") &&
            !wants_poweroff("{\"mode\": \"restart\"}") && !wants_poweroff("{}") &&
            !wants_poweroff("{\"mode\": \"poweroffx\"}") && !wants_poweroff("");
