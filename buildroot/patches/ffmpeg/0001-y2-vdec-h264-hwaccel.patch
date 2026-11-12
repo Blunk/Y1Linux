@@ -77,7 +77,7 @@ diff -Nru a/libavcodec/Makefile b/libavcodec/Makefile
 diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 --- a/libavcodec/y2vdec_h264.c
 +++ b/libavcodec/y2vdec_h264.c
-@@ -0,0 +1,363 @@
+@@ -0,0 +1,364 @@
 +/*
 + * H.264 decoding on the Innioasis Y2's MT6582 hardware decoder (/dev/y2-vdec).
 + *
@@ -254,11 +254,12 @@ diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 +        av_free(d);
 +        return AVERROR(ENOMEM);
 +    }
-+    d->fd = open(Y2_DEVICE, O_RDWR | O_CLOEXEC);
++    d->fd = open(Y2_DEVICE, O_RDWR);
 +    if (d->fd < 0) {
 +        ret = AVERROR(errno);
 +        goto fail;
 +    }
++    fcntl(d->fd, F_SETFD, FD_CLOEXEC);
 +    d->config.codec  = Y2_VDEC_CODEC_H264;
 +    d->config.width  = sps->mb_width * 16;
 +    d->config.height = sps->mb_height * 16;
