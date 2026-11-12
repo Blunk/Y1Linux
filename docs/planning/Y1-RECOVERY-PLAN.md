@@ -431,3 +431,29 @@ mtkclient; all three read back identical on the player (`5d64b3b1…`, `9d49f77d
   ANDROID (`0x22a00`) refused (`refused CMD24`, nothing written), MISC and RECOVERY written; all four unchanged.
 - Minor, left for R5: `recovery-probe.json`'s `metadata` is `/proc/cmdline` cut before `y2.recovery=1`; the
   recovery's files are dated 1970 (no clock source in the recovery).
+
+## 12. R5 — install, cancel, failed health, go back — 2026-11-12
+
+`evidence-private/2026-11-12-y1-recovery-r5/`. A test release 1.0.0-beta.9.3.25 (branch `y1-r5-test`: only
+`release.json` and the Y2 kernel's version string; never merged or published), sequences 16001-16004 signed with
+the Y1 release key (owner's decision), staged from `/data/r5` with `update stage --package`. `ota` stays off in the
+image; for each test it was enabled only in the running system's RAM overlay, so Reborn offered its buttons (Reborn
+grants Install, Cancel and Restore only with `ota` enabled: R4b's gate works).
+
+- **Install (16001)**: Install Now wrote RECOVERY, restarted; the recovery verified, backed up root and BOOTIMG,
+  wrote Y2ROOT then BOOTIMG (about 95 s), cleared request and flag. **Found**: PID1 read `recovery-result.json`
+  into 1 KiB; the core's record (the whole journal with the backup's segment list, about 4 KiB) has `outcome`
+  last, so the player stopped on *Update needs attention*. A restart from the USB shell started 9.3.25, which
+  acknowledged its health at 54 s. Fixed in `ebb3a003` (32 KiB, selftest with a 650-segment record).
+- **Cancel (16002)**: the core recorded `Failed` / `owner cancelled before installation` and removed `pending/`
+  (`update cancel` exit 0). Reborn shows *The operation did not finish*: its task rule counts any `state: Failed`
+  reply as a failure, on the Y2 as well (Y2Reborn `client.rs`), not fixed here.
+- **Install with the fix (16002)**: `outcome: installed`, the recovery restarted by itself, Acknowledged at about
+  50 s, accepted floor 16002.
+- **Failed health (16003)**: Reborn stopped on the new system; at the 180 s deadline the health check set
+  `RollbackPending` with MISC `y2-update` and the flag; the next start restored 16002 (`RolledBack`, `outcome:
+  rolled_back`) and restarted by itself; `update` health DEGRADED with the restore's reason.
+- **Go back once (16004, rollback allowed)**: installed and acknowledged; Service → Diagnostics → Restore Previous
+  System restored 16002 (`RolledBack`, `current_sequence` 16002, highest 16004: 16004 cannot be replayed).
+- **Not run**: an interrupted write and a stopped installer. Holding the centre button does not reset the player
+  in the recovery, and PID1 serves no shell while the installer runs, so neither can be caused from outside.
