@@ -38,6 +38,8 @@ Last.fm and seventeen skins. Once it's installed, the player updates itself over
   player's volume controls theirs.
 - **Internet radio** from the free radio-browser.info directory (popular, by country, by genre, search), favorites
   and your own station lists.
+- **FM radio** on Y2s whose hardware receives FM (later revisions; the first revision has the tuner but receives
+  nothing): the player's own tuner, wired headphones as the antenna ([guide](docs/FM-RADIO.md)).
 - **Last.fm scrobbling**: sign in by scanning a QR code with your phone; plays wait on the player while offline.
 
 **Audiobooks**
