@@ -13,8 +13,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::{collections::BTreeMap, path::Path};
 use y2p_core::volume::{
-    expected_uuid, read_only_by_design, source_valid, SpaceState, VolumeState, EMMC_CONTROLLER,
-    SD_CONTROLLER,
+    expected_uuid, identity_source, SpaceState, VolumeState, EMMC_CONTROLLER, SD_CONTROLLER,
 };
 use y2p_core::{command, lenient::Shaped, mounts::Mount, player::Player, Root};
 
@@ -89,10 +88,10 @@ fn volume(
         .filter(|b| !b.is_empty())
         .map(|b| format!("{b}:{mount_id}:{device_id}"));
     let device = root.path(&format!("/sys/dev/block/{device_id}"));
-    // The SD card on MSDC1, everything else on the eMMC (MSDC0); the Y1's root and Y2DATA on their
-    // loops over its eMMC.
+    // The SD card on MSDC1, the rest on the eMMC (MSDC0); the Y1's root and Y2DATA on its loops.
     let instance = device_instance(root, device_id);
-    let controller_valid = source_valid(root, player, target, device_id);
+    let source = identity_source(root, player, target, mount);
+    let controller_valid = source.is_some();
     item.source_instance = instance.clone();
     item.controller_valid = controller_valid;
     let mut state = if controller_valid {
@@ -104,10 +103,10 @@ fn volume(
         (!controller_valid).then_some("source_missing_or_wrong_controller");
     let mut uuid = Value::Null;
     let claim = MediaRecord::claim(root);
-    if controller_valid {
+    if let Some(source) = &source {
         let answer = command::run(
             root,
-            &["blkid", "-p", "-s", "UUID", "-o", "value", &mount.source],
+            &["blkid", "-p", "-s", "UUID", "-o", "value", source],
             command::TIMEOUT,
         );
         if answer.ok {
@@ -150,7 +149,7 @@ fn volume(
         }
     }
     item.uuid = uuid;
-    let readonly = mount.read_only() && !read_only_by_design(player, target);
+    let readonly = mount.read_only();
     // The storage group mounts a healthy card read-only between writes: it is Ready; so is one that
     // plays while its check finishes in the background (F49).
     let protected = target == "/media/sd"

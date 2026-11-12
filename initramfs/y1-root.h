@@ -140,7 +140,10 @@ static void prepare_root(void)
     for (unsigned i = 0; i < sizeof(dirs) / sizeof(dirs[0]); ++i) call5(SYS_MKDIR, (long)dirs[i], 0755, 0, 0, 0);
     if (!attach_image(device)) return;
     if (!mount_step(device, "/mnt/image", "ext4", MS_RDONLY | MS_NOATIME, "noload")) return;
-    if (!mount_step("tmpfs", "/mnt/upper", "tmpfs", MS_NOSUID | MS_NODEV, "size=32m,mode=0755")) return;
+    /* 128 MiB: the platform judges the root's space by this upper layer (statvfs of the overlay); under 96 MiB
+     * free it reads LowSpace, the root DEGRADED and an update's health check never passes (R4b). A limit, not
+     * a reservation: tmpfs takes RAM only for what is written. */
+    if (!mount_step("tmpfs", "/mnt/upper", "tmpfs", MS_NOSUID | MS_NODEV, "size=128m,mode=0755")) return;
     call5(SYS_MKDIR, (long)"/mnt/upper/u", 0755, 0, 0, 0);
     call5(SYS_MKDIR, (long)"/mnt/upper/w", 0755, 0, 0, 0);
     if (!install_y1_overrides()) return;

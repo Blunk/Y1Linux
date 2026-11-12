@@ -355,14 +355,18 @@ anything else, and a fixture root, is the Y2).
 - **The core**: every update action runs `Player::update_core()`, `/usr/sbin/y1-update-core` on the Y1
   (`update/journal.rs`). Nothing else of the update service changed: the battery gate reads the power daemon's
   record as on the Y2, and the restart goes through the power daemon (which the Y1 runs since D2).
-- **`/data` and the root** (`y2p_core::volume`, the observation snapshot): on the Y1 the root and Y2DATA are verified
-  as loop devices over exactly their window of `mmcblk0` (sysfs `loop/offset`, `sizelimit`, `backing_file
-  /dev/mmcblk0`, and `/sys/block/mmcblk0` below `11120000.mmc`): ANDROID `72613888+681574400` bytes, USRDATA
-  `1291059200+2147483648`, as PID1 sets them up. Y2DATA must carry the Y1's UUID (`79314c69-…0102`), the root the
-  Y2ROOT UUID. The Y1's root is read-only by design (a read-only loop, and the guard never lets the normal system
-  write ANDROID), so mounted read-only it is Ready, not Degraded. Reborn's RAM `/data` (an image on another loop)
-  never verifies. So `update check`/`stage` find their transfer volume and the health acknowledgement sees
-  `root` and `data` OK; `render_node` (Lima), `display`, `audio` and `input` exist on the Y1 already.
+- **`/data` and the root** (`y2p_core::volume::identity_source`, also used by the observation snapshot): on the
+  Y1, Y2DATA is verified as its loop over exactly USRDATA (sysfs `loop/offset` `1291059200`, `sizelimit`
+  `2147483648`, `backing_file /dev/mmcblk0`, `/sys/block/mmcblk0` below `11120000.mmc`) with the Y1's UUID
+  (`79314c69-…0102`). The root is an overlay (a RAM upper layer) whose read-only lower mount PID1 hid with the
+  root switch: it is verified when `/` is an overlay and exactly one read-only loop covers exactly ANDROID
+  (`72613888+681574400`), and `blkid` reads the Y2ROOT UUID from that loop. Loop numbers vary between starts
+  (the device run had Y2DATA on `loop0`, ANDROID on `loop1`); nothing relies on them. Reborn's RAM `/data` (an image
+  on another loop) never verifies. So `update check`/`stage` find their transfer volume and the health
+  acknowledgement sees `root` and `data` OK; `render_node` (Lima), `display`, `audio` and `input` exist on the Y1.
+- **The root's space**: `statvfs("/")` is the overlay's tmpfs upper layer. PID1 made it 32 MiB, 30 MiB free, which
+  the platform's budget reads as CriticalSpace (under 96 MiB free is LowSpace), so the root was DEGRADED and the
+  health acknowledgement could never pass. PID1 now mounts it with `size=128m`, a limit, not a reservation.
 - **`S03y1-data`** writes the mounted loop to `/run/y2-data-device`, as the Y2's initramfs writes its partition,
   and creates `/data/updates` (0700). With it the platform's durable records count Y2DATA as verified: the boot
   journal (`boot-stage`, which the health acknowledgement records `application_ready` in) and the power daemon's
@@ -397,3 +401,19 @@ anything else, and a fixture root, is the Y2).
   `y2-platform health` shows `root` and `data` OK, `pgrep -f service-daemon` runs with Wi-Fi off,
   `y2-platform capabilities --json` shows `ota.enabled` false, and with Wi-Fi online
   `/data/updates/last-check.json` records an attempt.
+
+### R4's device run: R4b on the Y1 — 2026-11-12
+
+`evidence-private/2026-11-12-y1-recovery-r4/`. Before any write (`before/`, read over SSH): BOOTIMG, RECOVERY and
+MISC (= R0) backed up, and the root image (`0758be82…`, an earlier 9.3.24 build of `77073a76` that `out/` no
+longer holds) as `ANDROID-512MiB.img.gz`, each checked against the device. The owner wrote ANDROID
+(`out/y1-root-r4b`, built from `5fe02e41`), BOOTIMG and RECOVERY (`out/y1-r4b-boot`, 5,664,768 bytes each) with
+mtkclient; all three read back identical on the player (`5d64b3b1…`, `9d49f77d…`, `0bd7e244…`).
+
+- The normal system started: `S03y1-data` recorded `/dev/loop0` in `/run/y2-data-device` and created
+  `/data/updates`; `S42y2-readiness` started the service daemon (policy with `updates`); the capabilities report
+  `ota` and `automatic_bootimg_update` disabled; `y1-update-core misc` answered `Idle`, no request, flag 0;
+  `last-check.json` recorded an attempt; `data` OK.
+- **Found**: `root` FAILED (`source_missing_or_wrong_controller`): the root is the overlay, not the loop the host
+  fixtures had assumed. With the fix above, a cross-built platform run from `/tmp` read `root` as found but
+  DEGRADED (CriticalSpace, the 32 MiB upper layer). Both fixed; the fixtures now carry the device's mountinfo.
