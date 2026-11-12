@@ -1,6 +1,6 @@
 # Videos on the Y2
 
-Status: **owner test builds only (236–243, 2026-11-12; 243 is on the owner's player), not in a public release.** This page says what the
+Status: **owner test builds only (236–245, 2026-11-12; 245 is on the owner's player), not in a public release.** This page says what the
 test build does and what it does not do yet. How it is built: [video playback plan](planning/VIDEO-PLAYBACK-PLAN.md);
 what the hardware decoder does: [MT6582 hardware video decoder](knowledge/video-decoder.md).
 
@@ -48,7 +48,12 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
   | MPEG-4 720×576, 25 fps | software | 263 / 0 | 0.5 ms in the reader (the rest on four decoder threads, 13 % of a core) | 19 ms |
   | VP9 640×360, 25 fps | software | 270 / 0 | 0.4 ms in the reader (decoder threads 23 % of a core) | 16 ms |
 
-  All of Reborn used 77 to 87 % of one of the four cores while a film played; the governor ran that core below
+  That table is test build 243. Since then (test build 245) shrinking and colour run in NEON: measured alone
+  on the player at full clock, 7.0 ms for a 1280×720 picture (was 11.3), 10.6 ms at 1920×1080 (was 16.7),
+  5.7 ms for 640×360. What is left is mostly fetching the picture from memory. Software MPEG-4 at 720×576
+  decodes in 1.7 ms a picture, so the hardware decoder would gain nothing for it.
+
+  All of Reborn used 77 to 87 % of one of the four cores while a film played (build 243); the governor ran that core below
   its full clock, so the times above are longer than the work needs. The decoder's power goes off 200 ms after
   the last picture (seen while paused) and the device is closed when Now Playing is left.
 
@@ -61,7 +66,8 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
 - Picture and sound are aligned by the position the player reports; nobody has judged lip sync by eye and ear
   yet. Over Bluetooth the sound is later than the picture by the headphones' own delay (not corrected, by the
   owner's decision for the first version).
-- MPEG-4 Part 2 decodes in software; the hardware could do it, its register sequence is not read out yet.
+- MPEG-4 Part 2 decodes in software. The hardware could do it, but its register sequence is a second
+  reverse-engineering job of the size of H.264's and software already decodes a 576p picture in 1.7 ms.
 - No choice of subtitle or sound track (the first text track and the default sound track are used), no switch
   to turn subtitles off.
 - Skins draw their own lists; the film itself always uses Reborn's own picture screen.
