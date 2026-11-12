@@ -2,15 +2,20 @@
 import hashlib
 import struct
 
+# The image names by player (BOOTIMG, RECOVERY); the updater refuses the other player's
+# (docs/planning/Y1-RECOVERY-PLAN.md).
+NAMES = {'y2': (b'Y2Linux-M1', b'Y2Recovery-1'), 'y1': (b'Y1Linux-M1', b'Y1Recovery-1')}
 
-def pack(kernel, ramdisk, recovery=False):
+
+def pack(kernel, ramdisk, recovery=False, device='y2'):
     """BOOTIMG, or with recovery=True the RECOVERY image LK loads for "boot-recovery"
-    (its ramdisk wrapper must say RECOVERY; the name tells our updater it is ours)."""
+    (its ramdisk wrapper must say RECOVERY; the name tells our updater it is ours and
+    for which player)."""
     def wrapper(name, data):
         return struct.pack('<II32s',0x58881688,len(data),name.ljust(32,b'\0')) + b'\xff'*472 + data
     k, r = wrapper(b'KERNEL',kernel), wrapper(b'RECOVERY' if recovery else b'ROOTFS',ramdisk)
     header = bytearray(2048)
-    name = b'Y2Recovery-1' if recovery else b'Y2Linux-M1'
+    name = NAMES[device][recovery]
     struct.pack_into('<8s10I16s',header,0,b'ANDROID!',len(k),0x10008000,len(r),0x11000000,
                      0,0x10f00000,0x10000100,2048,0,0,name.ljust(16,b'\0'))
     identity = hashlib.sha1()

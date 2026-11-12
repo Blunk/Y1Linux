@@ -22,8 +22,6 @@ from tools.build.bootimage import pack
 from tools.update.package import build, canonical, keygen, sign
 
 PROJECT = Path(__file__).resolve().parents[1]
-BOOTIMG, RECOVERY, MISC = 60416*512, 93184*512, 138240*512
-SPAN = 16*1024**2
 
 
 def root_image(marker, size=8*1024**2):
@@ -40,13 +38,17 @@ def root_image(marker, size=8*1024**2):
 
 
 class UpdateTests(unittest.TestCase):
+    # The player's geometry (core.c): BOOTIMG, RECOVERY and MISC offsets on the logical disk, the boot span.
+    DEVICE, DEFINES = 'y2', []
+    BOOTIMG, RECOVERY, MISC, SPAN = 60416*512, 93184*512, 138240*512, 16*1024**2
+
     @classmethod
     def setUpClass(cls):
         cls.tools = tempfile.TemporaryDirectory(prefix='y2-update-tools-')
         cls.executable = Path(cls.tools.name) / 'core'
         # Optional actual target compiler/QEMU command, selected only by host harness.
         cc = os.environ.get('Y2_UPDATE_TEST_CC', 'cc')
-        subprocess.run([cc, '-O2', '-Wall', '-Wextra', '-Werror', '-DY2_UPDATE_TEST', '-pthread',
+        subprocess.run([cc, '-O2', '-Wall', '-Wextra', '-Werror', '-DY2_UPDATE_TEST', *cls.DEFINES, '-pthread',
                         str(PROJECT / 'tools/update/core.c'), '-lsodium', '-ljson-c', '-lz',
                         '-o', str(cls.executable)], check=True)
         cls.prefix = json.loads(os.environ.get('Y2_UPDATE_TEST_PREFIX', '[]'))
@@ -83,22 +85,28 @@ class UpdateTests(unittest.TestCase):
         self.new = root_image(b'new-root-content')
         (self.root / 'root.img').write_bytes(self.old)
         (self.root / 'new.img').write_bytes(self.new)
-        self.old_boot = pack(b'old-kernel'*100, b'old-ramdisk'*50)
-        self.new_boot = pack(b'new-kernel'*120, b'new-ramdisk'*70)
-        self.old_recovery = pack(b'old-kernel'*100, b'old-installer'*50, recovery=True)
-        self.new_recovery = pack(b'new-kernel'*120, b'new-installer'*70, recovery=True)
+        self.old_boot = self.pack(b'old-kernel'*100, b'old-ramdisk'*50)
+        self.new_boot = self.pack(b'new-kernel'*120, b'new-ramdisk'*70)
+        self.old_recovery = self.pack(b'old-kernel'*100, b'old-installer'*50, recovery=True)
+        self.new_recovery = self.pack(b'new-kernel'*120, b'new-installer'*70, recovery=True)
         for name, data in (('new-boot.img', self.new_boot), ('new-recovery.img', self.new_recovery)):
             (self.root / name).write_bytes(data)
         # Sparse logical disk up to the end of MISC; stock MISC ENV block kept intact.
         with (self.root / 'disk.img').open('wb') as disk:
-            disk.truncate(MISC + 512*1024)
-            disk.seek(BOOTIMG); disk.write(self.old_boot)
-            disk.seek(RECOVERY); disk.write(self.old_recovery)
-            disk.seek(MISC + 0x20000); disk.write(b'ENV_v1\0\0data_free_size_th=52428800')
-        self.env_block = self.region(MISC + 0x20000, 64)
-        self.manifest = build(self.root / 'new.img', self.versions, self.base / 'pending',
+            disk.truncate(self.MISC + 512*1024)
+            disk.seek(self.BOOTIMG); disk.write(self.old_boot)
+            disk.seek(self.RECOVERY); disk.write(self.old_recovery)
+            disk.seek(self.MISC + 0x20000); disk.write(b'ENV_v1\0\0data_free_size_th=52428800')
+        self.env_block = self.region(self.MISC + 0x20000, 64)
+        self.manifest = self.build(self.root / 'new.img', self.versions, self.base / 'pending',
                               self.private, 'test', 1, rollback_allowed=True,
                               bootimg=self.root/'new-boot.img', recovery=self.root/'new-recovery.img')
+
+    def build(self, *args, **options):
+        return build(*args, device=self.DEVICE, **options)
+
+    def pack(self, kernel, ramdisk, recovery=False):
+        return pack(kernel, ramdisk, recovery, self.DEVICE)
 
     def write(self, name, value):
         (self.root / name).write_bytes(canonical(value))
@@ -112,10 +120,10 @@ class UpdateTests(unittest.TestCase):
             return disk.read(length)
 
     def span(self, offset, image):
-        return self.region(offset, SPAN) == image + bytes(SPAN - len(image))
+        return self.region(offset, self.SPAN) == image + bytes(self.SPAN - len(image))
 
     def misc(self):
-        message = self.region(MISC, 2048)
+        message = self.region(self.MISC, 2048)
         command = message[:32].split(b'\0')[0]
         return (command, message[64:64+768].split(b'\0')[0])
 
@@ -178,7 +186,7 @@ class UpdateTests(unittest.TestCase):
             self.run_core('queue', expected=1)
             payload.write_bytes(good)
         self.assertEqual((self.root / 'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         self.assertFalse((self.base / 'state.json').exists())
 
     def test_a_boot_image_in_the_wrong_slot_is_refused(self):
@@ -187,7 +195,7 @@ class UpdateTests(unittest.TestCase):
             source = self.root / ('swap-' + payload)
             source.write_bytes(swapped)
             with self.assertRaises(ValueError):
-                build(self.root/'new.img', self.versions, self.root/('out-'+payload), self.private, 'test', 2,
+                self.build(self.root/'new.img', self.versions, self.root/('out-'+payload), self.private, 'test', 2,
                       bootimg=source if payload == 'bootimg' else self.root/'new-boot.img',
                       recovery=source if payload == 'recovery' else None)
         # The core checks independently of the host tool.
@@ -212,15 +220,15 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.journal()['state'], 'Queued')
         prepared = self.run_core('prepare')
         # The newer installer is written first by the running (BOOTIMG) system.
-        self.assertTrue(self.span(RECOVERY, self.new_recovery))
+        self.assertTrue(self.span(self.RECOVERY, self.new_recovery))
         self.assertEqual(prepared['recovery_installed'], self.manifest['payloads']['recovery']['raw_sha256'])
         self.assertEqual(self.misc(), (b'boot-recovery', b'recovery\n--y2-update\n'))
-        self.assertEqual(self.region(MISC + 0x20000, 64), self.env_block)
+        self.assertEqual(self.region(self.MISC + 0x20000, 64), self.env_block)
         self.run_core('recovery', expected=1)          # not the recovery environment
         self.boot('recovery-1')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'installed')
         self.assertEqual((self.root / 'root.img').read_bytes(), self.new)
-        self.assertTrue(self.span(BOOTIMG, self.new_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.new_boot))
         self.assertEqual(self.misc(), (b'', b''))
         self.assertEqual(self.journal()['state'], 'PendingHealth')
         self.assertEqual((self.root/'run/y2/recovery-progress').read_text(), '100 installed\n')
@@ -257,7 +265,7 @@ class UpdateTests(unittest.TestCase):
         self.boot('new-1')
         self.write('run/y2/application-ready.json', {'boot_id': 'new-1'})
         self.run_core('ack')
-        build(self.root/'new.img', self.versions, self.base/'pending', self.private, 'test', 1,
+        self.build(self.root/'new.img', self.versions, self.base/'pending', self.private, 'test', 1,
               bootimg=self.root/'new-boot.img', recovery=self.root/'new-recovery.img')
         self.assertIn('replay', self.run_core('queue', expected=1)['failure'])
 
@@ -282,7 +290,7 @@ class UpdateTests(unittest.TestCase):
         # test package) writes nothing and still reads back.
         self.write('run/y2/application-ready.json', {'boot_id': 'new-1'})
         self.run_core('ack')
-        build(self.root/'new.img', self.versions, self.base/'again', self.private, 'test', 1,
+        self.build(self.root/'new.img', self.versions, self.base/'again', self.private, 'test', 1,
               allow_downgrade=True, bootimg=self.root/'new-boot.img', recovery=self.root/'new-recovery.img')
         self.assertFalse((self.base/'pending').exists())   # kept as current/ by the ack
         (self.base/'again').rename(self.base/'pending')
@@ -301,7 +309,7 @@ class UpdateTests(unittest.TestCase):
         payload.write_bytes(bytes(data))
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'failed_unchanged')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         self.assertFalse((self.base/'previous.ext4.gz').exists())
 
     def test_backups_recorded_before_38_still_restore(self):
@@ -315,12 +323,12 @@ class UpdateTests(unittest.TestCase):
         root['raw_sha256'] = hashlib.sha256(self.old).hexdigest()
         boot = journal['backup']['bootimg']
         del boot['raw_crc32']
-        boot['raw_sha256'] = hashlib.sha256(self.old_boot + bytes(SPAN - len(self.old_boot))).hexdigest()
+        boot['raw_sha256'] = hashlib.sha256(self.old_boot + bytes(self.SPAN - len(self.old_boot))).hexdigest()
         (self.base/'state.json').write_text(json.dumps(journal))
         self.boot('recovery-2')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         # A wrong legacy hash is caught before it is trusted.
         self.run_core('queue')
         self.run_core('prepare')
@@ -333,7 +341,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_an_unchanged_recovery_image_is_not_rewritten(self):
         with (self.root/'disk.img').open('r+b') as disk:
-            disk.seek(RECOVERY); disk.write(self.new_recovery)
+            disk.seek(self.RECOVERY); disk.write(self.new_recovery)
         self.run_core('queue')
         self.assertNotIn('recovery_installed', self.run_core('prepare'))
 
@@ -348,7 +356,7 @@ class UpdateTests(unittest.TestCase):
             self.boot('recovery-2')
             self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
             self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-            self.assertTrue(self.span(BOOTIMG, self.old_boot))
+            self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
             self.assertEqual(self.journal()['state'], 'RolledBack')
             self.assertEqual(self.misc(), (b'', b''))
 
@@ -357,7 +365,7 @@ class UpdateTests(unittest.TestCase):
         self.run_core('prepare')
         self.assertEqual(self.run_core('recovery', fault='readback', recovery=True)['outcome'], 'rolled_back')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         self.run_core('queue')
         self.run_core('prepare')
         self.run_core('recovery', expected=91, fault='write_interrupt', recovery=True)
@@ -382,7 +390,7 @@ class UpdateTests(unittest.TestCase):
         self.boot('recovery-2')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         self.assertEqual(json.loads((self.base/'accepted.json').read_text())['current_sequence'], 0)
 
     def test_owner_rollback_after_acknowledgement(self):
@@ -395,7 +403,7 @@ class UpdateTests(unittest.TestCase):
         self.boot('recovery-2')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
 
     def next_release(self):
         # Release 1 installed and acknowledged; the running system's own files
@@ -408,7 +416,7 @@ class UpdateTests(unittest.TestCase):
         third = root_image(b'third-root-content')
         (self.root/'third.img').write_bytes(third)
         versions = dict(self.versions, release_version='test-v2', build_git_commit='3'*40)
-        build(self.root/'third.img', versions, self.base/'pending', self.private, 'test', 2,
+        self.build(self.root/'third.img', versions, self.base/'pending', self.private, 'test', 2,
               rollback_allowed=True, bootimg=self.root/'new-boot.img', recovery=self.root/'new-recovery.img')
         self.write('etc/y2linux/versions.json', self.versions)
         return third
@@ -445,7 +453,7 @@ class UpdateTests(unittest.TestCase):
         self.boot('recovery-3')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
         self.assertEqual((self.root/'root.img').read_bytes(), self.new)
-        self.assertTrue(self.span(BOOTIMG, self.new_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.new_boot))
         self.assertEqual(sorted(self.journal()['timings']), ['restore', 'restore_boot', 'restore_check'])
 
     def test_a_kept_package_of_another_release_is_dropped(self):
@@ -487,7 +495,7 @@ class UpdateTests(unittest.TestCase):
         (self.root/'root.img').write_bytes(old)
         (self.root/'new.img').write_bytes(new)
         shutil.rmtree(self.base/'pending')
-        build(self.root/'new.img', self.versions, self.base/'pending', self.private, 'test', 1,
+        self.build(self.root/'new.img', self.versions, self.base/'pending', self.private, 'test', 1,
               rollback_allowed=True, bootimg=self.root/'new-boot.img', recovery=self.root/'new-recovery.img')
         self.install()
         self.assertEqual((self.root/'root.img').read_bytes(), new)
@@ -525,6 +533,7 @@ class UpdateTests(unittest.TestCase):
         # so the update is abandoned and the intact system starts.
         self.run_core('queue')
         self.run_core('prepare')
+        self.boot('normal-1')
         result = self.run_core('boot-check', expected=10)
         self.assertEqual(result['state'], 'Failed')
         self.assertEqual(self.misc(), (b'', b''))
@@ -534,7 +543,8 @@ class UpdateTests(unittest.TestCase):
         self.run_core('recovery', expected=91, fault='write_interrupt', recovery=True)
         for expected in (20, 20, 11):   # prepare already asked once
             with (self.root/'disk.img').open('r+b') as disk:
-                disk.seek(MISC); disk.write(bytes(2048))
+                disk.seek(self.MISC); disk.write(bytes(2048))
+            self.boot('normal-%d' % expected)
             self.run_core('boot-check', expected=expected)
         self.assertEqual(self.journal()['state'], 'RescueRequired')
 
@@ -547,9 +557,9 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.misc(), (b'', b''))
         # A recovery entry with nothing unfinished just clears the request.
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'nothing')
-        # No request is ever made without a Y2 recovery image in RECOVERY.
+        # No request is ever made without a recovery image of this player in RECOVERY.
         with (self.root/'disk.img').open('r+b') as disk:
-            disk.seek(RECOVERY); disk.write(self.old_boot)
+            disk.seek(self.RECOVERY); disk.write(self.old_boot)
         self.assertEqual(self.run_core('misc')['recovery_image_valid'], False)
         self.run_core('probe', expected=1)
         self.assertEqual(self.misc(), (b'', b''))
@@ -567,10 +577,23 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.run_core('recovery', expected=1, recovery=True)['outcome'], 'needs_power')
         self.assertEqual(self.misc()[0], b'boot-recovery')
         self.assertEqual((self.root/'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
         self.assertEqual(self.journal()['state'], 'Queued')
         (self.root/'external-power').write_text('1')
         self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'installed')
+
+    def test_a_package_for_the_other_player_is_refused(self):
+        # A Y2 manifest carries no device field; a Y1 manifest names "y1". Signed or not, the core
+        # installs only its own player's package.
+        other = dict(manifest=copy.deepcopy(self.manifest), absent=copy.deepcopy(self.manifest))
+        other['manifest']['device'] = 'y1' if self.DEVICE == 'y2' else 'y2'
+        other['absent'].pop('device', None)
+        for name, manifest in other.items():
+            if manifest == self.manifest:
+                continue
+            self.resign(manifest)
+            self.assertIn('device', self.run_core('queue', expected=1)['failure'], name)
+        self.assertFalse((self.base / 'state.json').exists())
 
     def test_key_revocation_journal_corruption_and_symlinks(self):
         trust = json.loads((self.root / 'etc/y2linux/update-trust.json').read_text())
@@ -587,8 +610,94 @@ class UpdateTests(unittest.TestCase):
         (self.base/'state.json').symlink_to(self.root/'secret/key')
         self.run_core('status', expected=1)
         self.assertEqual((self.root / 'root.img').read_bytes(), self.old)
-        self.assertTrue(self.span(BOOTIMG, self.old_boot))
+        self.assertTrue(self.span(self.BOOTIMG, self.old_boot))
 
+
+
+
+class Y1UpdateTests(UpdateTests):
+    """The same suite on y1-update-core (docs/planning/Y1-RECOVERY-PLAN.md, R3): the Y1's offsets (Linux =
+    scatter - 0x600000), 6 MiB boot images named Y1Linux-M1/Y1Recovery-1, "device": "y1" packages, and LK's
+    door, the RTC PDN1 flag (overlay 0041's recovery_flag). LK clears the flag at every start (boot()); after
+    every run of the core the flag is set exactly while MISC holds a request."""
+    DEVICE, DEFINES = 'y1', ['-DY2_UPDATE_Y1']
+    BOOTIMG, RECOVERY, MISC, SPAN = 0x15c00*512, 0x18c00*512, 0x1be00*512, 6*1024**2
+    FLAG = 'sys/bus/platform/drivers/mt6323-pwrc/mt6323-pwrc/recovery_flag'
+
+    def setUp(self):
+        self.flag_file = None
+        super().setUp()
+
+    def boot(self, name):
+        super().boot(name)
+        if self.flag_file is None:
+            self.flag_file = self.root / self.FLAG
+            self.flag_file.parent.mkdir(parents=True)
+        self.flag_file.write_text('0\n')
+
+    def flag(self):
+        return self.flag_file.read_text().strip()
+
+    def run_core(self, *args, **options):
+        result = super().run_core(*args, **options)
+        if self.flag_file.exists():
+            self.assertEqual(self.flag(), '1' if self.misc()[0] == b'boot-recovery' else '0', args)
+        return result
+
+    def test_the_flag_follows_the_request_and_is_rearmed_in_recovery(self):
+        self.run_core('queue')
+        self.assertEqual(self.flag(), '0')
+        self.run_core('prepare')
+        self.assertEqual(self.flag(), '1')
+        self.assertTrue(self.run_core('misc')['recovery_flag'])
+        self.boot('recovery-1')                     # LK started RECOVERY and cleared the flag
+        self.run_core('recovery', expected=91, fault='write_interrupt', recovery=True)
+        self.assertEqual(self.flag(), '1')          # re-armed: a power loss returns to the recovery
+        self.boot('recovery-2')
+        self.assertEqual(self.run_core('recovery', recovery=True)['outcome'], 'rolled_back')
+        self.assertEqual((self.flag(), self.misc()), ('0', (b'', b'')))
+
+    def test_a_lost_flag_with_the_request_kept_asks_again(self):
+        # The Y1's own loss: LK cleared the flag but did not start RECOVERY (a start below 3250 mV powers
+        # off; the next start is normal), MISC still holds the request.
+        self.run_core('queue')
+        self.run_core('prepare')
+        self.boot('normal-1')
+        self.assertEqual(self.run_core('boot-check', expected=10)['state'], 'Failed')   # nothing written yet
+        self.run_core('queue')
+        self.run_core('prepare')
+        self.boot('recovery-1')
+        self.run_core('recovery', expected=91, fault='write_interrupt', recovery=True)
+        self.boot('normal-2')                      # flag lost, MISC set, the install unfinished
+        self.assertEqual(self.misc()[0], b'boot-recovery')
+        self.run_core('boot-check', expected=20)
+        self.assertEqual(self.flag(), '1')
+
+    def test_no_flag_interface_no_request(self):
+        self.run_core('queue')
+        self.flag_file.unlink()
+        self.assertIn('recovery flag', self.run_core('prepare', expected=1)['failure'])
+        self.flag_file.write_text('0\n')
+        self.flag_file.chmod(0o444)                 # the write is refused: the message is taken back
+        self.run_core('probe', expected=1)
+        self.assertEqual(self.misc(), (b'', b''))
+
+    def test_y1_geometry_and_images(self):
+        # The offsets of docs/planning/Y1-RECOVERY-PLAN.md and the guard's windows (tests/test_y1_emmc_guard.py).
+        self.assertEqual((self.BOOTIMG//512, self.RECOVERY//512, self.MISC//512), (0x15c00, 0x18c00, 0x1be00))
+        self.assertEqual(self.manifest['device'], 'y1')
+        self.assertEqual(self.new_boot[48:58], b'Y1Linux-M1')
+        # The packaging tool refuses a Y2 image and an image larger than the Y1's 6 MiB span.
+        (self.root/'y2-boot.img').write_bytes(pack(b'k'*1000, b'r'*1000))
+        (self.root/'big-boot.img').write_bytes(self.pack(b'k'*(6*1024**2), b'r'*1000))
+        for name in ('y2-boot.img', 'big-boot.img'):
+            with self.assertRaises(ValueError):
+                self.build(self.root/'new.img', self.versions, self.root/('out-'+name), self.private, 'test', 2,
+                           bootimg=self.root/name)
+        # The tool's names are the packer's.
+        from tools.build.bootimage import NAMES
+        from tools.update.package import PROFILES
+        self.assertEqual({device: profile['names'] for device, profile in PROFILES.items()}, NAMES)
 
 
 if __name__ == '__main__':

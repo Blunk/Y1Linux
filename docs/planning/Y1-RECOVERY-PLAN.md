@@ -3,11 +3,12 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2 built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
-[R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12)): the RTC PDN1
-recovery flag starts RECOVERY on the Y1 by a Linux restart, a centre-button start and a charger start, and LK clears
-it each time; each image's tree now carries its own eMMC write windows, tested on the host. R3 (Y1 geometry in
-`core.c`, packages) next. The
+Status: **R0 done, R1 PASS, R2 and R3 built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+[R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
+[R3](#9-r3--the-y1s-updater-and-packages--2026-11-12)): the RTC PDN1 recovery flag starts RECOVERY on the Y1 by a
+Linux restart, a centre-button start and a charger start, and LK clears it each time; each image's tree carries its
+own eMMC write windows; `y1-update-core` installs Y1 packages with the Y1's geometry and sets the flag with every
+request, tested on the host. R4 (PID1's rescue and recovery modes, the Y1 `S42`, the recovery screen) next. The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
@@ -246,4 +247,45 @@ Host code and tests only; nothing built here was written to the Y1.
   refused at its first, middle and last sector; the tree's lists equal the policies and `y1_package.WINDOWS`; the
   list validation at its limits. Three mutations of the guard (overlap check, window end, zero blocks) each fail
   the suite.
+
+## 9. R3 — the Y1's updater and packages — 2026-11-12
+
+Host code and tests only; nothing written to the Y1.
+
+- **One source, two binaries** (`buildroot/package/y2-update`): `y2-update-core` as before and `y1-update-core`
+  (`core.c` with `-DY2_UPDATE_Y1`), both in Y2ROOT, which both players run. The choice is made at build time; the
+  Y1's PID1 and `S42` (R4) call `y1-update-core`. `tools/production/validate.py` checks both as ARM binaries
+  without fixture code.
+- **The Y1's geometry** in `core.c`: disk `7569408` sectors on `11120000.mmc`; BOOTIMG `0x15c00`, RECOVERY
+  `0x18c00`, MISC `0x1be00` (sectors); boot images 6 MiB; the root limit is ANDROID, 650 MiB. Y2ROOT is written
+  through a **loop device over exactly ANDROID** (autoclear, created by the core on the disk it identified), so the
+  root writer is unchanged and its writes reach the eMMC only through the recovery tree's guard window; refused
+  while any loop device of the disk sits at ANDROID's offset (the running system's root).
+- **Packages name their player**: the Y1 images are `Y1Linux-M1` / `Y1Recovery-1` (`tools/build/bootimage.py`
+  `NAMES`, built by `y1_package.py`, checked by `tools/validation/bootimg.py`); a Y1 manifest carries
+  `"device": "y1"` (`package.py --device y1`), a Y2 manifest no field. Each core refuses the other's: the device
+  field ("incompatible device") and the image names. `product`/`hardware_revision` stay the root image's (the Y2ROOT
+  compat file both players carry).
+- **The door** (`RECOVERY_FLAG`, overlay 0041's `recovery_flag`): the flag is set with every MISC request and
+  cleared with it, read back each time. If setting it fails, the message is taken back: there is never a request
+  without the flag. The recovery **re-arms** the flag as soon as it reads a request, so an interrupted install
+  returns to the recovery; the request and flag are cleared together only after the outcome is verified. A start
+  that lost the flag but kept MISC (below LK's 3250 mV) reaches the rescue, which asks again as on the Y2 (three
+  times at most). `y1-update-core misc` reports `recovery_flag`.
+- **Recovery environment**: the installer writes only with the recovery initramfs marker and `y2.recovery=1` as a
+  whole word of `/proc/cmdline` (the Y2's: `recovery_image=1` in its boot metadata).
+- **Size**: the installer for RECOVERY's initramfs (`y1-update-core`, `y2-recovery-ui`, `ld-linux`, glibc,
+  libsodium, json-c, zlib, libdrm from the Beta 9.3.24 Y2ROOT) is 2,416,464 bytes, **1,180,306 gzip-compressed**.
+  RECOVERY.img is 4,182,016 bytes today, so with the installer about 5.36 MB of 6,291,456: no separate recovery
+  kernel config. `y1_package.py` keeps `INSTALLER_BYTES` (1.25 MiB) free in RECOVERY.img. The installer itself goes
+  into the initramfs in R4, with PID1's recovery mode.
+- **Host tests** (`tests/test_platform_update.py`): the whole update suite runs a second time as `Y1UpdateTests` on
+  `y1-update-core` with a Y1 `disk.img` (install, interrupted installs, rollbacks, kept packages, lost requests,
+  probes, faults). LK is modelled: every start clears the flag, and after every run of the core the flag is set
+  exactly while MISC holds a request. Y1 cases: the flag re-armed after an interrupted install; a lost flag with
+  MISC kept; no flag interface means no request; Y1 names, 6 MiB limit and the Y2 image refused by `package.py`.
+  Both cores refuse the other player's manifest.
+- **Left for R4**: the battery check reads `BAT0` and the USB/Mains supplies as on the Y2 (the Y1 uses the same
+  charger driver); the update service's `/data` lookup; `y2-recovery-ui` at 480×360; `capabilities.json` keeps `ota`
+  off for the Y1.
 

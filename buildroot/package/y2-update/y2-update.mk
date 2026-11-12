@@ -11,6 +11,9 @@ Y2_UPDATE_DEPENDENCIES = libsodium json-c zlib libdrm
 define Y2_UPDATE_BUILD_CMDS
 	$(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -Os -Wall -Wextra -Werror -pthread \
 		$(@D)/core.c -o $(@D)/y2-update-core $(TARGET_LDFLAGS) -lsodium -ljson-c -lz
+	# The Innioasis Y1's (docs/planning/Y1-RECOVERY-PLAN.md): its geometry, images and recovery flag.
+	$(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -Os -Wall -Wextra -Werror -pthread -DY2_UPDATE_Y1 \
+		$(@D)/core.c -o $(@D)/y1-update-core $(TARGET_LDFLAGS) -lsodium -ljson-c -lz
 	$(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -Os -Wall -Wextra -Werror \
 		-I$(STAGING_DIR)/usr/include/libdrm $(@D)/recovery-ui.c \
 		$(TARGET_LDFLAGS) -Wl,-z,relro,-z,now -ldrm -o $(@D)/y2-recovery-ui
@@ -18,6 +21,7 @@ endef
 
 define Y2_UPDATE_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/y2-update-core $(TARGET_DIR)/usr/sbin/y2-update-core
+	$(INSTALL) -D -m 0755 $(@D)/y1-update-core $(TARGET_DIR)/usr/sbin/y1-update-core
 	$(INSTALL) -D -m 0755 $(@D)/y2-recovery-ui $(TARGET_DIR)/usr/libexec/y2-recovery-ui
 endef
 

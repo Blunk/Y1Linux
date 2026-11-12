@@ -17,6 +17,9 @@ from tools.validation.bootimg import check as check_bootimg
 from tools.validation.d08 import require, up
 
 BOOTIMG_PARTITION = 0x600000  # Y1 PMT: BOOTIMG at 0x3180000, length 0x600000
+# Room RECOVERY.img keeps for the installer its initramfs gains in R4 (docs/planning/Y1-RECOVERY-PLAN.md §9):
+# y1-update-core, y2-recovery-ui and their libraries measured 1,180,306 bytes gzip-compressed (Beta 9.3.24).
+INSTALLER_BYTES = 0x140000
 ZIMAGE_MAGIC = 0x016f2818
 DTB_LIMIT = 0x10000
 # Properties the compiled tree must carry (docs/knowledge/y1-hardware.md), by subsystem.
@@ -150,10 +153,13 @@ def payload(zimage, dtb):
 
 
 def boot_image(kernel, ramdisk, recovery=False):
-    image = pack(kernel, ramdisk, recovery=recovery)
+    """Named Y1Linux-M1 / Y1Recovery-1: y1-update-core installs only these, y2-update-core never."""
+    image = pack(kernel, ramdisk, recovery=recovery, device='y1')
     read_end = 2048 + up(len(kernel) + 512, 2048) + up(len(ramdisk) + 512, 2048) + 2 * 2048
-    result = check_bootimg(image, kernel, ramdisk, {'bootimg_read_end': read_end}, recovery=recovery)
+    result = check_bootimg(image, kernel, ramdisk, {'bootimg_read_end': read_end}, recovery=recovery, device='y1')
     require(len(image) <= BOOTIMG_PARTITION, 'fits the Y1 BOOTIMG/RECOVERY partition (6 MiB each)')
+    if recovery:
+        require(len(image) + INSTALLER_BYTES <= BOOTIMG_PARTITION, 'RECOVERY leaves room for the installer')
     result['partition_bytes'] = BOOTIMG_PARTITION
     return image, result
 
