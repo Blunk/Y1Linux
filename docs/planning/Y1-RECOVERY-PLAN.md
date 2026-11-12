@@ -3,12 +3,14 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2 and R3 built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+Status: **R0 done, R1 PASS, R2, R3 and R4's PID1 part built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
 [R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
-[R3](#9-r3--the-y1s-updater-and-packages--2026-11-12)): the RTC PDN1 recovery flag starts RECOVERY on the Y1 by a
-Linux restart, a centre-button start and a charger start, and LK clears it each time; each image's tree carries its
-own eMMC write windows; `y1-update-core` installs Y1 packages with the Y1's geometry and sets the flag with every
-request, tested on the host. R4 (PID1's rescue and recovery modes, the Y1 `S42`, the recovery screen) next. The
+[R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12)): the RTC
+PDN1 recovery flag starts RECOVERY on the Y1 by a Linux restart, a centre-button start and a charger start, and LK
+clears it each time; each image's tree carries its own eMMC write windows; `y1-update-core` installs Y1 packages
+with the Y1's geometry and sets the flag with every request; both images carry it in their initramfs and PID1 runs
+it as the recovery and as the BOOTIMG rescue, host-built and selftested. Next: R4's device run (the probe through
+the recovery) and R4b (the normal system's update service on the Y1). The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
@@ -101,8 +103,8 @@ Offline; CONFIRMED unless marked.
   the power daemon answers the "charger or half a battery" check; the health check accepts the Y1's subsystems;
   a Y1 `capabilities.json` that reports `ota` only once R5 passes.
 - **Size budget**: RECOVERY.img ≤ `0x600000` bytes. The kernel with the Y1 initramfs is 4.18 MB; the installer
-  (`y2-update-core`, `y2-recovery-ui`, zlib) has to fit in the rest. Measured in R3; if it does not fit, the recovery
-  kernel config drops what the installer does not need (audio, Bluetooth, Wi-Fi, GPU).
+  (`y2-update-core`, `y2-recovery-ui`, zlib) has to fit in the rest. Measured in R3 and R4: both images 5.66 MB with
+  the installer (618 KiB left), without e2fsck ([§10](#10-r4--pid1s-recovery-and-rescue--2026-11-12)).
 
 ## 3. Stages
 
@@ -112,7 +114,8 @@ Offline; CONFIRMED unless marked.
 | **R1** | Probe image: the current kernel with a recovery tree and a PID1 that only logs `boot_mode`, shows *Recovery works* and powers off. Written to RECOVERY with mtkclient, read back. Then, on the UART: (a) the PDN1 flag set from a probe BOOTIMG build (one RTC write, the stock sequence) → LK starts RECOVERY, by Power and by restart, with and without the charger; (b) MISC `boot-recovery` alone (mtkclient) → expected normal boot, charge mode or power-off; (c) the flag survives a pulled cable on battery and is cleared by LK; (d) which button, if any, is keypad index 9 | RECOVERY (mtkclient), RTC PDN1, MISC (mtkclient) |
 | **R2** | Kernel: the guard with a list of windows, the two trees, the PDN1 write exception, host tests for every boundary of both policies | none |
 | **R3** | `core.c` Y1 geometry and device field, `package.py` Y1 profile, `y1_package.py` builds `RECOVERY.img`, size check; host tests with a Y1 `disk.img` (`Y2_UPDATE_TEST`) | none |
-| **R4** | PID1 rescue and recovery modes, `recovery-ui` at 480×360, Y1 `S42`, the update service's `/data` lookup. On the Y1: `probe-recovery` from the normal system (Linux writes MISC through the guard), a refused write outside each policy | RECOVERY (mtkclient), MISC (Linux) |
+| **R4** | PID1 rescue and recovery modes, `recovery-ui` at 480×360 (host: built, [§10](#10-r4--pid1s-recovery-and-rescue--2026-11-12)). On the Y1: `probe-recovery` from the normal system (Linux writes MISC through the guard), a refused write outside each policy | BOOTIMG, RECOVERY (mtkclient), MISC (Linux) |
+| **R4b** | The normal system on the Y1: the service daemon's update part (daily check, health ack) next to its network part, the update service's `/data` (Y2DATA on a loop over USRDATA, the Y1 UUID), `y1-update-core` as its core, `ota` off in the Y1's capabilities until R5 | none |
 | **R5** | End to end from a local release: Update Now, install, health ack; then cancel, a pulled cable during the write (resume or restore), a failed health check (rollback), a stopped installer (watchdog restart), go back once | BOOTIMG, ANDROID, RECOVERY, MISC, USRDATA through the guard |
 | **R6** | Release: INSTALL (RECOVERY written once, its backup, undo), a Y1 section in RECOVERY-AND-UPDATES, release notes, `ota` enabled for the Y1 | none |
 
@@ -143,7 +146,7 @@ Offline; CONFIRMED unless marked.
 | R0 | **Read** | reads on the Y1 and of the existing backups; offline analysis |
 | R1 | **Probe the door** | the owner writes the probe to RECOVERY and the request to MISC with mtkclient, both backed up and read back first; a probe BOOTIMG writes only RTC PDN1 bits 5:4 |
 | R2–R3 | **Build** | host code and tests only |
-| R4 | **Recovery on the device** | RECOVERY with mtkclient; Linux writes MISC through the guard; refused-write tests |
+| R4 | **Recovery on the device** | BOOTIMG (its PID1 carries the rescue) and RECOVERY with mtkclient, both backed up and read back; Linux writes MISC through the guard; refused-write tests |
 | R5 | **Install** | BOOTIMG, ANDROID, RECOVERY, MISC and USRDATA, only through the guard's policies; the owner's backup on the PC first |
 | R6 | **Release** | documentation; publishing to Blunk/Y1Linux is the owner's step |
 
@@ -288,4 +291,56 @@ Host code and tests only; nothing written to the Y1.
 - **Left for R4**: the battery check reads `BAT0` and the USB/Mains supplies as on the Y2 (the Y1 uses the same
   charger driver); the update service's `/data` lookup; `y2-recovery-ui` at 480×360; `capabilities.json` keeps `ota`
   off for the Y1.
+
+## 10. R4 — PID1's recovery and rescue — 2026-11-12
+
+Host code, a build and the selftest; nothing written to the Y1. Build `out/y1-r4-boot` against a Y2ROOT target
+that is 9.3.24's plus `y1-update-core` compiled from this tree with its toolchain (`out/y1-r4-y2root`, a hard-linked
+copy; the 9.3.24 root predates R3).
+
+- **The installer is in the built-in initramfs, in both images** (`tools/build/y1_installer.py`, a second
+  `CONFIG_INITRAMFS_SOURCE` list made by `y1-build.sh` from the Y2ROOT build named as its argument): `y1-update-core`,
+  `y2-recovery-ui`, their loader and libraries, the trust and compatibility files and the recovery marker. Not in
+  RECOVERY's separate ramdisk: this kernel never sees LK's ramdisk (ATAGs off, appended tree). Not only in RECOVERY:
+  the BOOTIMG rescue runs the core before the root is mounted, so a torn Y2ROOT cannot stop it, as on the Y2.
+  `y1_package.py` checks that the kernel's initramfs holds every listed file byte for byte (`installer_bytes`
+  2,869,136) and drops R3's 1.25 MiB reservation. INSTALL now builds Y2ROOT before BOOTIMG.
+- **Size**: with e2fsck and its five libraries both images were 6,199,296 bytes, 92 KB under 6 MiB. XZ and LZMA would
+  save 0.5 MB, but the build userspace has neither compressor (its `lzma` is BusyBox's, decompress-only); bzip2
+  saves 50 KB. Without e2fsck: **5,658,624 bytes, 618 KiB left**. PID1 mounts Y2DATA only when its superblock is the
+  Y1's Y2DATA (ext4 magic, label, UUID `79314c69-…0102`) and records no error (`s_state` bit 1); the mount replays
+  the journal, the part of `e2fsck -p` an unclean stop needs. `S03y1-data` still runs `e2fsck -p` at every normal
+  start.
+- **PID1** (`initramfs/y1-update.h`, the Y2's `recovery.sh` and init rescue in C; Y2DATA is now attached before the
+  root):
+  - *Recovery* (`y2.recovery=1`): `/run` on tmpfs, the screen started, `/dev/watchdog` opened; Y2DATA checked and
+    mounted at `/newdata` (else *Update needs attention*: *Storage not found* / *Storage check failed*);
+    `restart.json` read; `y1-update-core recovery` with the watchdog fed only while `/run/y2/recovery-progress`
+    changes within 120 s (300 s for the steps before); `needs_power` waits ten minutes for a charger, else turns off;
+    each outcome shows the Y2's screen, keeps `recovery-last.json` and `logs/recovery-last.log` on Y2DATA, unmounts,
+    darkens the screen and restarts (or turns off with `{"mode": "poweroff"}`). An unknown outcome keeps the request,
+    hands the watchdog back (`V`) and stays in PID1's session with the USB shell; after ten minutes without a charger
+    it turns off. The R1 probe screen is gone; the `y2-probe` request is the core's (*Recovery works*).
+  - *Rescue* (BOOTIMG, before `prepare_root`): with `updates/state.json` on Y2DATA, `boot-needed` on a read-only
+    mount, then `boot-check` on a checked read-write mount (`boot-check-last.json` kept). 10 starts the system, 20
+    (the core set the request and the flag) restarts into RECOVERY: unlike the Y2, which powers off, the flag carries
+    a restart there (R1, test 1). Anything else stays in PID1's session with *an update needs attention*.
+  - Selftest (`Y1INIT SELFTEST OK`): the outcome and `restart.json` parsers, the superblock check (the Y2's UUID, a
+    longer label, the error bit and a wrong magic refused).
+- **The screen**: `recovery-ui.c` already draws a 480×360 frame centred on the panel, and the Y1 panel's mode is
+  480×360 (`kernel/y1/panel-lk.c`); the preview renders the Y1's new texts (*Update needs attention*, *Turning off to
+  save power.*) inside its 28 columns. No change.
+- **Host tests** (`tests/test_y1_installer.py`): the cpio reader; the image check passes an exact copy and refuses a
+  changed file, a missing file and a list without the core; with a Y2ROOT build in `out/`, the list from it (loader
+  included, no e2fsck) and a core with test fixtures refused.
+- **Gate**: fmt, clippy, armv7, the code-quality ratchet and cargo test pass; the 20 platform goldens
+  (`report-upload-*`, `reset-plan-*`, `media-status-*`) fail as in R2 and R3. No platform code changed.
+- **The device run (owner)**: a Y2ROOT built from this tree (it carries `y1-update-core`), BOOTIMG and RECOVERY from
+  `y1-build.sh` with it, each written with mtkclient and read back. Then from the normal system: `mkdir -m 700
+  /data/updates` if absent, `y1-update-core misc` (no request, flag 0), `y1-update-core probe` (MISC `y2-probe`, flag
+  1, read through the guard's MISC window), `reboot` → RECOVERY shows *Recovery works* and restarts into the system;
+  `/data/updates/recovery-probe.json` names the recovery's boot, `y1-update-core misc` shows no request and flag 0,
+  `/data/logs/recovery-last.log` holds the run. Refused writes from the normal system: one sector at BOOTIMG
+  (`0x15c00`) and at ANDROID (`0x22a00`) on `mmcblk0` fail and the guard logs them; one at MISC passes (then
+  restored).
 

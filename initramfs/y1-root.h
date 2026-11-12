@@ -15,6 +15,7 @@ enum { LOOP_CTL_GET_FREE = 0x4c82, LOOP_CONFIGURE = 0x4c0a, LO_FLAGS_READ_ONLY =
 enum { ANDROID_OFFSET = 0x4540000, ANDROID_SIZE = 0x28a00000 };
 static int root_ready;
 static long root_shell = -1; /* pid of the chroot shell while it runs */
+static char data_device[16]; /* Y2DATA's loop device once attach_data() set it up */
 
 /* struct loop_config: fd, block_size, struct loop_info64 (232 bytes; lo_flags at 52), __reserved[8]. */
 struct loop_config {
@@ -90,6 +91,7 @@ static int guard_selftest(void)
            !guard_covers_usrdata(other, 8);
 }
 
+/* Before the root (initramfs/y1-update.h: the update rescue and the recovery need Y2DATA first). */
 static void attach_data(void)
 {
     u8 found[33];
@@ -126,6 +128,7 @@ static void attach_data(void)
     call5(SYS_CLOSE, disk, 0, 0, 0, 0);
     if (loop >= 0) call5(SYS_CLOSE, loop, 0, 0, 0, 0);
     if (r != 0) { put("data: loop setup failed "); put_number((int)r); put("\n"); send(SCREEN | USB); return; }
+    copy(data_device, sizeof(data_device), device, 0, 0);
     put("data: USRDATA on "); put(device); put(", writable behind the eMMC guard\n");
     send(SCREEN | USB);
 }
@@ -148,7 +151,6 @@ static void prepare_root(void)
         !mount_step("sysfs", "/newroot/sys", "sysfs", MS_NOSUID | MS_NODEV | MS_NOEXEC, 0) ||
         !mount_step("/dev", "/newroot/dev", 0, MS_BIND, 0))
         return;
-    attach_data();
     root_ready = 1;
     put("rootfs: Y2ROOT (eMMC ANDROID) on "); put(device); put(", read-only below a RAM overlay; `rootsh` on USB\n");
     send(SCREEN | USB);

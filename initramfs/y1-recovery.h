@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * Innioasis Y1 PID1 in the RECOVERY image (docs/planning/Y1-RECOVERY-PLAN.md, R1 probe): the recovery tree
- * adds y2.recovery=1 to the command line, the only difference to BOOTIMG. The probe proves that LK started
- * RECOVERY: it never hands over to the system, shows "Recovery works" and keeps PID1's USB shell (cat, poweroff).
+ * Innioasis Y1 PID1 in the RECOVERY image (docs/planning/Y1-RECOVERY-PLAN.md): the recovery tree adds
+ * y2.recovery=1 to the command line (and its own eMMC write windows), the only difference to BOOTIMG. PID1 then
+ * installs or restores instead of starting the system (initramfs/y1-update.h).
  */
 
 /* word is one whole space-separated word of line. */
@@ -21,14 +21,6 @@ static int recovery_mode(void)
 {
     char cmdline[512];
     return read_text("/proc/cmdline", cmdline, sizeof(cmdline)) > 0 && has_word(cmdline, "y2.recovery=1");
-}
-
-static void recovery_probe(void)
-{
-    console_to("/dev/tty0");
-    say("\n\n  Recovery works\n\n  Y1 recovery probe: LK started RECOVERY.\n"
-        "  The system is not started; PID1's shell is on USB.\n");
-    say("y1-init: recovery probe (y2.recovery=1), no root hand-over\n");
 }
 
 static int recovery_selftest(void)

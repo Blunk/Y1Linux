@@ -17,9 +17,9 @@ from tools.validation.bootimg import check as check_bootimg
 from tools.validation.d08 import require, up
 
 BOOTIMG_PARTITION = 0x600000  # Y1 PMT: BOOTIMG at 0x3180000, length 0x600000
-# Room RECOVERY.img keeps for the installer its initramfs gains in R4 (docs/planning/Y1-RECOVERY-PLAN.md §9):
-# y1-update-core, y2-recovery-ui and their libraries measured 1,180,306 bytes gzip-compressed (Beta 9.3.24).
-INSTALLER_BYTES = 0x140000
+# The installer both images carry in the built-in initramfs (tools/build/y1_installer.py,
+# docs/planning/Y1-RECOVERY-PLAN.md R4), as its list names the files.
+INSTALLER_LIST = 'installer/y1-installer.list'
 ZIMAGE_MAGIC = 0x016f2818
 DTB_LIMIT = 0x10000
 # Properties the compiled tree must carry (docs/knowledge/y1-hardware.md), by subsystem.
@@ -147,6 +147,34 @@ def check_dtb(root, name):
     return source
 
 
+def cpio_files(raw):
+    """The regular files of a newc archive, name -> bytes."""
+    files, at = {}, 0
+    while at + 110 <= len(raw):
+        require(raw[at:at + 6] == b'070701', 'newc header')
+        fields = [int(raw[at + 6 + 8 * i:at + 14 + 8 * i], 16) for i in range(13)]
+        mode, size, name_size = fields[1], fields[6], fields[11]
+        name = raw[at + 110:at + 110 + name_size - 1].decode()
+        at = up(at + 110 + name_size, 4)
+        if name == 'TRAILER!!!':
+            break
+        if mode & 0o170000 == 0o100000:
+            files[name] = raw[at:at + size]
+        at = up(at + size, 4)
+    return files
+
+
+def check_installer(root):
+    """Every file of the installer list is in the kernel's initramfs exactly; returns its byte count."""
+    built = cpio_files((root / 'kernel/usr/initramfs_data.cpio').read_bytes())
+    wanted = [line.split()[1:3] for line in (root / INSTALLER_LIST).read_text().splitlines()
+              if line.startswith('file ')]
+    require(any(name == '/sbin/y1-update-core' for name, _ in wanted), 'the installer list names y1-update-core')
+    for name, source in wanted:
+        require(built.get(name.lstrip('/')) == Path(source).read_bytes(), 'initramfs carries ' + name)
+    return sum(len(built[name.lstrip('/')]) for name, _ in wanted)
+
+
 def payload(zimage, dtb):
     """zImage with the tree appended, padded to 8 bytes."""
     return zimage + dtb + b'\0' * (-len(dtb) % 8)
@@ -158,8 +186,6 @@ def boot_image(kernel, ramdisk, recovery=False):
     read_end = 2048 + up(len(kernel) + 512, 2048) + up(len(ramdisk) + 512, 2048) + 2 * 2048
     result = check_bootimg(image, kernel, ramdisk, {'bootimg_read_end': read_end}, recovery=recovery, device='y1')
     require(len(image) <= BOOTIMG_PARTITION, 'fits the Y1 BOOTIMG/RECOVERY partition (6 MiB each)')
-    if recovery:
-        require(len(image) + INSTALLER_BYTES <= BOOTIMG_PARTITION, 'RECOVERY leaves room for the installer')
     result['partition_bytes'] = BOOTIMG_PARTITION
     return image, result
 
@@ -175,7 +201,7 @@ def main():
     kernel = payload(zimage, dtb)
     ramdisk = empty_ramdisk()
     image, result = boot_image(kernel, ramdisk)
-    result.update({'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb),
+    result.update({'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb), 'installer_bytes': check_installer(root),
                    'zimage_dtb_sha256': hashlib.sha256(kernel).hexdigest()})
     # RECOVERY (docs/planning/Y1-RECOVERY-PLAN.md): the same kernel; its tree differs only in y2.recovery=1 and
     # the write windows.
