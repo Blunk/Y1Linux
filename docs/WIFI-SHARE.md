@@ -1,6 +1,7 @@
 # Wi-Fi Share: copying music without a cable
 
-Status: **in the source and in an owner test build (2026-11-12), not in a public release yet.**
+Status: **new in Beta 9.3.27 (13 November 2026).** Tried from a computer's browser against one player; phones,
+the QR code and very large uploads are not confirmed yet. Tell us how it goes.
 
 Wi-Fi Share turns the player into a small website on your home network. Any phone, tablet or computer on the same
 Wi-Fi opens it in a browser and sees a file browser for **Internal Storage** and the **SD Card**: no cable, no

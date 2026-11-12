@@ -53,6 +53,9 @@ Last.fm and seventeen skins. Once it's installed, the player updates itself over
 
 **Everyday**
 - Copy music over USB (MTP) from Windows, macOS or Linux at about 30 MB/s; the player charges at the same time.
+- **Wi-Fi Share**: copy music without a cable. The player becomes a small website on your home network; a phone
+  (an iPhone too), tablet or computer opens a file browser for Internal Storage and the SD card
+  ([guide](docs/WIFI-SHARE.md)).
 - **Quick Menu**: hold Power on any screen for Wi-Fi, Bluetooth, brightness, the sleep timer, Restart and Power Off.
 - Deep sleep when the screen turns off, waking with Power in about half a second; a clock that sets its time zone
   by itself.
@@ -114,7 +117,7 @@ Wi-Fi ([how updates work](docs/RECOVERY-AND-UPDATES.md)). More guides: [Storage]
   they reconnect within seconds, but pressing play during those 20 seconds can stay silent until they are back.
 - **The speaker** uses the same volume as the headphones; its loudest step is the stock speaker's. Start low the
   first time.
-- **Radio:** stations that stream only in HLS (such as the BBC) don't play yet. FM radio is planned for a later beta.
+- **Radio:** stations that stream only in HLS (such as the BBC) don't play yet.
 - **Going back to stock** doesn't restore the old storage format: copy your music off first; stock Android then has
   to format that storage ([Storage](docs/STORAGE.md)).
 
