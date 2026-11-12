@@ -8,6 +8,7 @@
  * start at the right bit. */
 #include <linux/delay.h>
 #include <linux/iopoll.h>
+#include <linux/slab.h>
 #include <linux/sort.h>
 #include "vdec.h"
 
@@ -20,7 +21,7 @@ enum { SLICE_P, SLICE_B, SLICE_I, SLICE_SP, SLICE_SI };
 struct h264_slice {
 	u32 first_mb, type, kind; /* type as coded (0..9), kind = type % 5 */
 	u32 l0, l1;               /* active reference counts minus one */
-	u32 direct_spatial, cabac_init, deblock_idc;
+	u32 direct_spatial, cabac_init, deblock_idc, field_pic, bottom_field;
 	s32 qp_delta, alpha, beta;
 };
 
@@ -110,140 +111,226 @@ static int h264_feed(struct y2_vdec *v, u32 size)
 	return 0;
 }
 
-/* A reference as the lists order it. */
-struct h264_ref {
+/* One entry of a reference list: a frame, or one field of it. */
+struct h264_entry {
 	const struct y2_vdec_h264_ref *ref;
-	s32 number; /* FrameNumWrap, or LongTermFrameIdx */
+	u8 kind;    /* Y2_VDEC_H264_FRAME, _TOP_FIELD or _BOTTOM_FIELD */
+	s32 number; /* PicNum or LongTermPicNum */
 	s32 poc;
 };
-static bool h264_long(const struct h264_ref *r) { return r->ref->flags & Y2_VDEC_H264_REF_LONG; }
-
-static int h264_by_number_desc(const void *a, const void *b)
-{
-	return ((const struct h264_ref *)b)->number - ((const struct h264_ref *)a)->number;
-}
-static int h264_by_number_asc(const void *a, const void *b)
-{
-	return ((const struct h264_ref *)a)->number - ((const struct h264_ref *)b)->number;
-}
-static int h264_by_poc_desc(const void *a, const void *b)
-{
-	return ((const struct h264_ref *)b)->poc - ((const struct h264_ref *)a)->poc;
-}
-static int h264_by_poc_asc(const void *a, const void *b)
-{
-	return ((const struct h264_ref *)a)->poc - ((const struct h264_ref *)b)->poc;
-}
-
+struct h264_pool {
+	struct h264_entry e[16];
+	unsigned n;
+};
 struct h264_lists {
-	struct h264_ref p[16], b0[16], b1[16];
+	struct h264_entry p[32], b0[32], b1[32];
 	unsigned count;
 };
 
-/* The initial lists of the standard (8.2.4.2.1, 8.2.4.2.3) for a frame: P by PicNum descending, B by
- * picture order around the current picture, long-term references last by LongTermPicNum ascending. */
-static void h264_build_lists(const struct y2_vdec_h264 *p, struct h264_lists *l)
+static bool h264_field(const struct y2_vdec_h264 *p) { return p->structure != Y2_VDEC_H264_FRAME; }
+static bool h264_long(const struct h264_entry *e) { return e->ref->flags & Y2_VDEC_H264_REF_LONG; }
+static s32 h264_now(const struct y2_vdec_h264 *p)
 {
-	struct h264_ref shorts[16], longs[16];
-	s32 max_frame_num = 1 << p->log2_max_frame_num, now = min(p->top_poc, p->bottom_poc);
-	unsigned i, n_short = 0, n_long = 0, before = 0;
+	if (p->structure == Y2_VDEC_H264_TOP_FIELD) return p->top_poc;
+	if (p->structure == Y2_VDEC_H264_BOTTOM_FIELD) return p->bottom_poc;
+	return min(p->top_poc, p->bottom_poc);
+}
+
+static int h264_by_number_desc(const void *a, const void *b)
+{
+	return ((const struct h264_entry *)b)->number - ((const struct h264_entry *)a)->number;
+}
+static int h264_by_number_asc(const void *a, const void *b)
+{
+	return ((const struct h264_entry *)a)->number - ((const struct h264_entry *)b)->number;
+}
+static int h264_by_poc_desc(const void *a, const void *b)
+{
+	return ((const struct h264_entry *)b)->poc - ((const struct h264_entry *)a)->poc;
+}
+static int h264_by_poc_asc(const void *a, const void *b)
+{
+	return ((const struct h264_entry *)a)->poc - ((const struct h264_entry *)b)->poc;
+}
+
+/* The references usable as `kind` (whole frames, or the fields of one parity), short-term or
+ * long-term, with the numbers of 8.2.4.1: a field's is twice its frame's, plus one for the parity
+ * of the field being decoded. */
+static void h264_collect(const struct y2_vdec_h264 *p, u8 kind, bool lng, struct h264_pool *pool)
+{
+	u8 need = kind == Y2_VDEC_H264_FRAME ? Y2_VDEC_H264_REF_TOP | Y2_VDEC_H264_REF_BOTTOM :
+		  kind == Y2_VDEC_H264_TOP_FIELD ? Y2_VDEC_H264_REF_TOP : Y2_VDEC_H264_REF_BOTTOM;
+	unsigned i;
+	pool->n = 0;
 	for (i = 0; i < p->refs; i++) {
 		const struct y2_vdec_h264_ref *r = &p->ref[i];
-		struct h264_ref e = { .ref = r, .number = r->number, .poc = min(r->top_poc, r->bottom_poc) };
-		if (r->flags & Y2_VDEC_H264_REF_LONG) {
-			longs[n_long++] = e;
-		} else {
-			if (e.number > p->frame_num) e.number -= max_frame_num;
-			shorts[n_short++] = e;
+		struct h264_entry e = { .ref = r, .kind = kind, .number = r->number };
+		if (!!(r->flags & Y2_VDEC_H264_REF_LONG) != lng || (r->flags & need) != need) continue;
+		if (!lng && e.number > p->frame_num) e.number -= 1 << p->log2_max_frame_num;
+		if (kind != Y2_VDEC_H264_FRAME) e.number = 2 * e.number + (kind == p->structure);
+		e.poc = kind == Y2_VDEC_H264_FRAME ? min(r->top_poc, r->bottom_poc) :
+			kind == Y2_VDEC_H264_TOP_FIELD ? r->top_poc : r->bottom_poc;
+		pool->e[pool->n++] = e;
+	}
+}
+
+/* B order (8.2.4.2.3): list 0 is the earlier pictures nearest first, then the later ones nearest
+ * first; list 1 the other way round. */
+static void h264_order_b(struct h264_pool *pool, s32 now, bool list1)
+{
+	struct h264_entry sorted[16];
+	unsigned before = 0, after;
+	sort(pool->e, pool->n, sizeof(*pool->e), h264_by_poc_asc, NULL);
+	while (before < pool->n && pool->e[before].poc < now) before++;
+	after = pool->n - before;
+	sort(pool->e, before, sizeof(*pool->e), h264_by_poc_desc, NULL);
+	if (list1) {
+		memcpy(sorted, pool->e + before, after * sizeof(*sorted));
+		memcpy(sorted + after, pool->e, before * sizeof(*sorted));
+		memcpy(pool->e, sorted, pool->n * sizeof(*sorted));
+	}
+}
+
+/* Append `same` and `other` to `list`: one after the other for frames (`other` is empty), turn by
+ * turn for fields, the parity of the field being decoded first (8.2.4.2.5). */
+static unsigned h264_append(struct h264_entry *list, unsigned at, const struct h264_pool *same,
+			    const struct h264_pool *other)
+{
+	unsigned i;
+	for (i = 0; i < max(same->n, other->n) && at < 31; i++) {
+		if (i < same->n) list[at++] = same->e[i];
+		if (i < other->n) list[at++] = other->e[i];
+	}
+	return at;
+}
+
+/* The initial lists of the standard for the picture: P by PicNum descending, B by picture order
+ * around it, long-term references last by LongTermPicNum ascending. */
+static void h264_build_lists(const struct y2_vdec_h264 *p, struct h264_lists *l)
+{
+	u8 kind = p->structure, opposite = kind ^ 3;
+	struct h264_pool same, other = { .n = 0 };
+	unsigned list, lng, at[3] = { 0 };
+	/* Three lists (P, B0, B1), each its short-term entries then its long-term ones. */
+	for (lng = 0; lng < 2; lng++) {
+		for (list = 0; list < 3; list++) {
+			struct h264_entry *out = list == 0 ? l->p : list == 1 ? l->b0 : l->b1;
+			h264_collect(p, kind, lng, &same);
+			if (h264_field(p)) h264_collect(p, opposite, lng, &other);
+			if (lng) {
+				sort(same.e, same.n, sizeof(*same.e), h264_by_number_asc, NULL);
+				sort(other.e, other.n, sizeof(*other.e), h264_by_number_asc, NULL);
+			} else if (list == 0) {
+				sort(same.e, same.n, sizeof(*same.e), h264_by_number_desc, NULL);
+				sort(other.e, other.n, sizeof(*other.e), h264_by_number_desc, NULL);
+			} else {
+				h264_order_b(&same, h264_now(p), list == 2);
+				h264_order_b(&other, h264_now(p), list == 2);
+			}
+			at[list] = h264_append(out, at[list], &same, &other);
 		}
 	}
-	sort(longs, n_long, sizeof(*longs), h264_by_number_asc, NULL);
-	sort(shorts, n_short, sizeof(*shorts), h264_by_number_desc, NULL);
-	memcpy(l->p, shorts, n_short * sizeof(*shorts));
-	/* B: list 0 is the earlier pictures nearest first, then the later ones nearest first; list 1 the
-	 * other way round. */
-	sort(shorts, n_short, sizeof(*shorts), h264_by_poc_asc, NULL);
-	while (before < n_short && shorts[before].poc < now) before++;
-	memcpy(l->b1, shorts + before, (n_short - before) * sizeof(*shorts));
-	memcpy(l->b0 + before, shorts + before, (n_short - before) * sizeof(*shorts));
-	sort(shorts, before, sizeof(*shorts), h264_by_poc_desc, NULL);
-	memcpy(l->b0, shorts, before * sizeof(*shorts));
-	memcpy(l->b1 + n_short - before, shorts, before * sizeof(*shorts));
-	memcpy(l->p + n_short, longs, n_long * sizeof(*longs));
-	memcpy(l->b0 + n_short, longs, n_long * sizeof(*longs));
-	memcpy(l->b1 + n_short, longs, n_long * sizeof(*longs));
-	l->count = n_short + n_long;
+	l->count = at[0];
 	/* H264_HAL_B1ListSwap: a list 1 equal to list 0 has its first two entries exchanged. */
-	if (l->count > 1 && !memcmp(l->b0, l->b1, l->count * sizeof(*l->b0)))
+	if (l->count > 1) {
+		for (list = 0; list < l->count; list++)
+			if (l->b0[list].ref != l->b1[list].ref || l->b0[list].kind != l->b1[list].kind) return;
 		swap(l->b1[0], l->b1[1]);
+	}
 }
 
 /* The words every list entry is made of. */
-static u32 h264_ref_number(const struct h264_ref *r)
+static u32 h264_ref_number(const struct h264_entry *e)
 {
-	return (h264_long(r) ? BIT(19) : 0) | (r->number & 0x7ffff);
+	return (h264_long(e) ? BIT(19) : 0) | (e->number & 0x7ffff);
 }
-static u32 h264_ref_field(const struct h264_ref *r, bool bottom, bool with_poc)
+/* A field of a reference: its frame, how it was coded, and for B its picture order. */
+static u32 h264_ref_field(const struct h264_entry *e, bool bottom, bool with_poc)
 {
-	const struct y2_vdec_h264_ref *ref = r->ref;
-	u32 word = (u32)ref->frame << 23 | (h264_long(r) ? BIT(20) : 0);
-	if (ref->top_poc <= ref->bottom_poc && ref->top_poc != S32_MAX) word |= BIT(21);
+	const struct y2_vdec_h264_ref *ref = e->ref;
+	u32 word = (u32)ref->frame << 23 | (h264_long(e) ? BIT(20) : 0);
+	if (ref->flags & Y2_VDEC_H264_REF_FIELDS) word |= 0x80000;
+	else if (ref->flags & Y2_VDEC_H264_REF_MBAFF) word |= 0x40000;
+	if (e->kind == Y2_VDEC_H264_FRAME && ref->top_poc <= ref->bottom_poc && ref->top_poc != S32_MAX)
+		word |= BIT(21);
 	if (bottom) word |= BIT(22);
 	if (with_poc) word += (bottom ? ref->bottom_poc : ref->top_poc) & POC_MASK;
 	return word;
 }
 
-/* H264_HAL_InitPRefList, …SetPRefPicListReg(_Extra). */
+/* H264_HAL_InitPRefList, …SetPRefPicListReg(_Extra). A frame entry has a word for each of its
+ * fields; a field entry has one, and a bit says when it is a bottom field. */
 static void h264_write_p_list(struct y2_vdec *v, const struct y2_vdec_h264 *p,
 			      const struct h264_lists *l)
 {
-	u32 y = v->frame[p->frame].dma, mv = v->mv[p->frame].dma >> 4;
+	u32 y = v->frame[p->frame].dma, mv = v->mv[p->frame].dma >> 4, bottoms = 0;
 	unsigned i;
 	vdec_write(v, VDEC_MC(0x564), 0);
 	vdec_write(v, VDEC_AVLD(0x228), 1);
 	h264_wait(v, VDEC_AVLD(0x228), BIT(0), 0, 2000);
-	vdec_write(v, VDEC_AVLD(0xa0), 1U << p->log2_max_frame_num);
-	vdec_write(v, VDEC_AVLD(0xa4), p->frame_num);
+	vdec_write(v, VDEC_AVLD(0xa0), (1U << p->log2_max_frame_num) << h264_field(p));
+	vdec_write(v, VDEC_AVLD(0xa4), h264_field(p) ? 2 * p->frame_num + 1 : p->frame_num);
 	for (i = 0; i < 32; i++) vdec_write(v, VDEC_MC(0x3dc + 4 * i), v->last_y ?: y);
 	for (i = 0; i < 32; i++) vdec_write(v, VDEC_AMV(0x180 + 4 * i), mv);
 	for (i = 0; i < l->count; i++) {
-		const struct h264_ref *r = &l->p[i];
-		vdec_write(v, VDEC_MC(0x3dc + 4 * i), v->frame[r->ref->frame].dma);
-		vdec_write(v, VDEC_AVLD(0xa8 + 4 * i), h264_ref_number(r));
-		vdec_write(v, VDEC_AMV(8 * i), h264_ref_field(r, false, false));
-		vdec_write(v, VDEC_AMV(8 * i + 4), h264_ref_field(r, true, false));
+		const struct h264_entry *e = &l->p[i];
+		bool bottom = e->kind == Y2_VDEC_H264_BOTTOM_FIELD;
+		vdec_write(v, VDEC_MC(0x3dc + 4 * i), v->frame[e->ref->frame].dma);
+		vdec_write(v, VDEC_AVLD(0xa8 + 4 * i), h264_ref_number(e));
+		if (e->kind == Y2_VDEC_H264_FRAME) {
+			vdec_write(v, VDEC_AMV(8 * i), h264_ref_field(e, false, false));
+			vdec_write(v, VDEC_AMV(8 * i + 4), h264_ref_field(e, true, false));
+		} else {
+			vdec_write(v, VDEC_AMV(4 * i), h264_ref_field(e, bottom, false));
+			if (bottom) bottoms |= BIT(i);
+		}
 	}
+	if (bottoms) vdec_write(v, VDEC_MC(0x564), bottoms);
 }
 
 /* H264_HAL_SetPOC, H264_HAL_InitBRefList, …SetBRefPicListReg(_Extra). */
 static void h264_write_b_lists(struct y2_vdec *v, const struct y2_vdec_h264 *p,
 			       const struct h264_lists *l)
 {
-	u32 y = v->last_y ?: v->frame[p->frame].dma;
+	u32 y = v->last_y ?: v->frame[p->frame].dma, bottoms0 = 0, bottoms1 = 0;
 	u32 colocated = p->flags & Y2_VDEC_H264_DIRECT_8X8 ? 2 : 4;
 	unsigned i;
-	vdec_write(v, VDEC_AMV(0x204), p->top_poc & POC_MASK);
-	vdec_write(v, VDEC_AMV(0x208), p->bottom_poc & POC_MASK);
-	vdec_write(v, VDEC_AMV(0x200), min(p->top_poc, p->bottom_poc) & POC_MASK);
+	if (!h264_field(p)) {
+		vdec_write(v, VDEC_AMV(0x204), p->top_poc & POC_MASK);
+		vdec_write(v, VDEC_AMV(0x208), p->bottom_poc & POC_MASK);
+	}
+	vdec_write(v, VDEC_AMV(0x200), h264_now(p) & POC_MASK);
 	vdec_write(v, VDEC_MC(0x568), 0);
 	vdec_write(v, VDEC_MC(0x56c), 0);
 	for (i = 0; i < 32; i++) vdec_write(v, VDEC_MC(0x45c + 4 * i), y);
 	for (i = 0; i < 32; i++) vdec_write(v, VDEC_MC(0x4dc + 4 * i), y);
 	if (p->flags & Y2_VDEC_H264_DIRECT_8X8) vdec_set(v, VDEC_AMV(0x220), 0x20);
 	for (i = 0; i < l->count; i++) {
-		const struct h264_ref *r0 = &l->b0[i], *r1 = &l->b1[i];
-		u32 mv = v->mv[r1->ref->frame].dma >> 4;
-		vdec_write(v, VDEC_MC(0x45c + 4 * i), v->frame[r0->ref->frame].dma);
-		vdec_write(v, VDEC_AVLD(0x128 + 4 * i), h264_ref_number(r0));
-		vdec_write(v, VDEC_AMV(0x80 + 8 * i), h264_ref_field(r0, false, true));
-		vdec_write(v, VDEC_AMV(0x84 + 8 * i), h264_ref_field(r0, true, true));
-		vdec_write(v, VDEC_MC(0x4dc + 4 * i), v->frame[r1->ref->frame].dma);
-		vdec_write(v, VDEC_AVLD(0x1a8 + 4 * i), h264_ref_number(r1));
-		vdec_write(v, VDEC_AMV(0x100 + 8 * i), h264_ref_field(r1, false, true));
-		vdec_write(v, VDEC_AMV(0x104 + 8 * i), h264_ref_field(r1, true, true));
-		vdec_write(v, VDEC_AMV(0x180 + 8 * i), mv);
-		vdec_write(v, VDEC_AMV(0x184 + 8 * i), mv + colocated);
+		const struct h264_entry *e0 = &l->b0[i], *e1 = &l->b1[i];
+		bool bottom0 = e0->kind == Y2_VDEC_H264_BOTTOM_FIELD;
+		bool bottom1 = e1->kind == Y2_VDEC_H264_BOTTOM_FIELD;
+		u32 mv = v->mv[e1->ref->frame].dma >> 4;
+		vdec_write(v, VDEC_MC(0x45c + 4 * i), v->frame[e0->ref->frame].dma);
+		vdec_write(v, VDEC_AVLD(0x128 + 4 * i), h264_ref_number(e0));
+		vdec_write(v, VDEC_MC(0x4dc + 4 * i), v->frame[e1->ref->frame].dma);
+		vdec_write(v, VDEC_AVLD(0x1a8 + 4 * i), h264_ref_number(e1));
+		if (e0->kind == Y2_VDEC_H264_FRAME) {
+			vdec_write(v, VDEC_AMV(0x80 + 8 * i), h264_ref_field(e0, false, true));
+			vdec_write(v, VDEC_AMV(0x84 + 8 * i), h264_ref_field(e0, true, true));
+			vdec_write(v, VDEC_AMV(0x100 + 8 * i), h264_ref_field(e1, false, true));
+			vdec_write(v, VDEC_AMV(0x104 + 8 * i), h264_ref_field(e1, true, true));
+			vdec_write(v, VDEC_AMV(0x180 + 8 * i), mv);
+			vdec_write(v, VDEC_AMV(0x184 + 8 * i), mv + colocated);
+			continue;
+		}
+		vdec_write(v, VDEC_AMV(0x80 + 4 * i), h264_ref_field(e0, bottom0, true));
+		vdec_write(v, VDEC_AMV(0x100 + 4 * i), h264_ref_field(e1, bottom1, true));
+		vdec_write(v, VDEC_AMV(0x180 + 4 * i), mv + (bottom1 ? colocated : 0));
+		if (bottom0) bottoms0 |= BIT(i);
+		if (bottom1) bottoms1 |= BIT(i);
 	}
+	if (bottoms0) vdec_write(v, VDEC_MC(0x568), bottoms0);
+	if (bottoms1) vdec_write(v, VDEC_MC(0x56c), bottoms1);
 }
 
 /* H264_HAL_WriteScalingList: `words` four-byte words at table address `at`. */
@@ -270,12 +357,16 @@ static void h264_write_parameters(struct y2_vdec *v, const struct y2_vdec_h264 *
 		scaling = 0xff << 10 | BIT(18);
 	}
 	word = 1 | 0x200000 | (p->log2_max_frame_num - 4) << 2 | (u32)p->poc_type << 6 |
-	       (u32)p->max_ref_frames << 13 | BIT(18);
+	       (u32)p->max_ref_frames << 13;
+	if (!(f & Y2_VDEC_H264_FIELDS)) word |= BIT(18);
+	if (f & Y2_VDEC_H264_MBAFF) word |= BIT(19);
 	if (!p->poc_type) word |= (p->log2_max_poc_lsb - 4) << 8;
 	if (f & Y2_VDEC_H264_DELTA_POC_ZERO) word |= BIT(12);
 	if (f & Y2_VDEC_H264_DIRECT_8X8) word |= BIT(20);
 	vdec_write(v, VDEC_AVLD(0x88), word);
-	vdec_write(v, VDEC_TOP(0x68), (v->mbs_w - 1) | (v->mbs_h - 1) << 16);
+	/* Height in map units: macroblock pairs when the stream may hold fields. */
+	vdec_write(v, VDEC_TOP(0x68),
+		   (v->mbs_w - 1) | ((v->mbs_h >> !!(f & Y2_VDEC_H264_FIELDS)) - 1) << 16);
 	word = (p->weighted_bipred_idc & 3) << 3 | (p->pic_init_qp & 0x3f) << 5 |
 	       (p->chroma_qp_offset & 0x1f) << 11 | (p->second_chroma_qp_offset & 0x1f) << 19;
 	if (f & Y2_VDEC_H264_CABAC) word |= BIT(0);
@@ -290,18 +381,21 @@ static void h264_write_parameters(struct y2_vdec *v, const struct y2_vdec_h264 *
 		   (vdec_read(v, VDEC_AVLD(0x8c)) & 0xfffe0000) | (s->first_mb & 0x1fff));
 	vdec_write(v, VDEC_AVLD(0x98),
 		   (vdec_read(v, VDEC_AVLD(0x98)) & 0x1fff) | (s->type & 0xf) << 13 |
-		   s->direct_spatial << 19 | (s->l0 & 0x1f) << 20 | (s->l1 & 0x1f) << 25);
+		   s->field_pic << 17 | s->bottom_field << 18 | s->direct_spatial << 19 | (s->l0 & 0x1f) << 20 | (s->l1 & 0x1f) << 25);
 }
 
 /* Vdec_Drv_setDecPicInfo. */
-static void h264_write_picture(struct y2_vdec *v, const struct y2_vdec_h264 *p,
-			       const struct h264_slice *s)
+static int h264_write_picture(struct y2_vdec *v, const struct y2_vdec_h264 *p,
+			      const struct h264_slice *s)
 {
-	struct h264_lists lists;
-	h264_build_lists(p, &lists);
-	h264_write_p_list(v, p, &lists);
-	h264_write_b_lists(v, p, &lists);
+	struct h264_lists *lists = kmalloc(sizeof(*lists), GFP_KERNEL);
+	if (!lists) return -ENOMEM;
+	h264_build_lists(p, lists);
+	h264_write_p_list(v, p, lists);
+	h264_write_b_lists(v, p, lists);
 	h264_write_parameters(v, p, s);
+	kfree(lists);
+	return 0;
 }
 
 /* The marking syntax carries nothing the hardware needs; it is read to reach the fields behind it. */
@@ -335,13 +429,19 @@ static int h264_slice_header(struct y2_vdec *v, const struct y2_vdec_h264 *p, st
 	s->kind = s->type % 5;
 	h264_ue(v); /* pic_parameter_set_id */
 	h264_bits(v, p->log2_max_frame_num);
+	if (f & Y2_VDEC_H264_FIELDS) {
+		s->field_pic = h264_bits(v, 1);
+		if (s->field_pic) s->bottom_field = h264_bits(v, 1);
+	}
+	/* The caller's picture and the stream's must be the same kind. */
+	if ((s->field_pic ? 1 + s->bottom_field : 3) != p->structure) return -EILSEQ;
 	if (p->nal_unit_type == 5) h264_ue(v);
 	if (p->poc_type == 0) {
 		h264_bits(v, p->log2_max_poc_lsb);
-		if (f & Y2_VDEC_H264_PIC_ORDER_PRESENT) h264_se(v);
+		if ((f & Y2_VDEC_H264_PIC_ORDER_PRESENT) && !s->field_pic) h264_se(v);
 	} else if (p->poc_type == 1 && !(f & Y2_VDEC_H264_DELTA_POC_ZERO)) {
 		h264_se(v);
-		if (f & Y2_VDEC_H264_PIC_ORDER_PRESENT) h264_se(v);
+		if ((f & Y2_VDEC_H264_PIC_ORDER_PRESENT) && !s->field_pic) h264_se(v);
 	}
 	if (f & Y2_VDEC_H264_REDUNDANT_PIC_CNT) h264_ue(v);
 	if (s->kind == SLICE_B) s->direct_spatial = h264_bits(v, 1);
@@ -354,7 +454,7 @@ static int h264_slice_header(struct y2_vdec *v, const struct y2_vdec_h264 *p, st
 		s->l1 = min(s->l1, 31U);
 	}
 	if (s->kind != SLICE_B) s->l1 = 0;
-	h264_write_picture(v, p, s);
+	if (h264_write_picture(v, p, s)) return -ENOMEM;
 	if (s->kind != SLICE_I && s->kind != SLICE_SI) {
 		/* H264_HAL_Reording: the hardware reads the modification syntax and reorders. The
 		 * stock library gives it 1.5 ms or until the register reads non-zero. */
@@ -393,6 +493,8 @@ static void h264_start(struct y2_vdec *v, const struct y2_vdec_h264 *p, const st
 {
 	u32 y = v->frame[p->frame].dma, y_size = v->cfg.y_size, end = y + y_size * 3 / 2;
 	u32 mv_low = ~0U, mv_high = 0, value;
+	u32 colocated = p->flags & Y2_VDEC_H264_DIRECT_8X8 ? 2 : 4;
+	bool field = h264_field(p);
 	unsigned i;
 	for (i = 0; i < v->cfg.frames; i++) {
 		mv_low = min_t(u32, mv_low, v->mv[i].dma);
@@ -410,7 +512,7 @@ static void h264_start(struct y2_vdec *v, const struct y2_vdec_h264 *p, const st
 	vdec_write(v, VDEC_MC(0x250), 1);
 	vdec_write(v, VDEC_MC(0x238), 3);
 	vdec_write(v, VDEC_MC(0x260), v->mbs_w - 1);
-	vdec_write(v, VDEC_MC(0x264), v->mbs_h - 1);
+	vdec_write(v, VDEC_MC(0x264), (v->mbs_h >> field) - 1);
 	vdec_write(v, VDEC_MC(0x22c), v->mbs_w);
 	vdec_write(v, VDEC_MC(0x850), end >> 4);
 	vdec_write(v, VDEC_MC(0x854), y >> 4);
@@ -420,7 +522,8 @@ static void h264_start(struct y2_vdec *v, const struct y2_vdec_h264 *p, const st
 	vdec_write(v, VDEC_MC(0x55c), y_size);
 	vdec_write(v, VDEC_MC(0x980), v->mbs_w);
 	vdec_write(v, VDEC_AVLD(0x2c8), 0xf9040039);
-	vdec_write(v, VDEC_AMV(0x20c), v->mv[p->frame].dma >> 4);
+	vdec_write(v, VDEC_AMV(0x20c), (v->mv[p->frame].dma >> 4) +
+					       (p->structure == Y2_VDEC_H264_BOTTOM_FIELD ? colocated : 0));
 	vdec_write(v, VDEC_AVLD(0x9c),
 		   (s->qp_delta & 0x7f) | (s->deblock_idc & 3) << 7 | (s->alpha & 0xf) << 9 |
 		   (s->beta & 0xf) << 13 | (u32)(p->nal_ref_idc & 3) << 17 |
@@ -430,7 +533,7 @@ static void h264_start(struct y2_vdec *v, const struct y2_vdec_h264 *p, const st
 	vdec_set(v, VDEC_MC(0x5e4), 0x1000);
 	vdec_write(v, VDEC_MC(0x768), (vdec_read(v, VDEC_MC(0x768)) & ~7U) | 4);
 	vdec_set(v, VDEC_MISC(0xf0), 1);
-	vdec_write(v, VDEC_TOP(0x6c), v->mbs_w * v->mbs_h);
+	vdec_write(v, VDEC_TOP(0x6c), v->mbs_w * (v->mbs_h >> field));
 	vdec_write(v, VDEC_TOP(0x50), ~0U);
 	vdec_write(v, VDEC_MC(0xa20), v->work_b.dma);
 	vdec_write(v, VDEC_MC(0xa24), v->work_a.dma);
@@ -452,6 +555,9 @@ static int h264_valid(const struct y2_vdec *v, const struct y2_vdec_h264 *p)
 		return -EINVAL;
 	if (p->size < 5 || p->size > v->bits.size - VDEC_BITSTREAM_TAIL) return -EINVAL;
 	if (p->log2_max_frame_num < 4 || p->log2_max_frame_num > 16 || p->poc_type > 2) return -EINVAL;
+	if (p->structure < Y2_VDEC_H264_TOP_FIELD || p->structure > Y2_VDEC_H264_FRAME) return -EINVAL;
+	if (h264_field(p) && !(p->flags & Y2_VDEC_H264_FIELDS)) return -EINVAL;
+	if ((p->flags & Y2_VDEC_H264_FIELDS) && (v->mbs_h & 1)) return -EINVAL;
 	if (!p->poc_type && (p->log2_max_poc_lsb < 4 || p->log2_max_poc_lsb > 16)) return -EINVAL;
 	if (!p->ref_l0_default || p->ref_l0_default > 32 || !p->ref_l1_default || p->ref_l1_default > 32)
 		return -EINVAL;

@@ -31,9 +31,13 @@ struct y2_vdec_config {
 };
 
 #define Y2_VDEC_H264_REF_LONG 0x01
+#define Y2_VDEC_H264_REF_TOP 0x02    /* its top field is a reference */
+#define Y2_VDEC_H264_REF_BOTTOM 0x04 /* its bottom field is a reference */
+#define Y2_VDEC_H264_REF_FIELDS 0x08 /* it was coded as two field pictures */
+#define Y2_VDEC_H264_REF_MBAFF 0x10  /* it was coded as a frame with field macroblock pairs */
 struct y2_vdec_h264_ref {
 	__u8 frame;      /* index of the frame holding the reference */
-	__u8 flags;      /* Y2_VDEC_H264_REF_* */
+	__u8 flags;      /* Y2_VDEC_H264_REF_*; a frame is a reference with both fields */
 	__u16 number;    /* frame_num, or LongTermFrameIdx of a long-term reference */
 	__s32 top_poc, bottom_poc;
 };
@@ -48,9 +52,16 @@ struct y2_vdec_h264_ref {
 #define Y2_VDEC_H264_SCALING 0x0080
 #define Y2_VDEC_H264_DELTA_POC_ZERO 0x0100
 #define Y2_VDEC_H264_DIRECT_8X8 0x0200
+#define Y2_VDEC_H264_FIELDS 0x0400 /* the stream may hold fields (frame_mbs_only_flag is 0) */
+#define Y2_VDEC_H264_MBAFF 0x0800  /* mb_adaptive_frame_field_flag */
 
-/* One progressive H.264 picture (frame_mbs_only streams, 4:2:0, 8 bit). The bitstream buffer holds the
- * picture's slice NAL units, each behind a 00 00 01 start code, `size` bytes in all. */
+#define Y2_VDEC_H264_TOP_FIELD 1
+#define Y2_VDEC_H264_BOTTOM_FIELD 2
+#define Y2_VDEC_H264_FRAME 3
+
+/* One H.264 picture (4:2:0, 8 bit): a frame, or one field of a frame (two calls into the same
+ * frame). The bitstream buffer holds the picture's slice NAL units, each behind a 00 00 01 start
+ * code, `size` bytes in all. */
 struct y2_vdec_h264 {
 	__u32 size;
 	__u8 frame;        /* frame to decode into */
@@ -64,7 +75,8 @@ struct y2_vdec_h264 {
 	/* Picture parameter set. */
 	__u8 weighted_bipred_idc, ref_l0_default, ref_l1_default; /* counts, not minus one */
 	__s8 pic_init_qp, chroma_qp_offset, second_chroma_qp_offset; /* pic_init_qp: minus 26 */
-	__u8 reserved[2];
+	__u8 structure;    /* Y2_VDEC_H264_FRAME, _TOP_FIELD or _BOTTOM_FIELD */
+	__u8 reserved;
 	struct y2_vdec_h264_ref ref[16];
 	__u8 scaling4[6][16], scaling8[2][64]; /* raster order; read with Y2_VDEC_H264_SCALING */
 	/* Result. */

@@ -33,6 +33,9 @@ struct delayed_work { int unused; };
 #define max_t(type, a, b) max((type)(a), (type)(b))
 #define swap(a, b) do { __typeof__(a) t_ = (a); (a) = (b); (b) = t_; } while (0)
 #define sort(base, n, size, compare, exchange) qsort(base, n, size, compare)
+#define kmalloc(size, flags) malloc(size)
+#define kfree(pointer) free(pointer)
+#define GFP_KERNEL 0
 
 u32 lab_readl(uintptr_t address);
 void lab_writel(u32 value, uintptr_t address);

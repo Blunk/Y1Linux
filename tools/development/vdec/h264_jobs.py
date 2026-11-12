@@ -12,7 +12,7 @@ import argparse
 import struct
 import sys
 
-PICTURE = struct.Struct('<I4B2H2i4B3B3b2x' + '2BH2i' * 16 + '96s128s4I')
+PICTURE = struct.Struct('<I4B2H2i4B3B3bBx' + '2BH2i' * 16 + '96s128s4I')
 CONFIG = struct.Struct('<8I')
 FLAGS = dict(cabac=1, pic_order_present=2, weighted_pred=4, deblocking_control=8,
              constrained_intra=0x10, transform_8x8=0x20, redundant_pic_cnt=0x40, scaling=0x80,
@@ -203,14 +203,14 @@ def pack(fields, data):
     flags = sum(bit for name, bit in FLAGS.items() if pps.get(name) or sps.get(name))
     refs = []
     for r in fields['refs']:
-        refs += [r['frame'], 0, r['frame_num'], r['top'], r['bottom']]
+        refs += [r['frame'], 0x06, r['frame_num'], r['top'], r['bottom']]  # both fields
     refs += [0, 0, 0, 0, 0] * (16 - len(fields['refs']))
     return PICTURE.pack(len(data), fields['frame'], fields['ref_idc'], fields['kind'],
                         len(fields['refs']), flags, fields['frame_num'], fields['top'],
                         fields['bottom'], sps['log2_max_frame_num'], sps['poc_type'],
                         sps['log2_max_poc_lsb'], sps['max_ref_frames'],
                         pps['weighted_bipred_idc'], pps['l0'], pps['l1'], pps['pic_init_qp'],
-                        pps['chroma_qp_offset'], pps['second_chroma_qp_offset'], *refs,
+                        pps['chroma_qp_offset'], pps['second_chroma_qp_offset'], 3, *refs,
                         bytes(96), bytes(128), 0, 0, 0, 0) + data
 
 
