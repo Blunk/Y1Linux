@@ -297,12 +297,29 @@ kernel, pictures compared with FFmpeg):
   header at the start of a macroblock row with the picture's quantiser changes nothing (the vector predictors
   start afresh in every row), so our FFmpeg path cuts those headers and their stuffing out of B pictures
   before the hardware sees them (`y2_cut_packet_headers`; `mpeg4_jobs.py` does the same for the bench).
-  16 of 16 and 40 of 40 pictures of multi-slice streams are right with it.
+  The picture's closing stuffing (a zero, then ones up to the byte) must then be written again at the new bit
+  position: the hardware checks it, and with the old bits there it reported a correct picture as failed
+  (`VLD+0x3cc = 0x03000101`, 3 of 133 B pictures of a 720p film). 16 of 16, 40 of 40 and 200 of 200 pictures
+  of multi-slice streams are right with both.
 - Quarter sample with four vectors and MPEG quantiser matrices: right. **Interlaced streams: I and P pictures
   right, B pictures wrong in a few field-predicted macroblocks**; cause not found, so interlaced MPEG-4 stays
   in software. Sprites (GMC), data partitioning and short headers were not tried and stay in software.
+- Reference for interlaced material: FFmpeg's software decoder is not deterministic there with frame threads
+  (`ffmpeg -threads 1`, `4` and `16` give three different results for the same file); compare with one thread.
+  The hardware's interlaced B pictures differ from that one too.
 - A register sweep for a diff (reading every offset of the decoder blocks) hung the player until the
   watchdog reset it. Read only what the stock library reads.
+
+### Through FFmpeg and in Reborn (test build 246, same day)
+
+Driver call and `mpeg4_y2vdec`, hardware and software side by side (`vdec-ffmpeg`, now sample by sample), on
+the player: Xvid 640×480 without B pictures, 720×576 (9 Mbit/s and 1.5 Mbit/s), 720×576 with MPEG quantiser
+matrices, 1280×720 with quarter sample (17 Mbit/s) and at 3 Mbit/s, 1920×1080 (22 Mbit/s), FFmpeg's encoder
+1280×720 in slices: 199 to 499 pictures each, every one on the hardware, largest difference 3 to 5 levels,
+3 to 12 % of the samples off by any amount at the end of 200-picture GOPs. Xvid's packed B pictures (two
+pictures in one chunk) need nothing special: the hardware stops at the last macroblock. A film with global
+motion compensation and an interlaced one are refused at init and decoded in software. Decoder time a picture:
+1.9 ms (640×480), 2.0 to 3.0 ms (720×576), 4.2 to 6.1 ms (1280×720), 11.4 ms (1920×1080 at 22 Mbit/s).
 
 ## Still open
 

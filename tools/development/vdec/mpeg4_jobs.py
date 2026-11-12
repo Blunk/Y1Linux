@@ -192,11 +192,18 @@ def strip_packets(fields, unit):
         at = head.at
     if not keep:
         return unit
-    keep.append((at, total))
+    # The picture ends with stuffing too (a zero, then ones up to the byte); it is written again
+    # where the picture ends now, because the hardware checks it.
+    end = total - 1
+    while end > at and bit(end) and total - end < 8:
+        end -= 1
+    if bit(end):
+        return unit
+    keep.append((at, end))
     out = [bit(k) for k in range(fields['header_bits'])]
     for first, last in keep:
         out += [bit(k) for k in range(first, last)]
-    out += [0] * (-len(out) % 8)
+    out += [0] + [1] * (-(len(out) + 1) % 8)
     return bytes(sum(b << (7 - k) for k, b in enumerate(out[n:n + 8])) for n in range(0, len(out), 8))
 
 

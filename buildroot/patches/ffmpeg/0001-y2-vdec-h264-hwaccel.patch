@@ -634,8 +634,8 @@ diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 +};
 diff -Nru a/libavcodec/y2vdec_mpeg4.c b/libavcodec/y2vdec_mpeg4.c
 --- a/libavcodec/y2vdec_mpeg4.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/libavcodec/y2vdec_mpeg4.c	2026-11-12 18:25:30.838948043 +0100
-@@ -0,0 +1,287 @@
++++ b/libavcodec/y2vdec_mpeg4.c	2026-11-12 18:52:04.599626321 +0100
+@@ -0,0 +1,297 @@
 +/*
 + * MPEG-4 Part 2 decoding on the Innioasis Y2's MT6582 hardware decoder (/dev/y2-vdec).
 + *
@@ -745,8 +745,9 @@ diff -Nru a/libavcodec/y2vdec_mpeg4.c b/libavcodec/y2vdec_mpeg4.c
 + * macroblock of the backward reference was not coded, and loses the rest of the picture (the stock
 + * firmware reports such pictures as broken). In a B picture a header at the start of a macroblock
 + * row with the quantiser of the picture changes nothing: the motion vector predictors start
-+ * afresh in every row anyway. Such headers are cut out with the stuffing in front of them. A
-+ * picture with any other header is left as it is.
++ * afresh in every row anyway. Such headers are cut out with the stuffing in front of them, and
++ * the stuffing that ends the picture is written again where the picture ends now (the hardware
++ * checks it). A picture with any other header is left as it is.
 + *
 + * @param skip bits of `from` before the first macroblock
 + * @return bytes written, 0 when the picture is left as it is
@@ -758,10 +759,10 @@ diff -Nru a/libavcodec/y2vdec_mpeg4.c b/libavcodec/y2vdec_mpeg4.c
 +    const int zeros = ff_mpeg4_get_video_packet_prefix_length(AV_PICTURE_TYPE_B, ctx->f_code,
 +                                                              ctx->b_code);
 +    const int number_bits = av_log2(s->mb_num - 1) + 1;
-+    const size_t header = zeros + 1 + number_bits + 5 + 1, bits = size * 8;
++    const size_t header = zeros + 1 + number_bits + 5 + 1;
 +    GetBitContext gb, head;
 +    PutBitContext pb;
-+    size_t at = skip;
++    size_t at = skip, bytes = size, end;
 +    int cut = 0;
 +
 +    if (size < 8 || size > room || init_get_bits8(&gb, from, size) < 0)
@@ -769,14 +770,16 @@ diff -Nru a/libavcodec/y2vdec_mpeg4.c b/libavcodec/y2vdec_mpeg4.c
 +    init_put_bits(&pb, to, room);
 +    if (skip)
 +        put_bits(&pb, skip, 0);
-+    for (size_t byte = (skip + 7) / 8; byte * 8 + header <= bits; byte++) {
++    for (size_t byte = (skip + 7) / 8; byte * 8 + header <= size * 8; byte++) {
 +        size_t stuffing = byte * 8 - 1;
 +        unsigned number, quant, extension;
 +
 +        if (from[byte] || from[byte + 1] || byte * 8 <= at)
 +            continue;
-+        if (from[byte + 2] == 1)
-+            break; // the next start code
++        if (from[byte + 2] == 1) {
++            bytes = byte; // the next start code: the picture ends here
++            break;
++        }
 +        head = gb;
 +        skip_bits_long(&head, byte * 8 - get_bits_count(&head));
 +        if (get_bits(&head, zeros) || !get_bits1(&head))
@@ -794,9 +797,16 @@ diff -Nru a/libavcodec/y2vdec_mpeg4.c b/libavcodec/y2vdec_mpeg4.c
 +        at = get_bits_count(&head);
 +        cut++;
 +    }
-+    if (!cut)
++    /* The stuffing that ends the picture: a zero and up to seven ones. */
++    for (end = bytes * 8 - 1; end > at && bytes * 8 - end < 8 && y2_bit(from, end); end--)
++        ;
++    if (!cut || y2_bit(from, end))
 +        return 0;
-+    y2_copy_bits(&pb, &gb, at, bits);
++    y2_copy_bits(&pb, &gb, at, end);
++    put_bits(&pb, 1, 0);
++    while (put_bits_count(&pb) & 7)
++        put_bits(&pb, 1, 1);
++    y2_copy_bits(&pb, &gb, bytes * 8, size * 8);
 +    flush_put_bits(&pb);
 +    return put_bytes_output(&pb);
 +}

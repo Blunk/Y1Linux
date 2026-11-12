@@ -22,8 +22,8 @@ Films never appear among the songs, in the albums or artists, in shuffles of the
 | | |
 |---|---|
 | Containers | `.mp4` `.m4v` `.mov` `.mkv` `.webm` `.avi` |
-| Picture, on the hardware decoder | H.264 (Baseline, Main, High), frames and fields (interlaced too), 4:2:0, 8 bit, up to 1920×1088 |
-| Picture, in software | H.264 the hardware refuses (other chroma formats, 10 bit), MPEG-4 Part 2 (Xvid, DivX 4/5), DivX 3, H.263, VP8, VP9 |
+| Picture, on the hardware decoder | H.264 (Baseline, Main, High), frames and fields (interlaced too), 4:2:0, 8 bit, up to 1920×1088; MPEG-4 Part 2 (Xvid, DivX 4/5: Simple and Advanced Simple profile), progressive, up to 1920×1088 |
+| Picture, in software | H.264 the hardware refuses (other chroma formats, 10 bit), MPEG-4 Part 2 the hardware refuses (interlaced, global motion compensation, data partitioning), DivX 3, H.263, VP8, VP9 |
 | Sound | what songs use (AAC, MP3, FLAC, Vorbis, Opus, ALAC, PCM), and AC-3 |
 | Subtitles | SubRip, ASS/SSA, WebVTT, MP4 timed text; shown as plain text |
 | Not played | HEVC (H.265), AV1, DTS sound, picture subtitles (DVD, Blu-ray), files with a picture and no sound |
@@ -56,7 +56,17 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
 
   Software MPEG-4 depends on the material: the flat test pattern decodes in 1.7 ms a picture at 720×576, a
   noisy 720×576 film at about 3 Mbit/s in 4.7 ms, a noisy 1280×720 film at about 6.5 Mbit/s in 10.8 ms (on the
-  four decoder threads). The hardware decoder would help MPEG-4 at 720p and above, little below.
+  four decoder threads).
+
+  Since test build 246 MPEG-4 Part 2 decodes on the hardware as well. Hardware against software, picture by
+  picture on the player (`vdec-ffmpeg`, ten films, 199 to 499 pictures each): the hardware has its own inverse
+  transform, as the standard allows, so pictures are not identical; no sample was further off than 5 levels
+  (of 255), with Xvid's B pictures, quarter-sample motion, its own quantiser matrices and FFmpeg's
+  multi-slice files. One picture takes the decoder 2.0 ms at 720×576 and 1.5 Mbit/s, 4.2 ms at 1280×720 and
+  3 Mbit/s, 11 ms at 1920×1080 and 22 Mbit/s, on one thread that mostly waits. In Reborn an Xvid film at
+  1280×720 used 57 % of one core in all, no picture dropped; the 720×576 pattern above 59 % (78 % in software).
+  A film made with global motion compensation or as interlaced fields is taken by the software decoder as
+  before.
 
   All of Reborn used 77 to 87 % of one of the four cores while a film played (build 243); the governor ran that core below
   its full clock, so the times above are longer than the work needs. The decoder's power goes off 200 ms after
@@ -71,8 +81,9 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
 - Picture and sound are aligned by the position the player reports; nobody has judged lip sync by eye and ear
   yet. Over Bluetooth the sound is later than the picture by the headphones' own delay (not corrected, by the
   owner's decision for the first version).
-- MPEG-4 Part 2 decodes in software. The hardware could do it; its register sequence is a second
-  reverse-engineering job of the size of H.264's, worth it for 720p Xvid/DivX files, hardly for DVD-sized ones.
+- Interlaced MPEG-4 Part 2 stays in software: the hardware decodes its I and P pictures, but some macroblocks
+  of its B pictures come out wrong and the cause was not found. FFmpeg's software decoder itself gives
+  slightly different B pictures for such films depending on its thread count (seen on the PC too).
 - No choice of subtitle or sound track (the first text track and the default sound track are used), no switch
   to turn subtitles off.
 - Skins draw their own lists; the film itself always uses Reborn's own picture screen.

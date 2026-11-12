@@ -95,18 +95,22 @@ int main(void){
             text += '0' * (-len(text) % 8)
             return bytes(int(text[n:n + 8], 2) for n in range(0, len(text), 8))
 
+        def stuffed(text):
+            text = text.replace(' ', '')
+            return bits(text + '0' + '1' * (-(len(text) + 1) % 8))
+
         fields = dict(fcode_f=1, fcode_b=1, width=32, height=32, quant=4, header_bits=40)
         # 17 zeros and a one, macroblock number (2 bits), quantiser, no extension.
         packet = '0' * 17 + '1' + '10' + '00100' + '0'
         start = '0' * 23 + '1' + '10110110' + '10101010'
         first, second = '110010', '1011' * 9
-        unit = bits(start + first + '01' + packet + second)
-        self.assertEqual(mpeg4_jobs.strip_packets(fields, unit), bits(start + first + second))
+        # The header and the stuffing before it go; the stuffing at the end is written again.
+        unit = stuffed(start + first + '01' + packet + second)
+        self.assertEqual(mpeg4_jobs.strip_packets(fields, unit), stuffed(start + first + second))
         # A header in the middle of a row, or with another quantiser, keeps the picture as it is.
         for other in ('0' * 17 + '1' + '01' + '00100' + '0', '0' * 17 + '1' + '10' + '00101' + '0'):
-            unit = bits(start + first + '01' + other + second)
+            unit = stuffed(start + first + '01' + other + second)
             self.assertEqual(mpeg4_jobs.strip_packets(fields, unit), unit)
-
 
 if __name__ == '__main__':
     unittest.main()
