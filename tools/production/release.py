@@ -40,9 +40,9 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[2]
 REBORN = PROJECT.parent / 'Y2Reborn'
 OUT = PROJECT / 'out'
-REPO = 'SchulzCode/Y2Linux'
-KEY = Path.home() / '.local/share/y2linux/signing/platform-v1-release-20261015.key'
-KEY_ID = 'platform-v1-release-20261015'
+REPO = 'Blunk/Y1Linux'
+KEY = Path.home() / '.local/share/y1linux/signing/y1linux-release-20261112.key'
+KEY_ID = 'y1linux-release-20261112'
 STOCK = Path(os.environ.get('Y2_STOCK_PACKAGE', '/home/luca/Dokumente/Code/Y2Player/y2_v3.2.0_FM-20260813'))
 WORKSPACE = OUT / 'build'
 # The platform/Reborn contract types (docs/planning/PLATFORM-RUST-PORT-PLAN.md §4): Y2Linux holds the crate,

@@ -223,7 +223,7 @@
       "experimental": false,
       "reason": "physical qualification of this exact candidate pending",
       "installer": "Y2 recovery image (RECOVERY) after power-off; MISC boot-recovery request",
-      "channel": "GitHub Releases (SchulzCode/Y2Linux), daily check, never automatic install"
+      "channel": "GitHub Releases (Blunk/Y1Linux), daily check, never automatic install"
     },
     "automatic_bootimg_update": {
       "implemented": true,
