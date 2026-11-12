@@ -1,13 +1,14 @@
 # Videos on the Y2
 
-Status: **owner test builds only (236–245, 2026-11-12; 245 is on the owner's player), not in a public release.** This page says what the
-test build does and what it does not do yet. How it is built: [video playback plan](planning/VIDEO-PLAYBACK-PLAN.md);
-what the hardware decoder does: [MT6582 hardware video decoder](knowledge/video-decoder.md).
+Status: **in public releases since Beta 9.3.25 (2026-11-12), as an early version: built and tried on one player;
+expect bugs.** This page says what it does and what it does not do yet. How it is built:
+[video playback plan](planning/VIDEO-PLAYBACK-PLAN.md); what the hardware decoder does:
+[MT6582 hardware video decoder](knowledge/video-decoder.md).
 
 ## Using it
 
-Copy video files into the music folder of the internal storage or the SD card, like songs (USB file transfer,
-or the card in a computer). After the next scan **Videos** stands on Home. A film plays on Now Playing: the
+Copy video files onto Internal Storage or the SD card, like songs (USB file transfer, or the card in a
+computer). Any folder works; a folder of your own such as `Videos` keeps them together. After the next scan **Videos** stands on Home. A film plays on Now Playing: the
 picture fills the screen, and a button press shows its title and a time line for three seconds (always while
 paused). Play/Pause, Previous/Next, the wheel and the volume work as they do for a song, and the sound goes to
 whatever output is chosen. A film goes on where it was left. The screen stays on while a film plays.
@@ -29,7 +30,22 @@ Films never appear among the songs, in the albums or artists, in shuffles of the
 | Not played | HEVC (H.265), AV1, DTS sound, picture subtitles (DVD, Blu-ray), files with a picture and no sound |
 
 The screen is 480×360, so every picture is shrunk to it; a 1080p file looks no better than a 480p file and
-costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms to decode.
+costs more battery and storage.
+
+## The best file, and converting
+
+MP4 with H.264 video (8 bit) and AAC sound, 640×360 (480×360 for 4:3 films), up to 30 pictures a second, about
+1 Mbit/s: roughly 8 MB a minute, a two-hour film under 1 GB. With [FFmpeg](https://ffmpeg.org):
+
+```
+ffmpeg -i film.mkv -vf "scale=-2:360" -r 30 -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 23 -c:a aac -b:a 160k film.mp4
+```
+
+For a 4:3 film use `scale=480:360`. In [HandBrake](https://handbrake.fr): preset Fast 480p30, format MP4,
+encoder H.264, height 360 under Dimensions (settings named from its preset list, not tried here). Keep
+subtitles as a `.srt` file with the film's name or as a text track. Convert films in H.265/HEVC or AV1, films
+with DTS sound only, and large VP9 files; films in H.264 or Xvid/DivX up to 1920×1080 play as they are. On a
+FAT32 card a file cannot be larger than 4 GB.
 
 ## Checked on the owner's player (test build 243)
 
