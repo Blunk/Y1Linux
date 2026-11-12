@@ -1,8 +1,8 @@
 //! `y2-platform update`: signed full-system OTA (OTA-35): check, download, install request, boot
 //! health.
 //!
-//! The small native core (`/usr/sbin/y2-update-core`, C) is the shared authentication/policy
-//! authority. It writes the RECOVERY image and the MISC request; the Y2 recovery image performs the
+//! The small native core (`/usr/sbin/y2-update-core`, C; `y1-update-core` on the Innioasis Y1) is
+//! the shared authentication/policy authority. It writes the RECOVERY image and the MISC request; the Y2 recovery image performs the
 //! offline backup/write/readback of BOOTIMG and Y2ROOT. This module never opens a block device itself.
 //! `/data/updates/state.json` is the core's journal; `download.json`, `last-check.json` and
 //! `/run/y2/update-progress.json` are this module's records, read by Reborn (`client.rs`).
@@ -284,6 +284,35 @@ mod tests {
             Some("update_needs_charger_or_half_battery")
         );
         assert!(fixture.calls().is_empty(), "{:?}", fixture.calls());
+    }
+
+    /// The Innioasis Y1 runs the core built for its eMMC (docs/planning/Y1-RECOVERY-PLAN.md, R4b).
+    #[test]
+    fn the_y1_asks_its_own_core() {
+        let answer = r#"{"request": null, "recovery_flag": 0}"#;
+        let fixture = Fixture::new().with_answers(vec![
+            ok(&["/usr/sbin/y1-update-core", "misc"], answer),
+            ok(&["/usr/sbin/y2-update-core", "misc"], answer),
+        ]);
+        fixture.put(
+            "/proc/device-tree/compatible",
+            "innioasis,y1\0mediatek,mt6572\0",
+        );
+        assert!(core(&fixture.root, "misc", None, 15.0).is_ok());
+        fixture.put(
+            "/proc/device-tree/compatible",
+            "innioasis,y2\0mediatek,mt6582\0",
+        );
+        assert!(core(&fixture.root, "misc", None, 15.0).is_ok());
+        let cores: Vec<String> = fixture
+            .calls()
+            .into_iter()
+            .map(|(argv, _)| argv[0].clone())
+            .collect();
+        assert_eq!(
+            cores,
+            ["/usr/sbin/y1-update-core", "/usr/sbin/y2-update-core"]
+        );
     }
 
     #[test]

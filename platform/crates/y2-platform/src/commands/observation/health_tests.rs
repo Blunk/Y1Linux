@@ -84,3 +84,77 @@ fn unreadable_filesystem_counter_and_invalid_audio_profile_are_not_ready() {
     fixture.put("/proc/asound/cards", " 0 [OtherCard ]: unrelated card");
     assert_eq!(audio(&fixture), "Unavailable");
 }
+
+/// The Innioasis Y1 (docs/planning/Y1-RECOVERY-PLAN.md, R4b): its read-only root and Y2DATA, each a
+/// loop over its window of the eMMC, are the `root` and `data` an update's health acknowledgement
+/// needs OK; the same mounts on the Y2 are not.
+#[test]
+fn the_y1_root_and_data_loops_are_ok() {
+    use std::os::unix::fs::symlink;
+    let fixture = contract();
+    fixture
+        .put(
+            "/proc/device-tree/compatible",
+            "innioasis,y1\0mediatek,mt6572\0",
+        )
+        .put(
+            "/proc/self/mountinfo",
+            "20 1 7:0 / / ro,noatime - ext4 /dev/loop0 ro\n\
+             30 20 7:1 / /data rw,nosuid,nodev,noatime - ext4 /dev/loop1 rw\n",
+        )
+        .mkdir("/sys/dev/block")
+        .mkdir("/sys/devices/platform/11120000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0")
+        .mkdir("/sys/block")
+        .mkdir("/data");
+    for (device, offset, size) in [
+        ("loop0", "72613888", "681574400"),
+        ("loop1", "1291059200", "2147483648"),
+    ] {
+        let base = format!("/sys/devices/virtual/block/{device}/loop");
+        fixture
+            .put(&format!("{base}/offset"), offset)
+            .put(&format!("{base}/sizelimit"), size)
+            .put(&format!("{base}/backing_file"), "/dev/mmcblk0\n");
+    }
+    symlink(
+        "../../devices/virtual/block/loop0",
+        fixture.path("/sys/dev/block/7:0"),
+    )
+    .unwrap();
+    symlink(
+        "../../devices/virtual/block/loop1",
+        fixture.path("/sys/dev/block/7:1"),
+    )
+    .unwrap();
+    symlink(
+        "../devices/platform/11120000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0",
+        fixture.path("/sys/block/mmcblk0"),
+    )
+    .unwrap();
+    let states = |fixture: &Fixture| {
+        let blkid = |device: &str, uuid: &str| {
+            crate::testing::ok(&["blkid", "-p", "-s", "UUID", "-o", "value", device], uuid)
+        };
+        let root = fixture.root.clone().with_answers(vec![
+            blkid("/dev/loop0", y2p_core::volume::ROOT_UUID),
+            blkid("/dev/loop1", y2p_core::volume::Y1_DATA_UUID),
+        ]);
+        let health = json!(check(&root, false).unwrap());
+        let state = |name: &str| {
+            health["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["name"] == name)
+                .unwrap()["state"]
+                .clone()
+        };
+        (state("root"), state("data"))
+    };
+    assert_eq!(states(&fixture), (json!("OK"), json!("OK")));
+    fixture.put(
+        "/proc/device-tree/compatible",
+        "innioasis,y2\0mediatek,mt6582\0",
+    );
+    assert_eq!(states(&fixture), (json!("FAILED"), json!("FAILED")));
+}

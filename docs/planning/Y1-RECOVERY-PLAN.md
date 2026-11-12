@@ -3,14 +3,16 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2, R3 and R4's PID1 part built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+Status: **R0 done, R1 PASS, R2, R3, R4's PID1 part and R4b built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
 [R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
-[R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12)): the RTC
+[R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12),
+[R4b](#11-r4b--the-normal-systems-update-service--2026-11-12)): the RTC
 PDN1 recovery flag starts RECOVERY on the Y1 by a Linux restart, a centre-button start and a charger start, and LK
 clears it each time; each image's tree carries its own eMMC write windows; `y1-update-core` installs Y1 packages
 with the Y1's geometry and sets the flag with every request; both images carry it in their initramfs and PID1 runs
-it as the recovery and as the BOOTIMG rescue, host-built and selftested. Next: R4's device run (the probe through
-the recovery) and R4b (the normal system's update service on the Y1). The
+it as the recovery and as the BOOTIMG rescue, host-built and selftested; the normal system runs the update
+service's daily check and health acknowledgement with `y1-update-core` and reports OTA off (host code and tests).
+Next: R4's device run (the probe through the recovery) with R4b's service checked on the way, then R5. The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
@@ -115,7 +117,7 @@ Offline; CONFIRMED unless marked.
 | **R2** | Kernel: the guard with a list of windows, the two trees, the PDN1 write exception, host tests for every boundary of both policies | none |
 | **R3** | `core.c` Y1 geometry and device field, `package.py` Y1 profile, `y1_package.py` builds `RECOVERY.img`, size check; host tests with a Y1 `disk.img` (`Y2_UPDATE_TEST`) | none |
 | **R4** | PID1 rescue and recovery modes, `recovery-ui` at 480×360 (host: built, [§10](#10-r4--pid1s-recovery-and-rescue--2026-11-12)). On the Y1: `probe-recovery` from the normal system (Linux writes MISC through the guard), a refused write outside each policy | BOOTIMG, RECOVERY (mtkclient), MISC (Linux) |
-| **R4b** | The normal system on the Y1: the service daemon's update part (daily check, health ack) next to its network part, the update service's `/data` (Y2DATA on a loop over USRDATA, the Y1 UUID), `y1-update-core` as its core, `ota` off in the Y1's capabilities until R5 | none |
+| **R4b** | The normal system on the Y1: the service daemon's update part (daily check, health ack) next to its network part, the update service's `/data` (Y2DATA on a loop over USRDATA, the Y1 UUID), `y1-update-core` as its core, `ota` off in the Y1's capabilities until R5 (host: built, [§11](#11-r4b--the-normal-systems-update-service--2026-11-12)) | none |
 | **R5** | End to end from a local release: Update Now, install, health ack; then cancel, a pulled cable during the write (resume or restore), a failed health check (rollback), a stopped installer (watchdog restart), go back once | BOOTIMG, ANDROID, RECOVERY, MISC, USRDATA through the guard |
 | **R6** | Release: INSTALL (RECOVERY written once, its backup, undo), a Y1 section in RECOVERY-AND-UPDATES, release notes, `ota` enabled for the Y1 | none |
 
@@ -344,3 +346,54 @@ copy; the 9.3.24 root predates R3).
   (`0x15c00`) and at ANDROID (`0x22a00`) on `mmcblk0` fail and the guard logs them; one at MISC passes (then
   restored).
 
+## 11. R4b — the normal system's update service — 2026-11-12
+
+Host code and tests; nothing built here was written to the Y1. The Y2ROOT image is shared, so the platform tells
+the players apart at runtime: `y2p_core::player` reads the device tree's first compatible string (`innioasis,y1`;
+anything else, and a fixture root, is the Y2).
+
+- **The core**: every update action runs `Player::update_core()`, `/usr/sbin/y1-update-core` on the Y1
+  (`update/journal.rs`). Nothing else of the update service changed: the battery gate reads the power daemon's
+  record as on the Y2, and the restart goes through the power daemon (which the Y1 runs since D2).
+- **`/data` and the root** (`y2p_core::volume`, the observation snapshot): on the Y1 the root and Y2DATA are verified
+  as loop devices over exactly their window of `mmcblk0` (sysfs `loop/offset`, `sizelimit`, `backing_file
+  /dev/mmcblk0`, and `/sys/block/mmcblk0` below `11120000.mmc`): ANDROID `72613888+681574400` bytes, USRDATA
+  `1291059200+2147483648`, as PID1 sets them up. Y2DATA must carry the Y1's UUID (`79314c69-…0102`), the root the
+  Y2ROOT UUID. The Y1's root is read-only by design (a read-only loop, and the guard never lets the normal system
+  write ANDROID), so mounted read-only it is Ready, not Degraded. Reborn's RAM `/data` (an image on another loop)
+  never verifies. So `update check`/`stage` find their transfer volume and the health acknowledgement sees
+  `root` and `data` OK; `render_node` (Lima), `display`, `audio` and `input` exist on the Y1 already.
+- **`S03y1-data`** writes the mounted loop to `/run/y2-data-device`, as the Y2's initramfs writes its partition,
+  and creates `/data/updates` (0700). With it the platform's durable records count Y2DATA as verified: the boot
+  journal (`boot-stage`, which the health acknowledgement records `application_ready` in) and the power daemon's
+  sleep diagnostics now persist on the Y1 as on the Y2. `boot-stage application_ready` arms the Y2's runtime power
+  features only on the Y2: the Y1's kernel has none of their switches.
+- **The service daemon**: `/etc/y2linux/service-policy.json` is now `{"schema": 1, "network_only": true,
+  "updates": true}` (moved to `initramfs/y1-update`). With schema 1 and `"updates": true` exactly, the network part
+  gains the update part: the daily `update auto-check` once Wi-Fi is online (manifest only, never a download) and
+  `update health-ack` on the maintenance passes until no update waits for health. Media, the SD card, the radio
+  firmware scan, the space cleanup and error reports stay off; an older platform reads the same file as network
+  only (W6). Without the key, or with another schema, the service is W6's.
+- **`S42y2-readiness`** (Y1 override, `initramfs/y1-update`, in `y1-services` after `S41`): starts the Y2's
+  readiness supervisor only on the Y1's own Y2DATA (`/run/y2-data-device` mounted at `/data`) and only with a
+  platform that knows the policy; refuses during a reset as the Y2's. It owns the service daemon now, with or
+  without Wi-Fi, since an installed update needs its health acknowledgement either way: `S41y2-connectivity` no
+  longer starts or stops it, so its restart after a firmware import leaves it running.
+- **Capabilities**: `tools/build/y1_capabilities.py` (run by `y1-build.sh` from the Y2ROOT build) writes the root's
+  `capabilities.json` with `ota` and `automatic_bootimg_update` disabled (reason: R5), nothing else changed; PID1
+  installs it over the root's file. R6 drops the override.
+- **Until R5**: the Blunk/Y1Linux release 9.3.24 has no `"device": "y1"` manifest, so the Y1's daily check records a
+  failed check (the core refuses the manifest) until a Y1 package is published; it offers nothing to install.
+- **Tests**: `y2p_core` (`player`, the Y1 volumes: Ready as set up; another window, another backing file, the Y2's
+  Y2DATA UUID and the same mounts on the Y2 refused), `observation/health_tests.rs` (the Y1's `root` and `data`
+  OK), `update.rs` (the Y1 asks `y1-update-core`), `tests/service.rs` (the update part's two children with the
+  key; none with a non-boolean key or another schema), `tests/test_y1_update_service.py` (policy, the PID1 and
+  list entries, S42's start conditions run in a shell, S03's record after the schema check, the capabilities
+  derivation), `tests/test_y1_connectivity.py` (S41 leaves the daemon to S42).
+- **Gate**: fmt, clippy, armv7, the code-quality ratchet and cargo test pass; the platform goldens fail as in R2–R4
+  (20 differential cases, `report-upload-*`, `reset-plan-*`, `media-status-*`, and 5 in the reports and observation
+  suites), each identical on the tree before R4b.
+- **On the device (with R4's run)**: after writing the images, `/run/y2-data-device` names the USRDATA loop,
+  `y2-platform health` shows `root` and `data` OK, `pgrep -f service-daemon` runs with Wi-Fi off,
+  `y2-platform capabilities --json` shows `ota.enabled` false, and with Wi-Fi online
+  `/data/updates/last-check.json` records an attempt.

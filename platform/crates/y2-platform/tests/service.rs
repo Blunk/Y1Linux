@@ -195,3 +195,45 @@ fn a_network_only_image_keeps_the_network_part_alone() {
     );
     assert!(started(&tick(&fixture), &["media", "reconcile"]));
 }
+
+/// The Y1's update part (docs/planning/Y1-RECOVERY-PLAN.md, R4b): with `"updates": true` a pass
+/// also starts the daily check once Online and asks for the health acknowledgement, and still starts
+/// no media, firmware or report work; the key counts only in a schema 1 policy.
+#[test]
+fn a_network_only_image_with_updates_keeps_the_update_part_too() {
+    for (policy, updates) in [
+        (
+            r#"{"schema": 1, "network_only": true, "updates": true}"#,
+            true,
+        ),
+        (
+            r#"{"schema": 1, "network_only": true, "updates": "yes"}"#,
+            false,
+        ),
+        (
+            r#"{"schema": 2, "network_only": true, "updates": true}"#,
+            false,
+        ),
+    ] {
+        let mut fixture = fixture();
+        fixture.put("/etc/y2linux/service-policy.json", policy);
+        online(&mut fixture);
+        let run = tick(&fixture);
+        let platform: Vec<_> = run
+            .calls
+            .iter()
+            .filter(|c| c["argv"][0] == json!(PLATFORM))
+            .map(|c| c["argv"].clone())
+            .collect();
+        let expected = if updates {
+            vec![
+                json!([PLATFORM, "update", "auto-check"]),
+                json!([PLATFORM, "update", "health-ack"]),
+            ]
+        } else {
+            vec![]
+        };
+        assert_eq!(platform, expected, "{policy}");
+        assert!(!fixture.path("/run/y2/usb-transfer.json").exists());
+    }
+}

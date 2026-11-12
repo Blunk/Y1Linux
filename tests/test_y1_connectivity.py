@@ -1037,21 +1037,13 @@ class Y1WifiW6(unittest.TestCase):
         self.assertIn(f"[ -f {config['inbox']}/system.img ] && /etc/init.d/S41y2-connectivity firmware", mtp)
         self.assertIn(' firmware) firmware;;', self.SCRIPT)
 
-    def test_the_service_daemon_runs_its_network_part_only_with_a_platform_that_knows_it(self):
-        policy = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/service-policy.json').read_text())
-        self.assertEqual(policy, {'schema': 1, 'network_only': True})
-        pid1 = (ROOT / 'initramfs/y1-system.h').read_text()
-        self.assertIn('{ "/etc/y2linux/service-policy.json", 0644 },\n};', pid1)
-        listing = (ROOT / 'initramfs/y1-production.list').read_text()
-        self.assertIn('file /y1-system/etc/y2linux/service-policy.json /project/initramfs/y1-bluetooth/etc/y2linux/'
-                      'service-policy.json 0644', listing)
-        daemon = (ROOT / 'platform/crates/y2-platform/src/commands/service/daemon.rs').read_text()
-        self.assertIn('const POLICY: &str = "/etc/y2linux/service-policy.json";', daemon)
-        body = self.function('services')
-        self.assertIn('grep -q service-policy.json /usr/sbin/y2-platform &&\n\t\tstart-stop-daemon -S -q -b -m -p '
-                      '/run/y2/readiness-supervisor.pid -x /usr/libexec/y2/readiness-supervise', body)
-        self.assertLess(body.index('[ -n "$wifi" ] || return 0'), body.index('readiness-supervise'))
-        self.assertIn('start-stop-daemon -K -p /run/y2/readiness-supervisor.pid', self.SCRIPT)
+    def test_the_service_daemon_is_left_to_s42(self):
+        # R4b (docs/planning/Y1-RECOVERY-PLAN.md): S42y2-readiness starts the service daemon with or without
+        # Wi-Fi (tests/test_y1_update_service.py); a restart of this script after a firmware import must not
+        # stop it.
+        self.assertNotIn('readiness-supervis', self.SCRIPT)
+        self.assertNotIn('service-policy', self.SCRIPT)
+        self.assertIn("service daemon (its network and update parts) is S42y2-readiness's", self.SCRIPT)
 
     def test_the_driver_takes_a_late_record_once_under_the_recovery_lock(self):
         core = (Y1 / 'core.c').read_text()

@@ -49,8 +49,11 @@ static const struct override overrides[] = {
     { "/etc/init.d/S41y2-connectivity", 0755 },
     /* B7: the Y1's radio firmware set for y2-platform firmware (/data/firmware/mt6572). */
     { "/etc/y2linux/radio-firmware.json", 0644 },
-    /* W6: the Y2's service daemon restricted to its network part (docs/planning/Y1-WIFI-PLAN.md §14). */
+    /* W6: the Y2's service daemon restricted to its network part (docs/planning/Y1-WIFI-PLAN.md §14); R4b: and
+     * its update part, started by the Y1's S42 and reporting OTA off until R5 (docs/planning/Y1-RECOVERY-PLAN.md). */
     { "/etc/y2linux/service-policy.json", 0644 },
+    { "/etc/init.d/S42y2-readiness", 0755 },
+    { "/etc/y2linux/capabilities.json", 0644 },
 };
 
 static int install_file(const char *path, unsigned mode)

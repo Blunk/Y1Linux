@@ -13,9 +13,9 @@
 # (usr/libexec/y2/connectivity without its factory and calibration steps): wpa_supplicant on its global control
 # socket, y2-radiod (Bluetooth, BlueZ, BlueALSA and both radios' power as the owner left them: Wi-Fi off until
 # /data/network/enabled says 1) and the platform's connectivity monitor, which attaches the supplicant to wlan0
-# with the Y2's action hook (DHCP) and restarts a dead helper; and the Y2's service daemon in its network part
-# (/etc/y2linux/service-policy.json: network.json for Reborn, the DNS probe, the Wi-Fi self-heal and power policy,
-# time), under the Y2's readiness supervisor. Without Wi-Fi: y2-radiod alone, as in B6.
+# with the Y2's action hook (DHCP) and restarts a dead helper. Without Wi-Fi: y2-radiod alone, as in B6. The Y2's
+# service daemon (its network and update parts) is S42y2-readiness's, with or without Wi-Fi
+# (docs/planning/Y1-RECOVERY-PLAN.md, R4b): a restart of this script leaves it running.
 # The power daemon's shutdown calls stop-wifi, stop-bluetooth and stop-daemon one by one, as on the Y2.
 C=/sys/devices/platform/18070000.connectivity
 RECORD=/data/connectivity/bt-record
@@ -130,10 +130,6 @@ services() {
 	start-stop-daemon -S -b -m -p /run/y2/radiod.pid -x /usr/sbin/y2-radiod
 	[ -n "$wifi" ] || return 0
 	start-stop-daemon -S -b -m -p /run/y2/connectivity.pid -x /usr/sbin/y2-platform -- connectivity-daemon
-	# Only a platform that knows the image's policy: an older one would run the Y2's whole service (its
-	# updates, USB and card work) here.
-	grep -q service-policy.json /usr/sbin/y2-platform &&
-		start-stop-daemon -S -q -b -m -p /run/y2/readiness-supervisor.pid -x /usr/libexec/y2/readiness-supervise
 }
 
 case "$1" in
@@ -156,7 +152,6 @@ case "$1" in
  stop-bluetooth) y2-radio bluetooth off-runtime 2>/dev/null || : ;;
  stop-daemon)
 	start-stop-daemon -K -p "$WAIT" 2>/dev/null || :
-	start-stop-daemon -K -p /run/y2/readiness-supervisor.pid 2>/dev/null || :
 	# The monitor stops its helpers as it ends (as on the Y2); then whatever is left, B6's way.
 	start-stop-daemon -K -p /run/y2/connectivity.pid 2>/dev/null || :
 	for name in wifi-action wifi-dhcp wpa radiod bluealsa; do
