@@ -187,10 +187,21 @@ Measured on the player, kernel `6.18.56-y2linux-1.0.0-beta.9.3.24` with `kernel/
   reaches the registers through the driver's debugfs file). The kernel's own call path with the corrected
   start-code step is checked with the next kernel build.
 
+### Through FFmpeg (test build 238, same day)
+
+With our FFmpeg path (`buildroot/patches/ffmpeg`, hwaccel `h264_y2vdec`) and the driver's normal call:
+`tools/development/vdec/vdec-ffmpeg.c` decodes each file once on the hardware and once in software and compares
+every picture. Nine x264 files, 780 pictures, **none differs**: Baseline CAVLC 854×480 with three slices; Main
+1280×720 with B pictures; High 1920×1080; High 1280×720 with a B pyramid, six references and weighted
+prediction; High 720×576 with the JVT quantisation matrices; 426×240 (cropped); 360×640; 176×144 with 16
+references; 640×480 without B pictures (picture order type 2). An interlaced 720×576 file is refused by the
+hardware path at start and plays in software. One 1280×720 picture takes about 4 ms in the driver call
+(`vdec-run`: 30 pictures, 4.11 ms each), a 640×368 picture 1.2 ms.
+
 ## Still open
 
 - The chip-type value on this unit (7 assumed; the 6/9/10 branches were left out and nothing missed them).
-- Streams beyond what the job tool can describe (long-term references, memory management operations, picture
-  order type 1): checked through FFmpeg once our FFmpeg path exists.
+- Long-term references and picture order type 1 have not been in a test file yet (x264 does not produce them);
+  damaged streams have not been tried.
 - Timing and power per picture size; sleep and wake with an open decoder.
 - MPEG-4 Part 2: the sequence is in `mpeg4_part2_risc_settings` and `mpeg4_hw_reg_init`; not read out yet.

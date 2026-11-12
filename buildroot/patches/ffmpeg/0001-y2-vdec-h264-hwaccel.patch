@@ -77,7 +77,7 @@ diff -Nru a/libavcodec/Makefile b/libavcodec/Makefile
 diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 --- a/libavcodec/y2vdec_h264.c
 +++ b/libavcodec/y2vdec_h264.c
-@@ -0,0 +1,364 @@
+@@ -0,0 +1,365 @@
 +/*
 + * H.264 decoding on the Innioasis Y2's MT6582 hardware decoder (/dev/y2-vdec).
 + *
@@ -125,6 +125,7 @@ diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 +#include "libavutil/intreadwrite.h"
 +
 +#include "avcodec.h"
++#include "decode.h"
 +#include "internal.h"
 +#include "h264dec.h"
 +#include "h264_ps.h"
@@ -221,7 +222,7 @@ diff -Nru a/libavcodec/y2vdec_h264.c b/libavcodec/y2vdec_h264.c
 +    frame->data[3]     = (uint8_t *)(uintptr_t)(index + 1);
 +    frame->linesize[0] = d->config.width;
 +    frame->linesize[1] = d->config.width;
-+    return 0;
++    return ff_attach_decode_data(avctx, frame);
 +}
 +
 +static int y2_frame_index(const H264Picture *pic)
