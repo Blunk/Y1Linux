@@ -1,6 +1,6 @@
 # FM radio on the Y2
 
-Status: **in the source and in owner test builds (249, 250; 2026-11-12), not in a public release yet.** FM has
+Status: **in Beta 9.3.26 (2026-11-12; owner test builds 249 and 250 before it).** FM has
 played on one player, a first-revision Y2 that receives no stations; nobody has confirmed reception under Y2Linux
 yet. This page says who can use it, how, and what is known.
 
