@@ -1,0 +1,487 @@
+{
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (0030: the Y2's power-off patch 0027, unchanged), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged).",
+  "overlays": [
+    {
+      "path": "drivers/clk/mediatek/Kconfig",
+      "base_sha256": "296fd97da067987c78841e50620f25fddf913d1aa093d08bded4ad47aecce723",
+      "result_sha256": "ca71da8a8d590c532efc3ed35da82be44819b49bd6fbcb41d5d90133654103a4",
+      "patch": "0001-mt6572-clk-kconfig.patch"
+    },
+    {
+      "path": "drivers/clk/mediatek/Makefile",
+      "base_sha256": "d4938ae54d40715d3cec345b5d4b441fcd8c28ea34d9f520a3a5b9b6205b5288",
+      "result_sha256": "b21b631db9d9bdde238d012d93a8e51d67a7031697bed7707ec14a419791017f",
+      "patch": "0002-mt6572-clk-makefile.patch"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/Kconfig",
+      "base_sha256": "358c03715ce2d3351183bff171f663ba7f3ee071425b44c9ef159fd0b8146d1c",
+      "result_sha256": "0e816d0245d023c4865ba9c426fb7e5f6a2ea5d64868d869299fa7c883b02adf",
+      "patch": "0003-mt6572-pinctrl-kconfig.patch"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/Makefile",
+      "base_sha256": "2d8bc4b9137a4c8b4d252f839c22d2a2cefe4cfc8b665e36c039d568954ae9d5",
+      "result_sha256": "b2ef9dfc4203fee29d77c6a63ecdaa0cc859d4fdfc18647cd03cea19b197226c",
+      "patch": "0004-mt6572-pinctrl-makefile.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-pmic-wrap.c",
+      "base_sha256": "80173dd03ba85c5f900d27d35a2b6d0bd60bb5cf4bd801295e9953a0e4eaec12",
+      "result_sha256": "cf229eb906e6f51f7503e813f578f28fcb1fb764480df7df6111e3d2d8a14292",
+      "patch": "0005-mt6572-pmic-wrap.patch"
+    },
+    {
+      "path": "drivers/i2c/busses/i2c-mt65xx.c",
+      "base_sha256": "fc2cb20be4237685878d9abfa9028a94949d67af62a974dc61d9fff1c5de3072",
+      "result_sha256": "596f4efb141b007b66d79140f73ff1f4da1a5895108de19c5ce31cd2edfaca1e",
+      "patch": "0006-mt6572-i2c.patch"
+    },
+    {
+      "path": "drivers/watchdog/mtk_wdt.c",
+      "base_sha256": "6e8230dff7db590f16bdc83918220da48be57c8a594cd3f0917f4c0e0018da9b",
+      "result_sha256": "8dd10f8e2af6549c05ce779dba03badea559fa87e9e83d44ebeba7c6068d673a",
+      "patch": "0007-mt6572-wdt-resets.patch"
+    },
+    {
+      "path": "include/linux/soc/mediatek/infracfg.h",
+      "base_sha256": "c77c59cc8e8d0e91a5b6d1eb52cb236fda4ae1709bbffc84fe1020d701d112b9",
+      "result_sha256": "e9e78a179f7ea70f20cd92b1fa314672cf579349de845b2dfa9f58ef6f7c1f3c",
+      "patch": "0008-mt6572-infracfg.patch"
+    },
+    {
+      "path": "drivers/input/misc/Kconfig",
+      "base_sha256": "c81b2f53ad46c91be029eab302df0329ecf293e0f51949dc544ad96e7a4b7274",
+      "result_sha256": "7c39e5ad8dbfd0afcdf13ee16496ea9d394601777840a69ac467f5d567f4f886",
+      "patch": "0009-innioasis-apt32f-kconfig.patch"
+    },
+    {
+      "path": "drivers/input/misc/Makefile",
+      "base_sha256": "934c668182ac34aee10aacae504fb0990e50fd53fd9527a2c3603ea0e1b9c17c",
+      "result_sha256": "56b32ad4633c9c6db2b3a982ef3462dd74c045879103fc1527dc2db917771c1c",
+      "patch": "0010-innioasis-apt32f-makefile.patch"
+    },
+    {
+      "path": "arch/arm/mm/Kconfig",
+      "base_sha256": "320a616f70976e6bf1544f4cebccd4f796524d7e856da6d2f053aed581d4a049",
+      "result_sha256": "57ec8dcb3b02cd5c5efc6925b921e69671add7f2db51a9c21ca72df5ec307116",
+      "patch": "0011-arm-allow-explicit-virt-ext-disable.patch"
+    },
+    {
+      "path": "drivers/iio/adc/Kconfig",
+      "base_sha256": "db8c69e9db9478ede359243280516275bd4beb3c62b07e2052ad4231b3129a05",
+      "result_sha256": "18fd5b6c138be7710ff3c2bbb747e389626393527c0cf5dbd731d84f063ea88b",
+      "patch": "0012-innioasis-mt6323-adc-kconfig.patch"
+    },
+    {
+      "path": "drivers/iio/adc/Makefile",
+      "base_sha256": "4b2ec7f4ded020b8aa514193e82c9080635fc89e9cb30773b1e6f73c5d645193",
+      "result_sha256": "0b80c14817d9d588e588f14d4486513e80ab8455b2f35421338475474f0a7ca2",
+      "patch": "0013-innioasis-mt6323-adc-makefile.patch"
+    },
+    {
+      "path": "drivers/mfd/mt6397-core.c",
+      "base_sha256": "4c9b1a942df7ade97f0bb4cd7af65a8f7a9487df96b278eedc125f1eda6e3209",
+      "result_sha256": "b75026aa53d6616645483460b652795da535f8406b28cc431d1a16605fef32eb",
+      "patch": "0014-mt6323-auxadc-charger-cells.patch"
+    },
+    {
+      "path": "drivers/phy/mediatek/phy-mtk-tphy.c",
+      "base_sha256": "c57efe8f40fdaf6572805a0546d3fceef8c4028c402405a3f61264955d90051b",
+      "result_sha256": "44cab8c9e3c6c27dd7b64df471f2964e66e916e4751728c6367bd2931672e445",
+      "patch": "0015-mtk-tphy-force-session-valid.patch"
+    },
+    {
+      "path": "drivers/power/supply/Kconfig",
+      "base_sha256": "f7b8c230ddfcebc2b95065c74929986eed9e74c4726a57a5a93b0ef4910003b7",
+      "result_sha256": "638d22b578f1ed7429f709751621d759bef1f263fcd93a7beb7157678e95c118",
+      "patch": "0016-innioasis-mt6323-charger-kconfig.patch"
+    },
+    {
+      "path": "drivers/power/supply/Makefile",
+      "base_sha256": "5062242508ba3ccee99eabb032b03c2717a015fefcdfbea7b536e88e17eba842",
+      "result_sha256": "ff237381f6edb6e6020972063a42b787064a63626b513106a0f12fb8824c940a",
+      "patch": "0017-innioasis-mt6323-charger-makefile.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_drm_drv.c",
+      "base_sha256": "9429cb523b3c02a952af171b415aafb35ce4bb7997e5d274c9a80ee58666981e",
+      "result_sha256": "7404cca1cdd9e4aab830245430b87020b2c4aff36dba39aaa5d461c12087d9bd",
+      "patch": "0018-mt6572-drm-compatibles.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_disp_ovl.c",
+      "base_sha256": "405ee251d3f328a00074158d2cf9664c934de40a5b47c7a5b018a8deeb6b233d",
+      "result_sha256": "37ad9bd653ecb5319fa0b7e36e3d25a657aa4af125465ac249eecfcc61517d57",
+      "patch": "0019-mt6572-disp-ovl.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_disp_rdma.c",
+      "base_sha256": "accb19352368a971d67937c4e0b97a17988f5136c22870aa72e69c5787dadd26",
+      "result_sha256": "c7ed16c2b44244f5b20ada7f6e9e7c43245512eb59e4b7cfe634541ea76da76a",
+      "patch": "0020-mt6572-disp-rdma.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/mediatek/mtk_dsi.c",
+      "base_sha256": "a8405967bc29d4786727389cff06f9f7129b319ecb27840ae9b4ed0fcd857476",
+      "result_sha256": "175aa4467e4c2fc4ae2e417741a019c5a931620a54b7bfbbea4368a4a9cff873",
+      "patch": "0021-mt6572-dsi.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-mmsys.c",
+      "base_sha256": "6f959cf51269bd1e1cf2895c38962bec5341a53e4f189681ff0db75e960e3dac",
+      "result_sha256": "efe14f91497046659d16f53e94278823d2b9a02104da24c2383f0179dc0054ac",
+      "patch": "0022-mt6572-mmsys.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/mtk-mutex.c",
+      "base_sha256": "3d62c9f315dc53c189f97febb3aaaea9a76528c84bf42515cf572c5f5f11f2e3",
+      "result_sha256": "6611c5469dc7b5c67bea6d97fe62da89691571a3d2ec45e85d953b4d4812ebab",
+      "patch": "0023-mt6572-mutex.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/Kconfig",
+      "base_sha256": "a546ec259f9111566bf9b64542d89d2ddb045851eb9335fce67a7f2bdc4921ea",
+      "result_sha256": "2495a21a74dfca5e02cc1710b25a03df9abfc2b71a3d0c8533c0573b0082ee91",
+      "patch": "0024-innioasis-y1-lk-panel-kconfig.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/Makefile",
+      "base_sha256": "711e270b1a7c41f0be3d629f3fc3323478afb24cac5f54376dd58023db4f3da7",
+      "result_sha256": "9a2414fe0d975e0f0eed86ba2b67d223a97c5268453cab3e2285737d6f7d0918",
+      "patch": "0025-innioasis-y1-lk-panel-makefile.patch"
+    },
+    {
+      "path": "drivers/video/backlight/Kconfig",
+      "base_sha256": "abe03d026e767d5d9b5dbeb04a42dbc78cf317544b5581d49583c17864a495c1",
+      "result_sha256": "2f1152efc73fc303b6c89ad01e837530ea9a8959b371750660905c3928183051",
+      "patch": "0026-innioasis-mt6323-backlight-kconfig.patch"
+    },
+    {
+      "path": "drivers/video/backlight/Makefile",
+      "base_sha256": "14fa6f984e645f3c50eb1c49dca1e36bf365492331078b4e436eb19203b09f37",
+      "result_sha256": "1aa749137c40099fb2be98671b0d4e298b655d8a3471ef6f4477801517993a72",
+      "patch": "0027-innioasis-mt6323-backlight-makefile.patch"
+    },
+    {
+      "path": "sound/soc/mediatek/Kconfig",
+      "base_sha256": "0bb03979e1b171cccf16fb727332cc24413794442e571c31a73745acd542ad70",
+      "result_sha256": "f34450138f0c410c6c2bdbbbe910c9170a2f0515b96437d797c3710be5e2c126",
+      "patch": "0028-innioasis-y1-audio-kconfig.patch"
+    },
+    {
+      "path": "sound/soc/mediatek/Makefile",
+      "base_sha256": "5a4c58e2b6ff638bfe69aba785dee981a003ee1e5a894a5636e055d647b8c9ec",
+      "result_sha256": "f09c64cb4a9f4ac4f45cddda994dbdabd290ef1baea18b07f55e4766710701af",
+      "patch": "0029-innioasis-y1-audio-makefile.patch"
+    },
+    {
+      "path": "drivers/power/reset/mt6323-poweroff.c",
+      "base_sha256": "7ce333b601878e3a2a9aa60c2b3d0f9509b7aff49738ce9bffab168af1d402da",
+      "result_sha256": "889d78ead6dfa6bd538174d8beabe5b831324ef2586500713cd1a2798bf63884",
+      "patch": "0030-mt6323-poweroff-atomic.patch"
+    },
+    {
+      "path": "drivers/pmdomain/mediatek/mtk-pm-domains.c",
+      "base_sha256": "5c3bc0d05499bf624ba0dc9f602f81e4f72592719fb5312d38d02efc8b53a04c",
+      "result_sha256": "c394819f1369f6786c2447c273d10de7e20ce399c8303e2c340fe55d9964b060",
+      "patch": "0031-mt6572-pm-domains.patch"
+    },
+    {
+      "path": "drivers/gpu/drm/lima/lima_drv.c",
+      "base_sha256": "f690bd317e00ca5c4b87935598ffa473136cf544e50984f47c98fcfe36f8fe46",
+      "result_sha256": "642a879b7e109229856c2c8d2f8888c59680e7aedd7047e9491aeeb507f385e1",
+      "patch": "0032-lima-initial-runtime-idle.patch"
+    },
+    {
+      "path": "drivers/input/keyboard/mtk-pmic-keys.c",
+      "base_sha256": "4a085e49f16e12cc6c00f7b74b7c1e7e18735b45eccd26f0b24e076d9f940d1e",
+      "result_sha256": "f908f0170571932eccd87acbb8b37b1e203c2ce023bdbc925592edbaec9dc93d",
+      "patch": "0033-mtk-pmic-keys-label-hold.patch"
+    },
+    {
+      "path": "drivers/mmc/host/mtk-sd.c",
+      "base_sha256": "8fd10e3a6f6d60e37216de79b2d7a8b8f766c7d7e5cdd5851cccfe375e2536d1",
+      "result_sha256": "03984d52468d01b99d09947b3d63d9efc25ee664f00e6a93f522488f11ca7b78",
+      "patch": "0034-y1-emmc-write-guard.patch"
+    },
+    {
+      "path": "drivers/usb/musb/musb_gadget.c",
+      "base_sha256": "c0948905903b9e2998408d01adefbb69195bd493f165c209b350e019760a97a4",
+      "result_sha256": "6319fd4408078d74d4d2e9ac2361947faeb8e4ea5421a336351a40c1b4f4cd36",
+      "patch": "0035-musb-ep-start.patch"
+    },
+    {
+      "path": "drivers/bluetooth/Kconfig",
+      "base_sha256": "a0b6ea9a78333069406f5e3fb7aa099ebb62917c0a6ffda0e0593f829f14cac7",
+      "result_sha256": "7623354cb72abf6e8cf0d8294b6da3ba64d72bec1075d59c4cf00109321ec94e",
+      "patch": "0036-innioasis-y1-bluetooth-kconfig.patch"
+    },
+    {
+      "path": "drivers/bluetooth/Makefile",
+      "base_sha256": "3029941aefe5ca9b5f588c27a785910490c8b2c0bd825f2ca145d48278468218",
+      "result_sha256": "55a2e0e2626fd52eb70824b92e5636eb6fd793a0791b8af5604a0df084665bea",
+      "patch": "0037-innioasis-y1-bluetooth-makefile.patch"
+    },
+    {
+      "path": "arch/arm/mach-mediatek/Kconfig",
+      "base_sha256": "61790e35f9fbdb5dd524c658f041739b4cf52d8393962622d6cdb4a0f497506b",
+      "result_sha256": "70762ea9649df6493fd268510f26da9825113c25539419f565b78a3bf921f038",
+      "patch": "0038-mt6572-reserve-conn-kconfig.patch"
+    },
+    {
+      "path": "arch/arm/Makefile",
+      "base_sha256": "3d3d11ad9dcf46e500b815249ac3a29c90b1f882c2e59e7e7c5e217256171d5e",
+      "result_sha256": "0208b65da851b3c6ee3433381475a4faefada3acc46869e1db21d6649bc21125",
+      "patch": "0039-mt6572-reserve-conn-textofs.patch"
+    },
+    {
+      "path": "drivers/Makefile",
+      "base_sha256": "32d5e6823a71712aaab73276e574a8c24c386602c2c05a4085d1e2abfa381d01",
+      "result_sha256": "c50511de5b3c568facc94a3fb9fd728d34c68b76e740f99d6d2d757c908c8f1b",
+      "patch": "0040-innioasis-y1-wifi-drivers-makefile.patch"
+    }
+  ],
+  "added": [
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-apmixedsys.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-apmixedsys.c",
+      "sha256": "57c8121c939444af8f63172827ae4b4af0060a9a17dd8f86d0ba1d99e935ded6"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-infracfg.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-infracfg.c",
+      "sha256": "abc2a2d3c2c7660d5021ade6ddea7e1845b506060c6e4bd32ee5b39d002bbeaf"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-mfg.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mfg.c",
+      "sha256": "2f6452bf5a83ac2c91e2469d23ce57c725378dc2f125c48838075a20ff30670d"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-mm.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mm.c",
+      "sha256": "0cdcdb1f24381f248fa881fb78fe2c7c82cfafb9ab257031d74a81e61134d300"
+    },
+    {
+      "path": "drivers/clk/mediatek/clk-mt6572-topckgen.c",
+      "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-topckgen.c",
+      "sha256": "0f70217fc374d71da1574b2cc5ade0785e508aa7fa621b09f46b73dd04c07283"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/pinctrl-mt6572.c",
+      "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mt6572.c",
+      "sha256": "2556c9cf91219ff9acc3075560d4cf3c5384af5f07332170821ccc7b3bb32c6a"
+    },
+    {
+      "path": "drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
+      "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
+      "sha256": "7b55526e1b9aec21ed7af067cd75bda074b6f5c7db2483737fe89cdf857f6ab5"
+    },
+    {
+      "path": "include/dt-bindings/clock/mediatek,mt6572-clk.h",
+      "source": "kernel/mt6572/include/dt-bindings/clock/mediatek,mt6572-clk.h",
+      "sha256": "7d2a17ec31a3947b4bf905f3038724e0daaa6d91e65db86707c3b27701b438e0"
+    },
+    {
+      "path": "include/dt-bindings/reset/mediatek,mt6572-resets.h",
+      "source": "kernel/mt6572/include/dt-bindings/reset/mediatek,mt6572-resets.h",
+      "sha256": "bbe1d05fea8e8ad579c8647ab29e6430bf9f51630c67f3cf561b4d47a2bbced3"
+    },
+    {
+      "path": "include/dt-bindings/pinctrl/mt6572-pinfunc.h",
+      "source": "kernel/mt6572/include/dt-bindings/pinctrl/mt6572-pinfunc.h",
+      "sha256": "1abdef232370c0c658064486d72363a75cc72e8d9dd40ef10821a3bc36a2d8ac"
+    },
+    {
+      "path": "include/dt-bindings/power/mediatek,mt6572-power-controller.h",
+      "source": "kernel/mt6572/include/dt-bindings/power/mediatek,mt6572-power-controller.h",
+      "sha256": "40247eaba24febb7b8d161808329beece9bee8c6a361ab763471a57294662349"
+    },
+    {
+      "path": "include/dt-bindings/memory/mt6572-larb-port.h",
+      "source": "kernel/mt6572/include/dt-bindings/memory/mt6572-larb-port.h",
+      "sha256": "3d8e11df575742c1a42f66c1e27dd35e97d9c06d4d24b9fc53f31da865e35c05"
+    },
+    {
+      "path": "drivers/input/misc/apt32f-wheel.c",
+      "source": "kernel/platform/apt32f-wheel.c",
+      "sha256": "e07e24c2d8089cd0553c4b518384433a27f2f023bda4770a4083f3aa1bcf4d88"
+    },
+    {
+      "path": "drivers/iio/adc/innioasis-mt6323-adc.c",
+      "source": "kernel/platform/mt6323-adc.c",
+      "sha256": "0c7ac651e7a445814c2af585efca25445a812f53ad56387808b907ed13c9fd30"
+    },
+    {
+      "path": "drivers/iio/adc/power-math.h",
+      "source": "kernel/platform/power-math.h",
+      "sha256": "0bb2eab32e1aef4d0c3c150c5e6f24bc68dbe0f78fea77c51fd7c5a4b3af43da"
+    },
+    {
+      "path": "drivers/iio/adc/charge-table.h",
+      "source": "kernel/platform/charge-table.h",
+      "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/power/supply/innioasis-mt6323-charger.c",
+      "source": "kernel/platform/mt6323-charger.c",
+      "sha256": "79f2a5be7cde2ea45e4054e8167ebe23ed225a62e1b30301fefce961a87a94d9"
+    },
+    {
+      "path": "drivers/power/supply/y1-usb-source.c",
+      "source": "kernel/y1/usb-source.c",
+      "sha256": "db8b76b532e362a66e985c40d50a496a5d17f8a969ff7b70185daa67660ac899"
+    },
+    {
+      "path": "drivers/power/supply/power-math.h",
+      "source": "kernel/platform/power-math.h",
+      "sha256": "0bb2eab32e1aef4d0c3c150c5e6f24bc68dbe0f78fea77c51fd7c5a4b3af43da"
+    },
+    {
+      "path": "drivers/power/supply/charger-policy.h",
+      "source": "kernel/platform/charger-policy.h",
+      "sha256": "9657f24f5ea9dd09546a07b0e0d31abaa5438b38a0075abab553976d237eeda5"
+    },
+    {
+      "path": "drivers/power/supply/source-policy.h",
+      "source": "kernel/platform/source-policy.h",
+      "sha256": "6a61e61e5273e277f477ba6443f8288ea4640fd7a246bef20403dd42012bc0e2"
+    },
+    {
+      "path": "drivers/power/supply/charge-limits.h",
+      "source": "kernel/platform/charge-limits.h",
+      "sha256": "654685f6d25aae39b131ce892ce24d91bb2f45ab2a4bc402542a70374f92545a"
+    },
+    {
+      "path": "drivers/power/supply/source.h",
+      "source": "kernel/platform/source.h",
+      "sha256": "7a6def590cc0146cb37166071ce11e03b5e2418b061a3670682865756ea84bda"
+    },
+    {
+      "path": "drivers/power/supply/charger-idle.h",
+      "source": "kernel/platform/charger-idle.h",
+      "sha256": "8c5e8dfe73024525fb7c21750118f6ed5a100e660088010e5f5388f052a86a25"
+    },
+    {
+      "path": "drivers/power/supply/poweroff-policy.h",
+      "source": "kernel/platform/poweroff-policy.h",
+      "sha256": "72e2c7e6e8ca40a72b13e730f166f6e47875c78562973d1c16fbc92019c24815"
+    },
+    {
+      "path": "drivers/power/supply/charge-table.h",
+      "source": "kernel/platform/charge-table.h",
+      "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/soc/mediatek/policy.h",
+      "source": "kernel/platform/policy.h",
+      "sha256": "a044da8046657d01ec2d122bd46ace39b7361b281c415bbf28c3824588b16983"
+    },
+    {
+      "path": "drivers/soc/mediatek/charge-table.h",
+      "source": "kernel/platform/charge-table.h",
+      "sha256": "d03354a4b605a48616ec4adfe3844781e288973b105d4f7d57e3521de06a0692"
+    },
+    {
+      "path": "drivers/soc/mediatek/vproc-sleep-policy.h",
+      "source": "kernel/platform/vproc-sleep-policy.h",
+      "sha256": "e16193cc9d27b87bfbcdd9213017981a8b098b7091354424ce183a3dae72994c"
+    },
+    {
+      "path": "drivers/soc/mediatek/mt6572-mmsys.h",
+      "source": "kernel/y1/mt6572-mmsys.h",
+      "sha256": "db1886bb61dc3be20f02939dcdf6c9b473d8f233e1f51dd889b0ebc1bb3bed7f"
+    },
+    {
+      "path": "drivers/gpu/drm/panel/panel-innioasis-y1-lk.c",
+      "source": "kernel/y1/panel-lk.c",
+      "sha256": "27ca330572674a33d9db0fa5aa248d760d5c32ae428cdf8a2d4cd79505d42dd6"
+    },
+    {
+      "path": "drivers/video/backlight/innioasis-mt6323-backlight.c",
+      "source": "kernel/platform/backlight.c",
+      "sha256": "f51dfac5c98c1857008fe6a5adf21dd8164b60203721667216f561ee89b8b9a3"
+    },
+    {
+      "path": "drivers/video/backlight/system-idle.h",
+      "source": "kernel/platform/system-idle.h",
+      "sha256": "09ab5a7750b89f8cf35d185153f929d59159b8eabb589dc30f322694d4c8a767"
+    },
+    {
+      "path": "sound/soc/mediatek/y1-mt6572-afe.c",
+      "source": "kernel/y1/mt6572-afe.c",
+      "sha256": "452d444fb249f717e790a37df1027cbda48c42fd9e5b624b0b87c85bd5a071af"
+    },
+    {
+      "path": "sound/soc/mediatek/y1-mt6323-codec.c",
+      "source": "kernel/y1/mt6323-codec.c",
+      "sha256": "555a3ff52336b5705890b891b8883ecb35d70bbe63c603a7138071f9591f6dd8"
+    },
+    {
+      "path": "drivers/soc/mediatek/pmic-audio-policy.h",
+      "source": "kernel/y1/pmic-audio-policy.h",
+      "sha256": "d57c9b782374a1f96c360562d6faa3fb140101f598b86933c9ef0775fb738387"
+    },
+    {
+      "path": "sound/soc/mediatek/aw87559.c",
+      "source": "kernel/audio/aw87559.c",
+      "sha256": "f0f382d84ef0e9f68d215538d92cd535154bffb5fa5bbbf71dc89833c989096b"
+    },
+    {
+      "path": "drivers/pmdomain/mediatek/mt6572-pm-domains.h",
+      "source": "kernel/y1/mt6572-pm-domains.h",
+      "sha256": "1c986c9db3cde92a91b9420038d0202648df52e703cf7d365d55b1591fdf4379"
+    },
+    {
+      "path": "drivers/mmc/host/y1-emmc-guard.h",
+      "source": "kernel/y1/emmc-guard.h",
+      "sha256": "5c4936b4631957ed7ec4af71c1dedf36f459a916799d58daf640850a0a179d66"
+    },
+    {
+      "path": "drivers/bluetooth/conn.h",
+      "source": "kernel/y1/connectivity/conn.h",
+      "sha256": "9c402199b68e3f6bfe242ee1a2944553dd0debd1dffa6bc343a8043d2fb9c2b8"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-policy.h",
+      "source": "kernel/y1/connectivity/y1-conn-policy.h",
+      "sha256": "b8aa70423d8ea5841f59201d4a0e8295dcdf670efa8d093a9571ece466b33f2f"
+    },
+    {
+      "path": "drivers/bluetooth/protocol.h",
+      "source": "kernel/platform/connectivity/protocol.h",
+      "sha256": "744b16a17f9958d44ad0004661e5a0a7d59addd19a896b3fe141194006be0614"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-core.c",
+      "source": "kernel/y1/connectivity/core.c",
+      "sha256": "9931342d4dcb51876db3ce37a9f497d87a22abdb4f3580a4687b9beab3ea99dc"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-wmt.c",
+      "source": "kernel/y1/connectivity/wmt.c",
+      "sha256": "e051398cf8aed8d13756ba0e7eeb191e42224687c8fda3d61f7f8cce766a6d40"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-firmware.c",
+      "source": "kernel/platform/connectivity/firmware.c",
+      "sha256": "51db02d62745412ab7686bf1c96483feac260567f2f3d0e2e80425c9baafdbe5"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-btif.c",
+      "source": "kernel/platform/connectivity/btif.c",
+      "sha256": "75fd29bf0837f14b3e24b1ef47afd282a01bbf332b607b9f6a1473fcee40c903"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-stp.c",
+      "source": "kernel/platform/connectivity/stp.c",
+      "sha256": "1ffd29ad29bfe645b3dc969e2d803ee57d76e5a1a4cd478f86b0c21b81dc13f2"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-hci.c",
+      "source": "kernel/platform/connectivity/hci.c",
+      "sha256": "cceda8f75410a022bc265220bcf1347c0ece26fa5bf115a53e9347ca7bd79766"
+    }
+  ]
+}

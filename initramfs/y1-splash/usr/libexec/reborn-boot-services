@@ -1,0 +1,9 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's reborn-boot-services (docs/planning/Y1-SYSTEM-PLAN.md, milestone A; the splash:
+# docs/planning/Y1-BOOT-SPLASH-PLAN.md). As the Y2: reborn-splash takes the screen before the services start and
+# hands it to Reborn when Reborn is ready; all boot messages stay in dmesg, syslog and on the serial console. The
+# Y2's boot evidence and boot stages are left out (Y2 platform metadata). /run/y2 is created here, after /run is
+# mounted.
+mkdir -p -m 0700 /run/y2
+/usr/libexec/reborn-splash --start >/dev/kmsg 2>&1 || :
+/etc/init.d/rcS >/dev/kmsg 2>&1

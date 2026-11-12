@@ -1,6 +1,54 @@
 # Current Y2Linux platform state
 
-## Y2Linux 1.0 Beta 9.3.19, Baseline 228 — 2026-11-08 (latest, published)
+## Y2Linux 1.0 Beta 9.3.24, Baseline 235 — 2026-11-11 (latest, published)
+
+Release `1.0.0-beta.9.3.24`, tag `baseline-235`, Linux `e0a57350`, Reborn `0537b06`, sequence 16000, root v1.258.
+SBC XQ and XQ+ are gone (owner decision after Y2Reborn #123: stutter on XQ with Wi-Fi on; saved values read as
+standard SBC). A cold start after charging while switched off shows the measured level (#113, F81). y2-radiod logs
+the encoder's rate over time into reports. Open: F80, underruns while the Wi-Fi radio starts. Host-tested only, not
+on a player. Details: [Beta 9.3.24 report](validation/Y2-LINUX-1.0-BETA-9.3.24.md).
+
+## Y2Linux 1.0 Beta 9.3.23, Baseline 234 — 2026-11-10 (published)
+
+Release `1.0.0-beta.9.3.23`, tag `baseline-234`, Linux `8f357e92`, Reborn `9930022`, sequence 15900, root v1.257.
+Now Playing's progress wave takes the cover's colour, as Home's card does (#108; owner: no toggle). Issue forms ask
+the install method and whether Wi-Fi and Bluetooth work; the install form covers "Couldn't Start"; a `needs-info`
+workflow; `tools/reports/summary.py`. Checked in the host preview only, not on a player. Details:
+[Beta 9.3.23 report](validation/Y2-LINUX-1.0-BETA-9.3.23.md).
+
+## Y2Linux 1.0 Beta 9.3.22, Baseline 233 — 2026-11-10 (published)
+
+Release `1.0.0-beta.9.3.22`, tag `baseline-233`, Linux `bc043e92`, Reborn `63a2052`, sequence 15800, root v1.256.
+A sleep that fails before the kernel is entered restores dark, like an unwoken refusal (`suspend/helper.rs`; the
+screen came on at every failed automatic sleep: Y2Player #132, one cause in Y2Reborn #116). Issue forms ask for a
+search first, `docs/NOT-PLANNED.md` lists declined ideas, a workflow hints at similar issues. Installed on the
+developer's player; a failing sleep was not provoked there. Details:
+[Beta 9.3.22 report](validation/Y2-LINUX-1.0-BETA-9.3.22.md).
+
+## Y2Linux 1.0 Beta 9.3.21, Baseline 232 — 2026-11-10 (published)
+
+Release `1.0.0-beta.9.3.21`, tag `baseline-232`, Linux `8fb7b826`, Reborn `b42c10f`, sequence 15700, root v1.255
+(test builds 230 at 15500 and 231 at 15600 were only on the developer's player). From a day of Bluetooth
+measurements on a player (btmon): BlueALSA bounded catch-up after a stalled link (patch 0009) and silence while a
+client is late (0010), encoder threads and Reborn's audio thread at real-time priority 1, AFH host channel
+classification from the Wi-Fi channel (`y2-bt-afh`, service daemon), Bluetooth start deadline 8 s; exFAT partial
+block zeroed through the folio (kernel patch 0072); sleep quiesce succeeds when Bluetooth never started (Y2Reborn
+#116); listen-only scan pass for NO_IR channels with beacon hints on (#110); bitrate from size over length (#87).
+On the developer's player: clean Bluetooth stream through pauses, seek and skips, Wi-Fi scan and join, channel
+mask, exFAT read. Not tried: the weak-signal capture with this build, a join on channel 12/13, other headsets.
+Details: [Beta 9.3.21 report](validation/Y2-LINUX-1.0-BETA-9.3.21.md).
+
+## Y2Linux 1.0 Beta 9.3.20, Baseline 229 — 2026-11-10 (published)
+
+Release `1.0.0-beta.9.3.20`, tag `baseline-229`, Linux `d5403d04`, Reborn `f6ba913`, sequence 15400, root v1.252.
+Bug fixes for the open issues: audiobook Previous/Next step to a chapter start only within 10 min, else 30 s, plus
+Previous/Next Chapter in the Now Playing menu and the place kept at 0:00 (#103); a one-album queue plays in order
+(Y2Reborn #113); skin Cover Flow captions glide (Y2Reborn #112); Wi-Fi join NotFound only when not associating and
+absent from the scan, radiod `Trigger::Wake` (one page) after a sleep without a headset (#83, F79); EFBIG files
+counted in Settings → Library (#84); service-menu SBC Auto Rate (#99). Host-tested only (HEAD comparison: no test
+regressions, 3,760 preview renders identical). Details: [Beta 9.3.20 report](validation/Y2-LINUX-1.0-BETA-9.3.20.md).
+
+## Y2Linux 1.0 Beta 9.3.19, Baseline 228 — 2026-11-08 (published)
 
 Release `1.0.0-beta.9.3.19`, tag `baseline-228`, Linux `d6c404e4`, Reborn `520c4b8`, sequence 15300, root v1.251.
 Update Notifications (Y2Reborn #97): a toggle on Software Update, off by default; with it on, Reborn observes the

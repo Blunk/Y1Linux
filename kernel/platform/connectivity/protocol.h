@@ -56,6 +56,11 @@ static inline int y2_wmt_rf_result(unsigned chip, unsigned hvr, unsigned fvr,
 		size == Y2_WMT_RF_RESULT_SIZE && p[0] == 2 && p[1] == 0x14 &&
 		y2_conn_le16(p + 2) == size - 4 && !p[4] && p[5] == 1;
 }
+/* The calibration-result rule STP applies to an event longer than the command buffer. A
+ * platform's conn.h may name its own before including this header (the Y1 MT6572: B5). */
+#ifndef Y2_CONN_RF_RESULT
+#define Y2_CONN_RF_RESULT(c, p, size) y2_wmt_rf_result((c)->chip, (c)->hvr, (c)->fvr, p, size)
+#endif
 struct y2_fs_argument { const unsigned char *data; unsigned size; };
 struct y2_fs_packet {
 	unsigned op, count;

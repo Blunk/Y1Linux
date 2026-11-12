@@ -2,6 +2,14 @@ name: 🐢 Slow or laggy
 description: Scrolling, opening a page, starting up or searching takes too long.
 labels: [performance]
 body:
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before you send this
+      description: "The same thing may have been reported or asked already. Please look through the [Y2Linux issues](https://github.com/SchulzCode/Y2Linux/issues?q=is%3Aissue), the [Y2Reborn issues](https://github.com/SchulzCode/Y2Reborn/issues?q=is%3Aissue) (open and closed) and the [ideas that won't be built](https://github.com/SchulzCode/Y2Linux/blob/main/docs/NOT-PLANNED.md). If it is there, add to that issue instead."
+      options:
+        - label: I searched, and this isn't there yet.
+          required: true
   - type: markdown
     attributes:
       value: |
@@ -13,6 +21,32 @@ body:
       label: Version
       description: Settings → System → About
       placeholder: e.g. 1.0 Beta 9.2.13
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Y2Linux?
+      description: The first install. Later updates over Wi-Fi don't change the answer.
+      options:
+        - SP Flash Tool with the first-install zip from GitHub
+        - Innioasis Updater (Updater CE)
+        - Another way (say which under "Anything else")
+        - I don't know
+    validations:
+      required: true
+  - type: dropdown
+    id: radios_work
+    attributes:
+      label: Do Wi-Fi and Bluetooth work?
+      description: They need the radio firmware, added once by copying `system.img` into the *Firmware* folder.
+      options:
+        - Both work
+        - Only Wi-Fi works
+        - Only Bluetooth works
+        - Neither works, although I added system.img
+        - I haven't added system.img
+        - I don't know
     validations:
       required: true
   - type: textarea

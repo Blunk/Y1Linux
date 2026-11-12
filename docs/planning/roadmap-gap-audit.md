@@ -1,5 +1,376 @@
 # Roadmap gap audit
 
+## Y1 single build — 2026-11-09
+
+Repository change, no hardware, memory-layout or production-scope change and no flash. The Y1's numbered test
+builds ("first boot" to "thirty-fifth boot": 35 device trees, 35 kernel fragments, 12 initramfs lists, 13 PID1
+headers behind `Y1_<N>_BOOT` defines, a variant-taking `y1-boot.sh`) are folded into one build named after the
+Y2's: `tools/build/y1-build.sh`, `kernel/dts/innioasis-y1.dts`, `kernel/config/y1-production.config`,
+`initramfs/y1-production.list`, PID1 headers by subsystem, output `BOOTIMG.img`
+([map](../knowledge/y1-hardware.md#single-build--2026-11-09)). The second- and third-boot plans are removed; their
+results stay in the Y1 hardware evidence. Evidence: with the step names kept, the build reproduced build 5
+(`eeede6ed…5ac5`, the image on the player) byte for byte; the renamed build (`7534e874…5abe`) differs only in the
+kernel release (`-y1linux`), the device-tree model, PID1's message and function names (with its unreachable
+heartbeat dropped) and one syslogd comment in the initramfs. Gap: the renamed image
+is NOT_RUN on the player. Proceeding with the repository change only.
+
+## Y1 Wi-Fi W6, Wi-Fi as a product — 2026-11-07
+
+Boundary review before a production-scope change on the Y1 ([plan](Y1-WIFI-PLAN.md) §14; owner-approved: "continue
+with W6, make it a product"; W5b, the throughput check pinned to one access point, is not run first and stays
+open). Evidence: W5 on the Y1 (`7d387e74`, BOOTIMG `2b881029…`): association, DHCP, DNS, the Internet and intact
+transfers with the Y2's `wpa_supplicant` by hand; Bluetooth unaffected; 1–8 Mbit/s with roaming between two access
+points. Read on the Y1 before W6: no `/dev/y2-calibration` (the Y2's modem calibration helper cannot run there),
+no BusyBox `inotifyd`, the Wi-Fi child device under the connectivity node, the hand-copied Wi-Fi files in
+`/data/firmware/mt6572`, the Y2ROOT still `baseline-215-9-g31d3987e` (beta 9.3.12, without the B7 import). W6
+scope: the Y2's connectivity service on the Y1 (supplicant, its action hook and DHCP, the platform's monitor;
+Reborn's Wi-Fi screens unchanged), Wi-Fi off by default as on the Y2 (`/data/network/enabled` 0, country `00`
+unless the owner's configuration names one, the regulatory database reloaded once the root is mounted), the Wi-Fi
+firmware imported like Bluetooth's (the Y1's own `system.img` for `WIFI.defaults`, the Innioasis Y2 package's
+`system.img` for `WIFI_RAM_CODE_MT6582`), and Wi-Fi without a restart when that file arrives later. Platform
+changes keep the Y2's outputs byte-identical (no supplement, no extra library, the calibration device present) and
+reach the Y1 only with a new Y2ROOT; the BOOTIMG part works with today's. Gaps: throughput (W5b), Bluetooth audio
+during a Wi-Fi transfer, no factory TX calibration. Found while tracing: on the Y2, Reborn's Wi-Fi state
+(`network.json`, `Online` after the DNS probe) comes from the service daemon, which the Y1 does not run, so W6 adds
+a network-only mode of that daemon, chosen by the image. Proceeding with W6 only.
+
+## Y1 Wi-Fi W5, association with the owner's network — 2026-11-07
+
+Boundary review before the Y1's first Wi-Fi association ([plan](Y1-WIFI-PLAN.md) §13; owner-approved; the owner's
+WPA2 network, country AT; the owner enters the passphrase on the Y1 himself, only its PSK is stored, in
+`/data/network/wpa_supplicant.conf`, root 0600, never in the repository or evidence). Evidence: W4 passed on the Y1
+(`1a7d7625`): reception (passive scan) and transmission (probe responses) work. W5 runs the Y2's tools by hand
+(`wpa_supplicant`, BusyBox `udhcpc` with a script in `/run`), not yet the Y2's connectivity daemon (W6): association,
+DHCP, gateway and DNS, an 8 MiB transfer with its hash, RAM and CPU while connected, then everything stopped and the
+radio blocked. Bluetooth stays up throughout; audio coexistence needs the owner's headset and is recorded as open
+if not run. Gaps: uncalibrated TX power and frequency offset (the throughput is the indicator). Proceeding with W5
+only.
+
+## Y1 Wi-Fi W4, the first scans — 2026-11-07
+
+Boundary review before the Y1's first Wi-Fi reception and transmission ([plan](Y1-WIFI-PLAN.md) §11;
+owner-approved, country AT). Evidence: W3 passed on the Y1 (`b90ba27a`): the firmware boots and stops cleanly twice
+beside Bluetooth, `wlan0` registered with the record's address, no error. Found before W4: the fullmac's station
+scan is always active (`ais_fsm.c`, passive only in an RDD test build), so `iw … scan passive` would transmit;
+W4 therefore adds cfg80211's rule (a request without SSIDs listens only) behind a Y1-only build flag, the Y2
+byte-identical. Order: the regulatory database loaded and `AT` set, then a passive scan (receive only: does the
+board's Wi-Fi RF path reach an antenna?), and only if it finds networks an active scan. Bounds: no association,
+no `wpa_supplicant`, `wlan0` up only for the scans, the radio blocked afterwards. Gaps: the TX power and frequency
+offset are the stock defaults without factory calibration (W5 measures). Proceeding with W4 only.
+
+## Y1 Wi-Fi W3, first Wi-Fi firmware boot — 2026-11-07
+
+Boundary review before the first Wi-Fi power on the Y1 ([plan](Y1-WIFI-PLAN.md) §9; owner-approved). Evidence: W2
+committed (`f6db0255`): the fullmac builds for the Y1, the Y2 byte-identical, the Bluetooth-only thirty-fourth
+configuration unchanged. Hardware facts carried from Bluetooth B4–B7 (real Y1 evidence): the CONN domain, rails and
+WMT boot work and recover; VCN33_WIFI is already switched for every RF calibration. W3 adds the HIF window
+`0x180f0000` and SPI 123 to the node, the Wi-Fi record (the Y1's default and a local address), the owner's Y2
+`WIFI_RAM_CODE_MT6582` in `/data/firmware/mt6572`, and one manual rfkill unblock: firmware download, chip ID,
+`wlan0` registered, then block. **No scan, no association, no transmission**: on the Y1 nothing starts
+`wpa_supplicant`, `/etc/network/interfaces` has only `lo`, no hotplug or cron rule touches `wlan0`, and `y2-radiod`
+blocks Wi-Fi at its start while `/data/network/enabled` is `0` (S41 now creates it as `0`). Risks: a crash of the
+radio core beside the 2013 Bluetooth patch (recovered by the core's power-off; Bluetooth recovers with it); the
+unknown WMT Wi-Fi command. Gaps unchanged: the board's Wi-Fi RF output (W4). Proceeding with W3 only.
+
+## Y1 Wi-Fi W1–W2, firmware record and driver built — 2026-11-07
+
+Boundary review before preparing the Y1's Wi-Fi ([plan](Y1-WIFI-PLAN.md) §7–§8; owner-approved; offline, nothing
+on the Y1). Evidence since W0: the owner-approved hash comparison (the Y2's `WIFI_RAM_CODE_MT6582` is the file an
+MT6572 phone ships); the owner's backup shows no factory Wi-Fi calibration and no Wi-Fi MAC (the stock userdata
+record is the library default). W2 compiles the Y2's fullmac for the Y1 in place, against the Y1's header, with
+the Y2's production kernel byte-identical (`a68fdffd…`, `b5ae438d…`, all 48 connectivity objects) and the Y1's
+thirty-fourth `.config` unchanged. No device tree carries the Wi-Fi resources, so nothing probes. Gaps unchanged:
+the radio's Wi-Fi output on this board, the firmware beside the 2013 Bluetooth patch, the WMT Wi-Fi command
+question (all W3/W4). Not proceeding past W2: W3 (first Wi-Fi firmware boot) needs its own admission and audit.
+
+## Y1 Wi-Fi W0, a new radio function — 2026-11-07
+
+Boundary review before a new hardware subsystem on the Y1 ([plan](Y1-WIFI-PLAN.md), W0; documentation only).
+Evidence, offline from the owner's backup and system partition: the Y1 was built with `MTK_WLAN_SUPPORT = no`
+and holds no Wi-Fi firmware or driver (no `WIFI_RAM_CODE` anywhere in the eMMC dump, no `wlan*.ko`, no WLAN code
+in the stock kernel). The MT6572 has the Wi-Fi core: MediaTek's MT6572 drop gives the HIF window `0x180f0000` (as
+the Y2) and SPI 123, and builds the Y2's "mt6582" WLAN driver (version 2.0.1.1) for the MT6572 with explicit
+MT6572 handling (chip ID `0x6572`); the Y2's copy already accepts `0x6572`. Both chips load a file named
+`WIFI_RAM_CODE_MT6582`. The owner-approved hash comparison found the Y2's exact file (`4def3752…9b82`) in a
+public MT6572 phone's (Micromax A102) firmware set, so the owner's own Y2 copy is the firmware source. Gaps: the
+Y1's older (2013) Bluetooth patch beside that Wi-Fi code, and whether the board carries the Wi-Fi RF output
+(decided only by a scan). Bluetooth B7 and the
+charging, MTP and Reborn results are unchanged. Not proceeding past W0: no build, no hardware write implied.
+
+## Y1 Bluetooth B7, radio firmware from the owner's copy — 2026-11-06
+
+Boundary review before a production-scope change: the shared platform (`y2-platform firmware`) takes an
+image-supplied radio firmware set (`/etc/y2linux/radio-firmware.json`) ([plan](Y1-BLUETOOTH-PLAN.md) §16, B7;
+owner-approved, owner decisions: configured by the image, no Reborn change, folder `/data/firmware/mt6572`, a random
+per-device address when no stock record is supplied). Evidence: B6 run 3
+on the Y1 (BOOTIMG `727315aa…`): hci0 up through BlueZ, powered by y2-radiod, inquiry finds the owner's headset,
+one pairing succeeded (not kept: adapter not pairable). Offline: the public Y1 3.0.2 `rom.zip` (`7ee9aa5b…`) holds
+a raw-ext4 `system.img` (`5b617698…`) whose `/etc/firmware` has the two pinned files, and whose
+`/lib/libbluetooth_mtk.so` (`36f2ea80…`) holds the stock default `BT_Addr` record once (`0x3004`); the stock record
+is in no raw partition (NVRAM, PROTECT_F/S) and is lost with USRDATA at install. Limits: the Y1 runs the Y2ROOT of
+1.0.0-beta.9.3.12 as written, so the platform change reaches it only with a new Y2ROOT; the Y2's outputs
+must stay byte-identical (no Y2 golden changes). Gaps unchanged (the platform gate's goldens failure). Proceeding
+with B7 only; no hardware write is implied.
+
+## Y1 Bluetooth B4, first radio power — 2026-11-06
+
+Boundary review before the first power to the Y1's connectivity block ([plan](Y1-BLUETOOTH-PLAN.md), B4;
+owner-approved). Evidence: B3 passed (the kernel at `0x80108000`, `0x80000000`/1 MiB reserved, the owner's
+regression check good). B4 powers the CONN domain with VCN18/VCN28 as stock does (B1 §4), reads the chip ID
+`0x18070008`, and powers it off again: no firmware, no radio transmission, no write to the forbidden JTAG
+registers, read-only baseline first. Gaps unchanged (the platform gate's goldens failure). Proceeding with B4 only.
+
+## Y1 Bluetooth B3, memory layout — 2026-11-06
+
+Boundary review before the Y1's first memory-layout change ([plan](Y1-BLUETOOTH-PLAN.md) §7, B3; owner-approved).
+Evidence since the planning entry: B0–B2 done offline (the Y1 firmware profile; the stock power-on decoded: the
+radio core's memory is fixed at `0x80000000`, 1 MiB, with no remap register; the driver adapted and compiled
+without a device-tree node; the Y2's kernel byte-identical). The Y1 kernel today decompresses to `0x80008000`,
+inside that MiB. B3 moves the kernel to `0x80108000` (`TEXT_OFFSET 0x00108000`, as mainline does for Realtek; stock
+3.0.2 runs its kernel there too) and reserves `0x80000000`/1 MiB `no-map`: 1 MiB less RAM (about 487 → 486 MiB),
+no radio power, no driver node. Gaps unchanged: Bluetooth stays off until B4's admission; the platform gate's
+goldens failure still blocks commits under AGENTS.md. Proceeding with B3 only.
+
+## Y1 Bluetooth planning — 2026-11-06
+
+Owner's question: Bluetooth as on the Y2 ([plan](Y1-BLUETOOTH-PLAN.md)). Evidence: the MT6572 has the Y2's
+connectivity core (the stock Y1 driver is built from the same tree and accepts both chip IDs; the same WMT/STP
+protocol, patch family, power-domain sequence and PMIC rails); the Y1's stock image carries only Bluetooth firmware
+(a one-part patch, its config, the MT6572 modem image), no Wi-Fi; the register map, the patch and config formats and
+the address record differ; the radio core's memory is where the Y1 kernel loads today; whether RF calibration needs
+the modem is unknown. Plan: adapt the Y2's driver, staged from offline decoding and a memory reservation to a
+chip-ID-only power-on, firmware, `hci0` and audio. Repeat this audit before the memory change (B3) and the first
+power-on (B4). Not admitted.
+
+## Y1 robust charging planning — 2026-11-06
+
+Owner's priority after a flat Y1 looped on the power daemon's voltage guard ([plan](Y1-CHARGE-MODE-PLAN.md)).
+Evidence: the Y2 avoids the loop with a charge-only boot and a "charger" watchdog reset that LK turns into its
+charging mode; the Y1 has neither, Linux does not see the Y1 LK's boot mode, no PMIC register latches the power-on
+cause; wall chargers and power banks get only the 70 mA floor (no BC1.1); a write-policy refusal once latched a
+charger fault. The MTP gadget work (M1) is paused until charging is robust. Not admitted.
+
+## Y1 MTP planning (milestone B3) — 2026-11-05
+
+Owner request: music transfer over MTP as on the Y2 ([plan](Y1-MTP-PLAN.md)). Evidence: the Y2's patched umtprd is
+on the Y1's rootfs; the Y2 builds its configfs gadget inside the platform service daemon, which must stay off on
+the Y1; the Y1 kernel uses the legacy g_cdc and lacks configfs gadgets, FunctionFS and POSIX message queues; PID1
+depends on the ACM serial port; the MT6572 musb endpoints beyond the four g_cdc used are untested. Staged: the
+gadget through configfs alone, then MTP with one storage (`/data/music` on Y2DATA), edge cases, host coverage.
+Not admitted.
+
+## Y1 persistent data planning (milestone B) — 2026-11-05
+
+Owner's choice: Y2DATA after the power daemon ([plan](Y1-DATA-PLAN.md)). Evidence: `/data` is RAM-only today;
+USRDATA (2 GiB, stock Android `/data`) is the Y2's place for Y2DATA too; Linux sees the Y1 eMMC without partitions
+and reaches Y2ROOT through a read-only loop, with every disk set read-only by PID1; the Y1 kernel has no eMMC
+write guard (the Y2's has); the full eMMC backup exists, its second-drive copy is still owed. Staged: preparation
+without writes (backup copy, guard, offline seed image), the one destructive write of USRDATA by mtkclient, a
+guarded mount at boot, then music. Not admitted.
+
+## Y1 player UI planning (milestone E) — 2026-11-05
+
+Owner's choice: Reborn before the power daemon and Y2DATA ([plan](Y1-REBORN-PLAN.md)). Evidence: the Reborn
+binaries are already on the Y1's rootfs and the display matches (480x360, KMS `mediatek`), but Reborn renders only
+through EGL/GLES on Lima and the Y1 kernel has no GPU driver; its start chain needs `/data` (Y2DATA), the power
+daemon and D-Bus; its input and audio names are the Y2's. Staged: a review of the Reborn source (not on this
+machine), the GPU (the MT6572's Mali-400, MFG power domain, first Linux SPM writes), then a RAM-only first UI;
+persistence and the power daemon later. Admitted and run the same day: R0 (source review), R1a (`CONFIG_PM`,
+regression PASS), R1b (GPU: MFG domain, WHPLL 500.5 MHz, Lima Mali-400 MP1, PASS), R2 (RAM-only first UI; the
+wheel zones and the centre as Reborn's navigation buttons; Reborn renders through Lima, PASS), R3 (sound:
+`Master` with dB, card `Y2Audio`, headphones only, gain step 0, PASS).
+
+## Y1 power planning (milestone D) — 2026-11-05
+
+Boundary review for system milestone D ([plan](Y1-POWER-PLAN.md)), owner's request after the audio PASS.
+Evidence: the Y1 has no power-off handler (a `poweroff` halts with the PMIC on), no battery percentage, no
+low-battery shutdown and no CPU scaling; the centre button is the only power key. Stock 3.0.2 powers off
+through the RTC BBPU (with a write-interface unlock mainline does not do), gauges on a 4.35 V cell's OCV table
+(id 0 likely, unresolved) and scales 598/806/1001 MHz at a fixed 1150 mV. Mainline `cpufreq-dt` would offer
+unverified 1.2–1.4 GHz rates. Staged: a read-only baseline, power-off, the Y2's power daemon with a Y1
+profile, then CPU scaling without voltage changes. D0 (owner-approved, read-only): RTC write interface
+unlocked by LK, VPROC 1150 mV, speed bin 0, CPU at 1001 MHz on ARMPLL; battery ID not readable without a write.
+D1 (owner-approved): **PASS**, power-off on battery and power-on with the centre button through LK; with USB
+attached the player restarts instead (recorded; a charger-present path is a later admission). D2–D3 not admitted.
+
+## Y1 audio planning — 2026-11-05
+
+Owner's choice: audio before data and power ([plan](Y1-AUDIO-PLAN.md)). Evidence: no MT6572 AFE, MT6323 codec
+or AW87559 driver in mainline or the fork; the Y2's AFE and AW87559 drivers are largely reusable, but the Y2
+uses an external DAC where the Y1 uses the MT6323's codec; the stock kernel is a pass-through and the
+sequences are in the closed HAL, which the backup holds. Staged: offline HAL analysis, a read-only register
+baseline, headphones, then the speaker. Stage A read the idle state (the AFE clock gated after LK, so not read);
+stage B (owner-approved): **PASS** in one run, a quiet 440 Hz tone on both headphone channels at three gain steps,
+the stock register sequence verified during playback, the PMIC wrapper admitting only the 12 audio registers'
+stock values. Small start/stop pops remain. Stage C (owner-approved): **PASS** in one run: the amplifier is an
+OCA72559 (ID `0x09`), driven by the shared driver on I2C0/GPIO143 after the codec (DAPM order as stock); tones
+from the speaker, headphones still correct with the speaker switched off.
+
+## Y1 second CPU core planning — 2026-11-05
+
+Owner request: use both MT6572 cores ([plan](Y1-SMP-PLAN.md)). Evidence: mainline's `mtk_mt6572_boot` (boot-ROM
+entry and key, IPI); stock additionally powers CPU1 through the SPM, but read-only registers on the owner's
+player show LK leaves CPU1 powered, out of reset and in WFI with the boot registers clear. Bound: the two boot
+registers and an IPI; no SPM write, hotplug, cpufreq or idle. Owner-approved; result **PASS** in one run: two
+CPUs brought up, both loaded under a CPU-bound test, other subsystems unaffected.
+
+## Y1 USB networking planning — 2026-11-05
+
+Boundary review for system milestone C ([plan](Y1-NETWORK-PLAN.md)): the Y1's first network link. Evidence:
+the Y2's `S20y2-usb` (address only) and install guide (`10.42.0.1`, key SSH); the Y2's `ssh-daemon` needs
+`Y2DATA`; `g_cdc` (ECM + ACM) needs only `NET` and is self-powered like `g_serial`, so the charger's budget
+source holds. Bounds: one USB link, IPv4 only, key-only root SSH with RAM host keys, a Y1 key pair kept in
+`out/`. Owner-approved; result **PASS** in one run: ping, key SSH, `scp` round trip, password refused,
+charging unaffected.
+
+## Y1 system planning — 2026-11-05
+
+Boundary review for running the Y2's init and services on the Y1 ([plan](Y1-SYSTEM-PLAN.md)). Evidence: a
+read-only review of all 22 boot scripts and the `y2-platform` sources: no PMIC/charger/clock writes, no
+modules, no `/dev/mem`; risky paths gated on `Y2DATA`. Must stay off on the Y1: internal-media setup (can
+format the stock FAT partition), the power daemon (no Y1 power-off path), readiness (gadget switch, SD
+read-write, raw MISC write), Y2 platform, CPU idle, connectivity, the player. Milestone A: Y2 init with a
+safe list, local sockets only, watchdog left to the kernel's boot handler, nothing written. Owner-approved;
+result **PASS** after three runs (syslog to a RAM file; `COMPAT_32BIT_TIME`, the real cause of instant
+sleeps): busybox init as PID 1, eight services, a shell on USB, an idle system. Next: data, USB networking,
+power, player, each with its own review.
+
+## Y1 root filesystem planning — 2026-11-05
+
+Boundary review for a real userspace ([plan](Y1-ROOTFS-PLAN.md)): the first filesystem mount and the first
+foreign binaries on the Y1. Evidence: the card is one FAT32 partition with the owner's data (read
+read-only); the Y2's Buildroot root filesystem is published per release (`baseline-220`, 51 MB, signed
+manifest); a local build lacks disk space, `Y2Reborn` and Rust. Owner's choice: the Y2 userspace, an image
+file first, an own partition later. Step 1 writes nothing: card and image read-only, a tmpfs overlay, a
+chroot shell, no Y2 init or service. Redesign (the card is built in): owner-approved write of `Y2ROOT` into
+the eMMC `ANDROID` partition (stock's partition extracted from the backup first). Result: **PASS** after a
+Thumb-userspace correction: the Y2's busybox shell and tools run on the Y1, the partition hash matches the
+release image on the device, Linux writes nothing. Next: the Y2's services need a Y1 review.
+
+## Y1 backlight planning — 2026-11-05
+
+Boundary review for backlight control ([plan](Y1-BACKLIGHT-PLAN.md)): the first Linux write to the Y1's
+LED current sinks. Evidence: stock drives `lcd-backlight` from MT6323 ISINK0+1 (PMIC mode); LK leaves both
+on at duty 31, step 4; the Y2's qualified driver changes only duty and enables and never exceeds the
+inherited duty. Bounds: ISINK0/1 duty and enables only, the wrapper's write policy extended to the ISINK
+block, one shell write command. Owner-approved; result **PASS**: 32 levels and off, registers read back
+after each step, only duty and enable bits changed, no flicker (owner).
+
+## Y1 display planning — 2026-11-05
+
+Boundary review for the display driver ([plan](Y1-DISPLAY-PLAN.md)). Evidence: the Y1's recorded panel facts
+(ST7701S, tables equal to the Y2's, LK's lit RGB565 frame buffer at `0x9fc00000`), the mt6572-mainline fork's
+MT6572 DRM data (small, but routing marked guesswork, no LK takeover, no MT6572 PHY code, no working claim),
+and the Y2's working MT6582 stack (takeover logic, panel tables; MT6582 bases and Y2-gated workarounds).
+Decision: fork data as the skeleton, Y2 takeover approach on top, no IOMMU. Unknown before any write: panel
+reset routing, backlight controller, LK's routing and timings. Staged: offline disassembly, a read-only
+register dump (stage A), then a first DRM milestone that leaves the panel and backlight as LK set them.
+Stage 0 (offline) and stage A (read-only dump) agree on routing, mutex, timings, PLL and the PMIC ISINK
+backlight; the panel reset is `LCD_RSTB` (`0x14012010`). Stage B (owner-approved): **PASS** after three
+runs (OF graph for the panel, `FB_DEVICE`): the MediaTek DRM driver drives the panel from a Linux buffer,
+console and colour bars visible, no error. Next display milestones need their own review.
+
+## Y1 charging planning — 2026-11-05
+
+Boundary review on the third boot's PASS: charging is the next hardware scope ([plan](Y1-CHARGING-PLAN.md)).
+Evidence: Y1 stock lifecycle values (3.4 V pre-charge, 4.2 V top-off, 4.325 V CV, 500 mA PC port,
+battery temperature not read), third-boot telemetry (charger input, a BATON reading consistent with a pack
+NTC near room temperature), and the Y2 charger's code, whose protection checks expect Y2-observed register
+values and whose USB contract mainline USB does not provide. Staged: a read-only PMIC observation boot
+(stage A) before any charger write (stage B, admitted separately). Stage A (2026-11-05): the Y2 charger's
+fixed protection values all hold on the Y1; BATON does not respond, so no pack-temperature window. Stage B,
+owner-approved: the Y2 charger with a PC-port-only USB budget source, 450 mA after configuration, 4.175 V,
+the Y2 charger-block write policy in the PMIC wrapper. Result after three runs (two fixes, each with a
+test): **charging works**, 445–469 mA constant current for 13 minutes, no fault, die 50 °C and levelling.
+Open: a full charge (CV phase, termination, timers), deferred.
+
+## Y1 third boot planning — 2026-11-05
+
+Boundary review on the second boot's physical PASS (2026-11-05). New hardware scope proposed, not admitted:
+USB device mode (MUSB + T-PHY, peripheral only), MT6323 VUSB 3.3 V, PMIC AUXADC sampling, a shell built into PID1
+over USB (the third test boot, [result](../knowledge/y1-hardware.md#third-boot-result--2026-11-05)). Evidence: the 3.0.2 disassembly of the USB, PHY and
+charging paths ([Y1 hardware](../knowledge/y1-hardware.md#offline-disassembly-usb-and-charging--2026-11-05)),
+mainline 6.18.56's USB glue and T-PHY byte-identical to the MT6572 fork's, one T-PHY calibration address
+mismatch avoided in the board tree. Charging stays out of scope. Owner approved all four items
+(2026-11-05). Result: **PASS** after two runs: USB enumerates at high speed once the PHY forces the session
+(overlay `0015`, the stock bits), the ACM shell answers, telemetry and the charger input work, storage stays
+read-only and matching. No storage write, no charger register written. Next boundary: charging.
+
+## Y1 second boot admission — 2026-11-04
+
+Boundary review on the first boot's physical PASS (same day): mainline 6.18 runs on the Y1 with LK's frame
+buffer, the RAM map and the watchdog confirmed. The owner approved the
+second test boot plan and its three admission items ([result](../knowledge/y1-hardware.md#second-boot-result--2026-11-05)): the test kernel **reads** the eMMC
+and the SD card (no filesystem, `BLKROSET` before reading, conservative bus modes); it uses the PMIC wrapper
+and the MT6323 for the power key only; it enables exactly **VGP1 at 3.0 V** (stock wheel supply). Also
+admitted: backporting the needed MT6572 drivers from `mt6572-mainline` to 6.18.56 as a Y1 overlay set
+separate from the Y2's, and extending the shared APT32F driver behind a device-tree property that leaves the
+Y2 unchanged. Not admitted: any storage write, other regulators, charger, display driver, audio, USB.
+Phase: source and offline; the physical run stays the owner's act on a reviewed image.
+Result 2026-11-05: **PASS** on the owner's player after five runs (plan §13, [Y1 hardware
+evidence](../knowledge/y1-hardware.md#second-boot-result--2026-11-05)). All three admitted items behaved as
+admitted; no storage was written by Linux. The backup's logical-to-physical mapping is now measured
+(physical = dump − `0x600000`). Next boundary (charging, display, audio, USB or any write) needs its own review.
+
+## Y1 first device tree and minimal boot test admission — 2026-11-04
+
+Boundary review before the first Y1 source work, on the evidence of the same day: offline 3.0.2 ROM
+analysis, the owner's read-only eMMC backup (user area read once, PRELOADER through SECCFG read twice and
+identical) and the ADB evidence boot ([Y1 hardware evidence](../knowledge/y1-hardware.md)). That evidence
+resolves the blockers the scope audit below named for a first boot: same-device backup, boot chain identity
+(the player's preloader, LK and BOOTIMG equal the public 3.0.2 images), console (UART0), RAM map and the
+LK-lit ST7701S panel. Mainline 6.18 already carries basic MT6572 support (`mt6572.dtsi`: CPUs, GIC, sysirq,
+timer, watchdog, UART; the `mediatek,mt6572` machine entry and SMP), so a first boot needs no SoC patch.
+
+Owner decision: start `innioasis-y1.dts` and a minimal boot test. Admitted: source work on a Y1 device tree
+limited to mainline-6.18 bindings, a first-boot kernel and initramfs built with the existing pipeline, and
+offline validation of the resulting BOOTIMG. The physical boot is the owner's separate act on a reviewed
+image, with the stock BOOTIMG restore prepared. Not admitted: any write other than BOOTIMG, PMIC, charger,
+regulator or clock programming, eMMC access from the test kernel, Buildroot board work. Phase: **source and
+offline only**; physical status NOT_RUN.
+
+Build environment (owner decision, same day): `prepare.py` could no longer fetch the locked inputs, because
+Alpine v3.24 had replaced 15 pinned package versions (404). `tools/build/inputs.lock.json` is re-pinned to
+the current v3.24 builds: `clang22` 22.1.3-r2 unchanged; `llvm22*` and its linker tools 22.1.3-r0 → r1 (same
+upstream release); python3 3.14.8 → 3.14.10, perl 5.42.2 → 5.42.3, libexpat, libcurl, c-ares, brotli,
+`musl-dev` 1.2.6-r2 → r3, plus `musl` 1.2.6-r3 pinned over the minirootfs's r2 (required by `musl-dev`). The
+connectivity lock and the minirootfs are unchanged; the reconstructed inventory matches the lock and the
+audited Linux 6.18.56 sources verify. This changes the Y2 build inputs too: a Y2 rebuild check is owed before
+the next Y2 release from this environment. `run.py` binds `../Y2Reborn` only when it exists.
+
+Physical result (same day): the owner wrote the first-boot BOOTIMG (read back identical) and booted it;
+the screen photo shows Linux 6.18.56 reaching the test PID1 with simplefb on LK's frame buffer and the
+watchdog adopted ([result](../knowledge/y1-hardware.md#first-boot-result--2026-11-04)). First boot: **PASS**
+for the bounded behaviour shown. The UART driver does not bind (missing `bus` clock in upstream
+`mt6572.dtsi`). Next boundary: owner decision on further Y1 bring-up (storage, input, display driver).
+
+## Y1 (MT6572) port scope audit — 2026-11-04
+
+Standing boundary audit before a material hardware-scope change: the owner asked for a second board, the
+Innioasis Y1. Revision `e4b15159` (Beta 9.3.7 documentation), no Y1 artifact built or tested. Evidence: owner
+observation of a physical Y1 (stock 3.0.2, wheel works, no ADB) and offline analysis of the public 3.0.2
+`rom.zip` (sha256 `7ee9aa5b…f764b1`); details and sources in [Y1 hardware evidence](../knowledge/y1-hardware.md).
+Limits: no read from the owner's Y1, no boot-ROM session, string presence only, no disassembly yet.
+
+Coverage, with the Y2 as reference:
+
+| Area | State |
+| --- | --- |
+| SoC (MT6572: CPUs, clocks, pinctrl, pwrap, MMC, USB, I2C, display, GPU) | Untested driver availability in `mt6572-mainline`, not in our 6.18 tree; nothing of ours runs on an MT6572 |
+| Panel (GC9503V / ST7701S DSI) | Same stock driver pair as the Y2, which Y2Linux supports; Y1 tables and fitted panel UNKNOWN |
+| Wheel (APT32F) | Same controller name as the Y2; Y1 bus, address and lines UNKNOWN; Type B different and unidentified |
+| Amplifier (AW87559), PMIC (MT6323) | Same parts as the Y2; Y1 wiring and settings UNKNOWN |
+| Audio path | Planned work: MT6572 AFE plus MT6323 analog codec, no mainline driver; the Y2 CS43131 path does not apply |
+| Charger, suspend/SPM, Wi-Fi/BT/FM | Planned work; no mainline MT6572 support |
+| Boot handoff and memory | UNKNOWN for the Y1 (LK command line, reservations) |
+| Recovery | BLOCKED: no same-device backup, no proven Y1 restore |
+
+The next smallest blocker is a same-device read-only backup and LK/kernel handoff record, which needs a
+boot-ROM session and the owner's explicit authorization; offline disassembly of the 3.0.2 kernel and LK
+for GPIO/I2C tables can run first. No issue or epic exists for the Y1; a high-level bookmark is owed when
+the owner chooses to pursue it. Phase readiness: **BLOCKED** for any Y1 kernel, device tree or Buildroot
+board; documentation and offline analysis only. Hardware authorization remains separate.
+
 ## POWER-FINAL-06 INFRASYS power-down bring-up admission — 2026-10-09
 
 Standing milestone-boundary audit before materially changing hardware/memory scope, using real hardware

@@ -1,0 +1,80 @@
+{
+  "schema": "org.schulzcode.y2linux.connectivity-firmware-inventory/v1",
+  "date": "2026-11-06",
+  "status": "inventory only; Innioasis Y1 Bluetooth plan stage B0 (docs/planning/Y1-BLUETOOTH-PLAN.md); no deployment",
+  "source_package": "the owner's Y1 stock 3.0.2 system partition (eMMC ANDROID backup, evidence-private)",
+  "source_provenance": "read-only extraction of /system/etc/firmware from the owner's own backup on the host",
+  "files": [
+    {
+      "filename": "WMT_SOC.cfg",
+      "bytes": 82,
+      "sha256": "161f18b686e59a763368ffb1d8229f158fa61493ecc3dff5c6ef8c11a7f5f1e0",
+      "source": "Y1 stock system:/etc/firmware/WMT_SOC.cfg",
+      "redistribution": "not established; not selected for distribution",
+      "function": "WMT SoC configuration (coex_wmt_ant_mode=1, wmt_gps_lna_pin=0, wmt_gps_lna_enable=0, sdio_driving_cfg=0; no co_clock_flag)",
+      "proposed_install_path": "/data/firmware/mt6572/WMT_SOC.cfg",
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false
+    },
+    {
+      "filename": "mt6572_82_patch_e1_0_hdr.bin",
+      "bytes": 39868,
+      "sha256": "5c13ebad70fbddc10410c675fdce84e89f5db9fa1323f9d787eca3e96a99bfc1",
+      "source": "Y1 stock system:/etc/firmware/mt6572_82_patch_e1_0_hdr.bin",
+      "redistribution": "not established; not selected for distribution",
+      "header": {
+        "build_time": "20130523111343a",
+        "platform": "1319",
+        "hw_version_hex": "8a00",
+        "fw_version_hex": "8a00",
+        "patch_info_hex": "11000600"
+      },
+      "function": "WMT ROM patch, the only part (count 1, sequence 1); not the Y2's file of the same name",
+      "proposed_install_path": "/data/firmware/mt6572/mt6572_82_patch_e1_0_hdr.bin",
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false,
+      "patch_count": 1,
+      "download_sequence": 1,
+      "download_address_wire_hex": "00000600"
+    },
+    {
+      "filename": "modem_1_2g_n.img",
+      "bytes": 2391624,
+      "sha256": "31940b2f14ad30b287f3ce22c5f6e345523d55c9150fadde2c7ca3e48eab4b79",
+      "source": "Y1 stock system:/etc/firmware/modem_1_2g_n.img",
+      "redistribution": "not established; not selected for distribution",
+      "function": "MT6572 MD1 modem (MOLY.WR8.W1315.MD.WG.MP.V4.P11, MT6572_S00); needed only if Bluetooth RF calibration requires the modem (plan stage B7)",
+      "proposed_install_path": "/lib/firmware/mediatek/mt6572/modem_1_2g_n.img",
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false
+    },
+    {
+      "filename": "WIFI_RAM_CODE_MT6582",
+      "bytes": 160368,
+      "sha256": "4def37522e2bfd2d4b78e01bf9f567a37e3f67ab3d7b6646ffb317f5b2b49b82",
+      "source": "the owner's Innioasis Y2 stock package y2_v3.2.0_FM-20260813, system.img:/etc/firmware/WIFI_RAM_CODE_MT6582 (the Y1 has no Wi-Fi firmware)",
+      "cross_check": "byte-identical to WIFI_RAM_CODE_MT6582 in a public MT6572 phone's vendor firmware set (Micromax A102, github.com/ifxadi/android_vendor_Micromax_A102 cm-13.0, git blob 3681b30830bb201c1995ab26c75430f67adbc194), hashed only, 2026-11-07",
+      "redistribution": "not established; not selected for distribution",
+      "function": "MT6572/MT6582 CONNSYS Wi-Fi fullmac firmware; the name MediaTek's MT6572 driver loads (-DMT6628 branch of kalFirmwareImageMapping); docs/planning/Y1-WIFI-PLAN.md",
+      "proposed_install_path": "/data/firmware/mt6572/WIFI_RAM_CODE_MT6582",
+      "optional": true,
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false
+    }
+  ],
+  "provisioning_policy": "Owner-supplied/extracted files only (tools/connectivity/provision.py --profile y1; the optional Wi-Fi firmware from the owner's Y2 package, WIFI.defaults from --stock-custom-nvram); no boot-time downloads; never in the repository",
+  "calibration_policy": "The Y1's PROTECT_F/S calibration and its BT_Addr record are read only, never written; no copies in the repository",
+  "wifi_default_record": {
+    "filename": "WIFI.defaults",
+    "bytes": 512,
+    "sha256": "9cfed6e4edabc7b6677d4e81972614fa67429006977d7910bfa24b33c68ba8b4",
+    "source": "Y1 stock system:/lib/libcustom_nvram.so (37508 bytes, sha256 0000ccf1a2d2a67c5836ebb5881eaf938b619566585523df1d702745c72b3ebd), file offset 0x3cf4 (VA 0x4cf4)",
+    "function": "WIFI_CFG_PARAM_STRUCT version 0x104, ucTxPwrValid 1, MAC all zero",
+    "owner_device": "the stock userdata /nvram/APCFG/APRDEB/WIFI (514 bytes: this record and a 2-byte checksum) is identical: no factory Wi-Fi calibration and no Wi-Fi MAC on this Y1",
+    "device_specific_calibration": false
+  }
+}

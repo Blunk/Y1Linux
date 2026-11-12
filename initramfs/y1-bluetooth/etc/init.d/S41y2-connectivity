@@ -1,0 +1,179 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's S41y2-connectivity (docs/planning/Y1-BLUETOOTH-PLAN.md, B6;
+# docs/planning/Y1-WIFI-PLAN.md, W6). The Y2's factory provider and MD calibration are MT6582 only.
+# Here: the Y2's /data/bluetooth and /data/network layout (S02y2-data), the radio firmware from the owner's
+# system.img copies (y2-platform firmware with the image's radio-firmware.json, into /data/firmware/mt6572: the
+# Y1 package's for Bluetooth and the Wi-Fi defaults, then the Y2 package's for the Wi-Fi firmware), the 32-byte
+# BT_Addr record (/data/connectivity/bt-record, root 0600: the owner's stock record from
+# tools/connectivity/y1_bt_record.py, else composed once from the stock defaults and a random address) handed to
+# the driver, hci0 activated.
+# Wi-Fi, only with a Wi-Fi build (the driver's wifi_factory) and the Wi-Fi defaults: the 512-byte record
+# (/data/connectivity/wifi-record, root 0600: the Y1's default with a random local address) handed over before
+# activation, or once after it when the Wi-Fi files arrive later. Then the Y2's connectivity service
+# (usr/libexec/y2/connectivity without its factory and calibration steps): wpa_supplicant on its global control
+# socket, y2-radiod (Bluetooth, BlueZ, BlueALSA and both radios' power as the owner left them: Wi-Fi off until
+# /data/network/enabled says 1) and the platform's connectivity monitor, which attaches the supplicant to wlan0
+# with the Y2's action hook (DHCP) and restarts a dead helper; and the Y2's service daemon in its network part
+# (/etc/y2linux/service-policy.json: network.json for Reborn, the DNS probe, the Wi-Fi self-heal and power policy,
+# time), under the Y2's readiness supervisor. Without Wi-Fi: y2-radiod alone, as in B6.
+# The power daemon's shutdown calls stop-wifi, stop-bluetooth and stop-daemon one by one, as on the Y2.
+C=/sys/devices/platform/18070000.connectivity
+RECORD=/data/connectivity/bt-record
+WRECORD=/data/connectivity/wifi-record
+FIRMWARE=/data/firmware/mt6572
+WAIT=/run/y2/radio-firmware-wait.pid
+# radio-firmware.json's inbox: the Music storage, the Y1's one MTP storage.
+INBOX=/data/music/Firmware
+
+layout() {
+	umask 077
+	for dir in network bluetooth bluetooth/bluez bluetooth/bluealsa connectivity system system/platform; do
+		[ ! -L "/data/$dir" ] || return 1
+		mkdir -p "/data/$dir" || return 1
+	done
+	chmod 700 /data/network /data/bluetooth /data/bluetooth/bluez /data/bluetooth/bluealsa /data/connectivity
+	[ -e /data/bluetooth/enabled ] || printf '0\n' > /data/bluetooth/enabled
+	[ -e /data/network/enabled ] || printf '0\n' > /data/network/enabled
+	# As the Y2's S02y2-data: the world domain until the owner's networks say otherwise.
+	[ -e /data/network/wpa_supplicant.conf ] ||
+		printf '%s\n' 'ctrl_interface=/run/wpa_supplicant' 'update_config=1' 'country=00' > /data/network/wpa_supplicant.conf
+	chmod 600 /data/network/enabled /data/bluetooth/enabled /data/network/wpa_supplicant.conf
+	mkdir -p /run/y2 /run/wpa_supplicant
+	chmod 700 /run/wpa_supplicant
+	# SBC and the build's qualified codecs only: no owner-private codec experiments on the MT6572.
+	[ -e /data/bluetooth/codec-policy.json ] ||
+		printf '{"schema":1,"experimental":false}\n' > /data/bluetooth/codec-policy.json
+	mkdir -p /var/lib/bluetooth /var/lib/bluealsa
+	mountpoint -q /var/lib/bluetooth || mount --bind /data/bluetooth/bluez /var/lib/bluetooth
+	mountpoint -q /var/lib/bluealsa || mount --bind /data/bluetooth/bluealsa /var/lib/bluealsa
+}
+
+# B5/B6 placed the two files by hand in /data/firmware/mediatek/mt6572; the driver now reads the platform's folder.
+migrate() {
+	[ ! -e "$FIRMWARE" ] && [ -d /data/firmware/mediatek/mt6572 ] && [ ! -L /data/firmware/mediatek/mt6572 ] || return 0
+	mv /data/firmware/mediatek/mt6572 "$FIRMWARE" && rmdir /data/firmware/mediatek 2>/dev/null
+	return 0
+}
+
+# While the firmware is missing, the platform's import (the Y1's set: /etc/y2linux/radio-firmware.json) looks for
+# the owner's system.img in Music/Firmware every 5 s (on the Y2 its service daemon does this); after an install it
+# restarts this script. With the set in place, a copy in the folder (the Y2 package's, for Wi-Fi) is judged in the
+# same way: at start, and when the MTP service sees a copy finish (S45y1-mtp).
+firmware() {
+	case "$(y2-platform firmware status 2>/dev/null)" in
+	*'"state":"Ready"'*) [ -f "$INBOX/system.img" ] || return 0;;
+	esac
+	mkdir -p /run/y2
+	start-stop-daemon -S -q -b -m -p "$WAIT" -x /bin/sh -- "$0" firmware-wait
+}
+
+# Once, when the owner supplied no stock record: the stock defaults (bytes 6-31) behind a new random address,
+# unicast and locally administered (first octet: bit 0 clear, bit 1 set), so never zero or the generic default.
+compose() {
+	[ ! -e "$RECORD" ] && [ ! -L "$RECORD" ] || return 0
+	[ -f "$FIRMWARE/BT.defaults" ] && [ ! -L "$FIRMWARE/BT.defaults" ] || return 1
+	set -- $(ls -ln "$FIRMWARE/BT.defaults")
+	[ "$5" = 32 ] || return 1
+	set -- $(head -c 6 /dev/urandom | od -An -tu1)
+	[ $# = 6 ] || return 1
+	umask 077
+	{ printf "$(printf '\\%03o' $(( ($1 & 252) | 2 )) $2 $3 $4 $5 $6)"; tail -c 26 "$FIRMWARE/BT.defaults"; } \
+		> "$RECORD.new" && mv "$RECORD.new" "$RECORD"
+}
+
+# Once, with a Wi-Fi build and the owner's WIFI.defaults (512 bytes, MAC all zero): the default with a new random
+# address at bytes 4-9, unicast and locally administered as above. Without them nothing happens (Bluetooth only).
+wifi_compose() {
+	[ -e "$C/wifi_factory" ] && [ ! -e "$WRECORD" ] && [ ! -L "$WRECORD" ] || return 0
+	[ -f "$FIRMWARE/WIFI.defaults" ] && [ ! -L "$FIRMWARE/WIFI.defaults" ] || return 0
+	set -- $(ls -ln "$FIRMWARE/WIFI.defaults")
+	[ "$5" = 512 ] || return 0
+	set -- $(head -c 6 /dev/urandom | od -An -tu1)
+	[ $# = 6 ] || return 0
+	umask 077
+	{ head -c 4 "$FIRMWARE/WIFI.defaults"; printf "$(printf '\\%03o' $(( ($1 & 252) | 2 )) $2 $3 $4 $5 $6)"
+	  tail -c 502 "$FIRMWARE/WIFI.defaults"; } > "$WRECORD.new" && mv "$WRECORD.new" "$WRECORD"
+}
+
+# After the Bluetooth record, before activation, or once after it while there is no Wi-Fi device (the Wi-Fi files
+# arrived later); the driver checks it again (the Y1's default and a unicast address other than Bluetooth's).
+# Absent or refused: Bluetooth only.
+wifi_record() {
+	[ -e "$C/wifi_factory" ] && [ ! -e "$C/y2-mt6582-wifi" ] && [ -f "$WRECORD" ] && [ ! -L "$WRECORD" ] || return 0
+	set -- $(ls -ln "$WRECORD")
+	[ "$1 $3 $5" = "-rw------- 0 512" ] || { echo "S41y2-connectivity: $WRECORD not root 0600 512 bytes" >&2; return 0; }
+	cat "$WRECORD" > "$C/wifi_factory" || echo "S41y2-connectivity: Wi-Fi record refused" >&2
+}
+
+# The driver checks the record again (32 bytes, unicast, not the generic default) and refuses a second write.
+activate() {
+	case "$(cat "$C/status")" in activated=1*) wifi_record; return 0;; esac
+	[ -f "$RECORD" ] && [ ! -L "$RECORD" ] || { echo "S41y2-connectivity: no $RECORD" >&2; return 1; }
+	# busybox has no stat(1) here: mode, owner and size from ls -ln.
+	set -- $(ls -ln "$RECORD")
+	[ "$1 $3 $5" = "-rw------- 0 32" ] || { echo "S41y2-connectivity: $RECORD not root 0600 32 bytes" >&2; return 1; }
+	cat "$RECORD" > "$C/factory" || return 1
+	wifi_record
+	echo 1 > "$C/activate"
+}
+
+# The Y2's connectivity service, with Wi-Fi only once the Wi-Fi device exists (a later Wi-Fi import restarts this
+# script). cfg80211 looked for regulatory.db before the root was mounted; read it now so a country in the owner's
+# networks applies (best effort: without it the world domain stays).
+services() {
+	wifi=
+	[ -e "$C/y2-mt6582-wifi" ] && wifi=1
+	if [ -n "$wifi" ]; then
+		iw reg reload 2>/dev/null
+		wpa_supplicant -B -u -g /run/wpa_supplicant/global -P /run/y2/wpa.pid
+	fi
+	start-stop-daemon -S -b -m -p /run/y2/radiod.pid -x /usr/sbin/y2-radiod
+	[ -n "$wifi" ] || return 0
+	start-stop-daemon -S -b -m -p /run/y2/connectivity.pid -x /usr/sbin/y2-platform -- connectivity-daemon
+	# Only a platform that knows the image's policy: an older one would run the Y2's whole service (its
+	# updates, USB and card work) here.
+	grep -q service-policy.json /usr/sbin/y2-platform &&
+		start-stop-daemon -S -q -b -m -p /run/y2/readiness-supervisor.pid -x /usr/libexec/y2/readiness-supervise
+}
+
+case "$1" in
+ start)
+	[ -d "$C" ] || exit 0
+	grep -q '^[^ ]* /data ext4 ' /proc/mounts || exit 0
+	[ ! -e /data/system/platform/maintenance-pending ] || exit 1
+	layout || exit 1
+	migrate
+	firmware
+	compose
+	wifi_compose
+	activate || exit 1
+	services
+	;;
+ stop)
+	"$0" stop-wifi; "$0" stop-bluetooth; "$0" stop-daemon
+	;;
+ stop-wifi) y2-radio wifi off-runtime 2>/dev/null || : ;;
+ stop-bluetooth) y2-radio bluetooth off-runtime 2>/dev/null || : ;;
+ stop-daemon)
+	start-stop-daemon -K -p "$WAIT" 2>/dev/null || :
+	start-stop-daemon -K -p /run/y2/readiness-supervisor.pid 2>/dev/null || :
+	# The monitor stops its helpers as it ends (as on the Y2); then whatever is left, B6's way.
+	start-stop-daemon -K -p /run/y2/connectivity.pid 2>/dev/null || :
+	for name in wifi-action wifi-dhcp wpa radiod bluealsa; do
+		start-stop-daemon -K -p "/run/y2/$name.pid" 2>/dev/null || :
+	done
+	;;
+ restart) "$0" stop; "$0" start;;
+ firmware) firmware;;
+ firmware-wait)
+	# Until Ready; then up to 5 min more while a copy is still in the folder (it is judged on two passes).
+	n=0
+	while :; do
+		case "$(y2-platform firmware scan 2>/dev/null)" in
+		*'"state":"Ready"'*) [ -f "$INBOX/system.img" ] && [ "$n" -lt 60 ] || break; n=$((n + 1));;
+		esac
+		sleep 5
+	done
+	;;
+esac
+exit 0

@@ -1,209 +1,204 @@
-# Installing Y2Linux on the Innioasis Y2
+# Installing Y2Linux on the Innioasis Y1
 
-There are two ways in. Most people use the **release images**: flash once with SP Flash
-Tool, copy one file from Innioasis's own firmware package onto the player, done. After
-that every update comes over Wi-Fi. Developers can also [build everything from
-source](BUILDING.md) and flash their own personalized package (with their SSH key).
+The Y1 port runs the Y2's userspace (Y2ROOT, the platform and Reborn) on the Y1's MT6572 with its own kernel. It
+is **in development**: there are no Y1 release images yet, so you build the three images yourself and write them
+with **mtkclient** through the MediaTek preloader. The stock Y1 has no SP Flash Tool package for Y2Linux and no
+ADB, and there are no over-the-air updates on the Y1.
 
-Read the whole page once before you start.
+Read the whole page once before you start. The background for each step is in the Y1 plans under
+[`docs/planning/`](planning/) (`Y1-*.md`).
 
 ## What you need
 
-- A computer (Windows or Linux) and a USB cable.
-- **SP Flash Tool v5.2032**, MediaTek's flashing program, with its bundled `MTK_AllInOne_DA.bin`.
-- The **Y2Linux release**: the `…-first-install.zip` of the newest
-  [GitHub release](https://github.com/SchulzCode/Y2Linux/releases) (1.0 Beta 1 or later).
-- The **Innioasis firmware package for the Y2**, v3.2.0 (`y2_v3.2.0_FM-20260813`), from
-  Innioasis's download page, or the same build as `rom_y2.zip` from the
-  [y1-community stock ROM release 3.2.0-fm](https://github.com/y1-community/y1-stock-rom/releases/tag/3.2.0-fm)
-  (checked 2026-10-19: identical scatter file, boot image and LK, and its `system.img` passes the
-  player's radio firmware check; it is stored unpacked, about 860 MB instead of 520 MB). You need
-  it once, for the radio firmware, and it is also your way back to stock, so keep it. **Only this
-  version works:** the player checks every radio file against its SHA-256, so a newer or older
-  Innioasis package is refused until Y2Linux knows its files
-  ([issue tracker](https://github.com/SchulzCode/Y2Linux/issues) if yours differs).
+- A Linux computer and a USB cable.
+- **mtkclient** 2.1.4.1 ([bkerler/mtkclient](https://github.com/bkerler/mtkclient)). It talks to the Y1's preloader
+  and loads its bundled legacy DA into RAM; the Y1 has SBC, SLA and DAA off, so no auth file is needed.
+- A **Type A** Y1 (the wheel works on firmware 2.0.0 and newer). The port was brought up on stock 3.0.2; Type B
+  players have a different wheel controller and are not supported.
+- The build environment of [BUILDING](BUILDING.md) (about 15 GB free disk for the root filesystem).
+- For Bluetooth: the **Innioasis Y1 firmware package 3.0.2** (`rom.zip`, SHA-256 `7ee9aa5b…f764b1`), from
+  Innioasis or the [y1-community stock ROM release 3.0.2](https://github.com/y1-community/y1-stock-rom/releases).
+- For Wi-Fi as well: the **Innioasis Y2 firmware package v3.2.0** (`y2_v3.2.0_FM-20260813`), from Innioasis, or the
+  same build as `rom_y2.zip` from the
+  [y1-community release 3.2.0-fm](https://github.com/y1-community/y1-stock-rom/releases/tag/3.2.0-fm). Yes, the
+  Y2's: see below.
+
+## Radio firmware: which files, from where, stored where
+
+Bluetooth and Wi-Fi need MediaTek firmware that may not be redistributed, so **no Y2Linux image contains it**. The
+player reads it out of the stock `system.img` you copy onto it, checks every file against its SHA-256 (pinned in
+`initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json`) and keeps only these files:
+
+| File on the player | Taken from | Bytes | SHA-256 | Needed for |
+| --- | --- | --- | --- | --- |
+| `WMT_SOC.cfg` | Y1 3.0.2 `system.img`: `/etc/firmware/WMT_SOC.cfg` | 82 | `161f18b6…f1e0` | Bluetooth, Wi-Fi |
+| `mt6572_82_patch_e1_0_hdr.bin` | Y1 3.0.2 `system.img`: `/etc/firmware/mt6572_82_patch_e1_0_hdr.bin` | 39 868 | `5c13ebad…bfc1` | Bluetooth, Wi-Fi |
+| `BT.defaults` | cut from Y1 3.0.2 `system.img`: `/lib/libbluetooth_mtk.so` (offset `0x3004`) | 32 | `a317b67f…119c` | Bluetooth |
+| `WIFI.defaults` | cut from Y1 3.0.2 `system.img`: `/lib/libcustom_nvram.so` (offset `0x3cf4`) | 512 | `9cfed6e4…a8b4` | Wi-Fi |
+| `WIFI_RAM_CODE_MT6582` | **Y2** v3.2.0 `system.img`: `/etc/firmware/WIFI_RAM_CODE_MT6582` | 160 368 | `4def3752…9b82` | Wi-Fi |
+
+All of them are stored in **`/data/firmware/mt6572/`** on the Y2DATA partition (USRDATA), root-only. The player
+also writes its own radio records next to them in `/data/connectivity/` (`bt-record`, `wifi-record`) with a random,
+locally administered address for each radio, created once and then kept.
 
 ### Why the Innioasis package?
 
-The Y2's Wi-Fi and Bluetooth chip needs five small programs from MediaTek (the Wi-Fi RAM
-code, two Bluetooth patches, the modem image used for radio calibration and a chip
-configuration). They are MediaTek's property and may not be redistributed, so **no Y2Linux
-image contains them**. Every Y2 owner already has them: they are inside `system.img` of the
-official Innioasis package. The player reads them out of that file itself, checks each one
-against its known SHA-256 and keeps only those five files (plus two small board defaults it
-derives). Nothing is downloaded, and your device's own calibration and MAC addresses are
-never touched (they stay in the NVRAM partition).
+Innioasis built the Y1 **without Wi-Fi**: its firmware has no Wi-Fi driver and no Wi-Fi firmware at all. The radio
+chip inside the MT6572 does have a Wi-Fi core, and MediaTek's MT6572 driver loads a file named
+`WIFI_RAM_CODE_MT6582`. The Y2's copy of that file is byte-identical to the one MT6572 phones ship, so the Y1 uses
+the Y2 package's file. Bluetooth uses the Y1's own patch and configuration. Neither package's calibration is used:
+the Y1 has no factory Wi-Fi calibration, so Wi-Fi runs on the Y1 library's defaults.
+
+**Only these versions work:** a `system.img` from another Y1 or Y2 version is refused, because the hashes do not
+match. Bluetooth works without the Y2 package; Wi-Fi needs both.
 
 ## What the install changes
 
-| Partition (stock name) | First install | Later updates |
+| Partition (stock name) | Written with | Holds afterwards |
 | --- | --- | --- |
-| BOOTIMG | Y2Linux kernel + rescue system | replaced by each update |
-| ANDROID (`/system`) | Y2Linux system (no radio firmware) | replaced by each update |
-| USRDATA (`/data`) | Y2Linux data: settings, library, logs, the radio firmware | **kept** |
-| RECOVERY | the Y2 recovery image, which installs updates ([why](RECOVERY-AND-UPDATES.md)) | replaced by each update |
-| FAT (the player's own storage) | becomes **Internal Storage** at the first start; your files on it are kept or wait for you ([Storage](STORAGE.md)) | kept |
-| Preloader, LK, NVRAM, calibration, PROTECT, SECCFG, tables | **never written** | never written |
+| BOOTIMG | `BOOTIMG.img` (Y1 build) | the Y1 kernel and its init, the Y1's `/etc/y2linux` overrides |
+| ANDROID (`/system`) | `rootfs.ext4` (512 MiB of the 650 MiB partition) | Y2ROOT, the Y2's userspace, read-only |
+| USRDATA (`/data`, 2 GiB) | `Y2DATA-y1.img` | Y2DATA: settings, library, music, SSH keys, the radio firmware |
+| Preloader, MBR/EBR1, LK, RECOVERY, NVRAM, PROTECT_F/S, SECCFG, FAT, the built-in microSD | **never written** | stock |
 
-Stock Android and its user data are erased. The player's own storage is not flashed: at the
-first start Y2Linux turns it into Internal Storage, keeping up to about 400 MB of your files in
-`Old Player Files` and leaving a larger library untouched until you decide
-([Storage](STORAGE.md)). Copying anything you want to keep to a computer first is still wise.
+Stock Android and its user data are erased; stock no longer starts. The Y1 kernel has an eMMC write guard: Linux
+itself can write only inside USRDATA. Music lives in `/data/music` on Y2DATA (about 1.9 GB); the stock FAT partition
+and the built-in microSD card are not used.
 
-## Install from the release
+## Back up first
 
-1. **Download the Y2Linux release zip and unpack it.** Check it if you like:
-   `sha256sum -c SHA256SUMS` in the unpacked folder.
-2. **Download the Innioasis firmware package and unpack it.**
-3. **Open SP Flash Tool** and choose the **Download** tab, **Download Only**. Never use
-   *Format All + Download*, *Firmware Upgrade* or *Write Memory*. Load
-   **`MT6582_Android_scatter.txt` from the Y2Linux release** (not the stock one). Exactly these
-   four rows are ticked and point at the release files:
+Before any write, read the whole eMMC with mtkclient and keep the files somewhere safe. They hold your player's
+calibration (NVRAM, PROTECT_F/S) and are your only way back to stock:
 
-   | Row | File |
-   | --- | --- |
-   | BOOTIMG | `BOOTIMG.img` |
-   | RECOVERY | `RECOVERY.img` |
-   | ANDROID | `Y2ROOT.img` |
-   | USRDATA | `Y2DATA.img` |
+```sh
+python mtk.py printgpt
+python mtk.py rf y1-emmc-full.bin              # the whole user area, about 3.6 GB
+python mtk.py r BOOTIMG,ANDROID,USRDATA boot-stock.img,android-stock.img,usrdata-stock.img
+sha256sum *.bin *.img > SHA256SUMS
+```
 
-   Every other row must be unticked. Stop if the tool asks to format, reports a
-   partition-table (PMT) change, or shows different addresses.
-4. **Click Download**, then connect the **switched-off** Y2 by USB. After about a minute SP
-   Flash Tool shows a green tick ("Download OK").
-5. **Unplug and press Power.** On the first start the player shows *Setting up storage* for a
-   few seconds: the player's old Innioasis storage becomes **Internal Storage** (5.4 GB for
-   music; see [Internal Storage](#internal-storage) for what happens to files that were on it).
-   Then Reborn starts, and music works. Wi-Fi and Bluetooth say they still need the radio
-   firmware.
-6. **Restart the player once** (hold Power and pick Restart in the Quick Menu; on Beta 9.3.14 and older, hold Power
-   until it turns off, then press Power again), so
-   Internal Storage gets its full space.
-7. **Connect the Y2 to the computer again.** It appears like a USB stick (MTP) with
-   **Internal Storage** (and *SD Card* if a card is in). Internal Storage contains a folder
-   **Firmware**.
-8. **From the firmware package, copy the file `system.img` into that Firmware folder** (about
-   520 MB from Innioasis's zip, about 860 MB from the community `rom_y2.zip`). Copy, don't move:
-   the player deletes its copy afterwards, and you need the original to go back to stock. (If
-   it was moved, unpack it again from the zip.)
-9. **Wait a few seconds.** The player checks the file, keeps the five radio files, deletes the
-   big copy and starts Wi-Fi and Bluetooth; Reborn says *Wi-Fi and Bluetooth are ready*. The
-   Firmware folder disappears. That's it.
+mtkclient waits for the player: connect the **switched-off** Y1 by USB (hold the centre button to switch it off).
 
-If Reborn says *That File Isn't the Y2 Firmware*, the file was not `system.img` of the v3.2.0
-package: delete it and copy the right one. The file can also go into a folder named `Firmware`
-on the SD card. On a player whose Internal Storage is not set up yet (a large old library, see
-below) the computer shows a separate **Firmware** drive instead; it has room for the file from
-Innioasis's zip, but not for an unpacked copy (about 860 MB, as in the community `rom_y2.zip`):
-Reborn then says *Not Enough Space for That File*, and the SD card's `Firmware` folder is the way.
+## Build the images
 
-From now on, updates come over Wi-Fi: Settings → System → Software Update → Check for Updates →
-**Update Now** (Beta 7.1 and later; on Beta 7 and earlier: Download Update → Restart and
-Install). The radio firmware stays on the player and is kept
-across every update. How that works: [Recovery and updates](RECOVERY-AND-UPDATES.md).
+From the repository root on the `y1` branch:
 
-## First boot
+1. **An SSH key** for the player (the data image authorises it; there is no password login):
 
-The first boot creates the data folders, so it takes a little longer than later boots. If it
-stops in the **rescue** screen, the screen shows the reason (for example, the root or data
-partition was not found). Turn the player off with a long Power press and check the flashed
-rows. Nothing is written automatically in rescue.
+   ```sh
+   mkdir -p out/y1-ssh && ssh-keygen -t ed25519 -N '' -f out/y1-ssh/id_ed25519
+   ```
 
-If the screen says **Couldn't Start**, the player itself started but Reborn did not. From the
-release after Beta 8.35 the player then saves an error report: connect it to a computer and
-send the file from *Internal Storage* (or the SD card) → `Error Reports` with your
-[issue](https://github.com/SchulzCode/Y2Linux/issues). It holds the reason Reborn failed.
+2. **BOOTIMG** (the Y1 kernel with Bluetooth, Wi-Fi, MTP, charging and Reborn's devices; `out/y1-boot` must not
+   exist yet):
+
+   ```sh
+   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/y1-boot \
+       -- sh /project/tools/build/y1-build.sh
+   ```
+
+   Result: `out/y1-boot/BOOTIMG.img` with its `SHA256SUMS`.
+
+3. **Y2ROOT** from this branch (the firmware import from two packages needs this branch's platform; the Y2's
+   release root images do not have it):
+
+   ```sh
+   python3 tools/production/build.py --output out/y1-root --public
+   ```
+
+   Result: `out/y1-root/buildroot/images/rootfs.ext4` (512 MiB, label `Y2ROOT`).
+
+4. **Y2DATA** (2 GiB, with your key from step 1):
+
+   ```sh
+   python3 -m tools.build.y1_data out/y1-data
+   ```
+
+   Result: `out/y1-data/Y2DATA-y1.img` and `y1-data.json` with its SHA-256.
+
+## Write the images
+
+Connect the switched-off Y1 for each command (mtkclient waits for it), from the mtkclient folder:
+
+```sh
+python mtk.py w USRDATA <repo>/out/y1-data/Y2DATA-y1.img
+python mtk.py w ANDROID <repo>/out/y1-root/buildroot/images/rootfs.ext4
+python mtk.py w BOOTIMG <repo>/out/y1-boot/BOOTIMG.img
+```
+
+`w` finds the partition by name and stops if it is absent. Never write PRELOADER, MBR, EBR1, UBOOT, NVRAM,
+PROTECT_F, PROTECT_S or SECCFG. To check a write, read the partition back (`python mtk.py r BOOTIMG readback.img`)
+and compare the hash over the image's length.
+
+## First start
+
+Hold the centre button for about 5 s to switch the player on. The first start creates the data folders, then
+Reborn starts and music works. Bluetooth and Wi-Fi wait for the radio firmware.
+
+**Install the radio firmware over USB:**
+
+1. Connect the Y1 to the computer. It appears as a media player (MTP) with one storage, **Music**, which contains
+   a folder **Firmware** with a `README.txt`.
+2. Unpack the Y1 3.0.2 `rom.zip` and **copy its `system.img`** (raw ext4, about 650 MB) into `Music/Firmware`.
+   Copy, don't move: the player deletes its copy afterwards.
+3. Within about 10 s the player checks the file, installs the four Y1 files, deletes the copy and starts
+   Bluetooth.
+4. For Wi-Fi: unpack the Y2 v3.2.0 package and copy **its `system.img`** into `Music/Firmware` the same way (about
+   520 MB from Innioasis's zip, about 860 MB from the community `rom_y2.zip`; it needs that much free space in
+   Music). The player keeps only `WIFI_RAM_CODE_MT6582`, deletes the copy and registers Wi-Fi without a restart.
+   The `Firmware` folder disappears once both are installed.
+
+The two copies can go in either order. Reborn's firmware screen still names the Y2 package and a "Firmware
+drive"; on the Y1 the folder is `Music/Firmware`, and its `README.txt` names both packages.
+
+Then switch Wi-Fi on in Reborn and pick your network, or pair a Bluetooth headset. Switch the player off with a
+3 s hold of the centre button.
 
 ## Developers: SSH over USB
 
-The release's data image contains **no SSH key**, so nobody can log in. To use SSH, build a
-personalized data image with your own Ed25519 public key and flash it to USRDATA instead of the
-release's `Y2DATA.img` (or build the whole package yourself, see [BUILDING](BUILDING.md)):
-
-```sh
-python3 tools/production/first_owner.py --help
-```
-
-With the player running and plugged in, it shows up as a USB Ethernet adapter (plus MTP).
-The device is `10.42.0.1`. Give your computer's new interface `10.42.0.2/24` with no gateway:
+With the player running and plugged in, it also shows up as a USB Ethernet adapter. The device is `10.42.0.1`;
+give your computer's new interface `10.42.0.2/24` with no gateway:
 
 ```sh
 ip -br link                                    # find the new interface (e.g. enp…u2i1 or usb0)
 sudo ip address add 10.42.0.2/24 dev <interface>
-ssh -i ~/.ssh/y2linux_ed25519 root@10.42.0.1
+ssh -i out/y1-ssh/id_ed25519 -o UserKnownHostsFile=out/y1-ssh/known_hosts root@10.42.0.1
 ```
 
-Login is key-only. Useful commands on the device:
+Useful commands on the device:
 
 ```sh
-y2-status system --json            # identity, health summary
-y2-platform status                 # platform services
-y2-platform firmware status        # radio firmware: Ready, Missing, Installing or Failed
-y2-platform firmware install /path/to/system.img   # the same as the Firmware drive
-cat /etc/y2linux/versions.json
+y2-platform firmware status                          # radio firmware: Ready, Missing, Installing or Failed
+y2-platform firmware install /path/to/system.img     # the same as the Firmware folder, either package
+ls -l /data/firmware/mt6572 /data/connectivity
+cat /sys/devices/platform/18070000.connectivity/status
 ```
 
-## Music
-
-- **MTP:** the player appears in any MTP client with *Internal Storage* and *SD Card*. Copy
-  music there.
-- **SD card:** FAT, exFAT and ext4 cards mount at `/media/sd`. `y2-media status` shows the
-  card; `y2-media format --confirm-cid <CID>` reformats it as ext4 (it erases the card).
-
-### Internal Storage
-
-The full explanation for users is [Storage](STORAGE.md). Every player has the same layout: system (`Y2ROOT`), settings and library (`Y2DATA`) and
-**Internal Storage** (`Y2MEDIA`, 5.4 GiB ext4, `/media/internal`). Internal Storage replaces the
-stock player's own storage partition. Since Beta 7.9 the player sets it up by itself at start
-(also on players updated from an earlier beta, at the first restart after the update):
-
-| The old Innioasis storage holds | What happens |
-| --- | --- |
-| nothing, or only leftovers (empty folders, thumbnail caches) | set up at once |
-| your files, up to about 400 MB | they are kept: afterwards they are in *Internal Storage → Old Player Files* |
-| more (a real music library) | nothing changes. Reborn asks once; over USB the old files show up **read-only** as *Old Storage* so you can copy them to a computer. **Settings → Storage → Set Up Internal Storage** then sets it up and **erases** them |
-
-It waits for a later start while an update is still being checked or the battery is low.
-Every step is recorded, so a power loss in the middle continues at the next start.
-
-```sh
-y2-platform internal-media status        # layout, filesystem, mount
-cat /run/y2/internal-media-setup.json    # what the setup did at this start
-```
+Instead of the import you can stage the files on the computer and copy them with `scp`:
+`tools/connectivity/provision.py --profile y1` checks the files you extracted from both `system.img`s against the
+[firmware inventory](knowledge/evidence/y1-firmware-inventory.json) and cuts `WIFI.defaults`
+(procedure: [Y1 Wi-Fi plan §9](planning/Y1-WIFI-PLAN.md#9-w3-build--2026-11-07)). Copy the result to
+`/data/firmware/mt6572/` (root, mode 0600) and restart the connectivity script
+(`/etc/init.d/S41y2-connectivity restart`).
 
 ## Updating
 
-**Over Wi-Fi (recommended):** Settings → System → Software Update → Check for Updates → **Update Now**.
-Use the charger or at least half a battery (the player says so before it downloads anything).
-One screen shows Download, Check and Install; Cancel stops the download. The player then
-restarts, installs (about a minute), restarts into the new version and confirms it; on any
-failure it restores the previous one. (Beta 7 and earlier: Download Update → Restart and
-Install.) Details: [Recovery and updates](RECOVERY-AND-UPDATES.md).
-
-**With a computer:** flash a newer release or your own package with
-**`MT6582_preserve_data_scatter.txt`**. Only **BOOTIMG** and **ANDROID** are ticked; **never
-tick USRDATA**, which would wipe your settings, library and the radio firmware.
+There is no over-the-air update on the Y1. Build newer images and write **only BOOTIMG and ANDROID**. **Never write
+USRDATA again**: it would wipe your settings, library, music and the radio firmware.
 
 ## Known issues to plan around
 
-- **Dark screen at start (rare).** If the panel stays dark, hold Power for 10 s and start
-  again.
-- **USB networking after deep sleep.** After a wake the USB connection can enumerate but pass
-  no traffic. Power off and on to recover.
-- More, with evidence: [current platform state](CURRENT_PLATFORM_STATE.md).
+- **No suspend.** The player can switch off but not sleep; the screen does not time out (the Y1 has no Power key to
+  wake it).
+- **Wi-Fi throughput is low** (1–8 Mbit/s measured, the Y2 about 45), uncalibrated defaults; still being measured.
+- **Music over USB only** into the 2 GiB data partition; the built-in microSD is not used yet.
+- More, with evidence: the Y1 plans under [`docs/planning/`](planning/).
 
 ## Going back to stock
 
-In SP Flash Tool, Download Only, load the **stock** `MT6582_Android_scatter.txt`, untick
-everything, then tick only BOOTIMG → `boot.img`, RECOVERY → `recovery.img`, ANDROID →
-`system.img`, USRDATA → `userdata.img`. This restores factory Android (not your old personal
-data) and erases Y2Linux and its data. Never tick PRELOADER, UBOOT/LK, MBR/EBR, NVRAM, PROTECT
-or SECCFG.
+Write your own backups back with mtkclient: `boot-stock.img` to BOOTIMG, `android-stock.img` to ANDROID and
+`usrdata-stock.img` to USRDATA (or BOOTIMG and ANDROID from the stock 3.0.2 `rom.zip`, `boot.img` and
+`system.img`, plus your USRDATA backup). Nothing else was written, so nothing else needs restoring. Copy your music
+to a computer first.
 
-It does not restore the old FAT format of the player's storage (the stock package has no image
-for it, and stock Android cannot read Internal Storage): **copy your music to a computer first**;
-stock Android then has to format that storage ([Storage](STORAGE.md#going-back-to-stock)).
-
-**This full restore has not yet been tested by the project.** The partitions it writes are the
-same ones the install wrote, and the bootloaders are never changed. The detailed procedure and
-its caveats: [production recovery](architecture/production-recovery.md).
+**A full restore has not yet been tested by the project.**

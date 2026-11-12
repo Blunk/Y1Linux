@@ -1,0 +1,243 @@
+--- a/drivers/input/keyboard/mtk-pmic-keys.c
++++ b/drivers/input/keyboard/mtk-pmic-keys.c
+@@ -20,6 +20,9 @@
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
++#include <linux/backlight.h>
++#include <linux/devm-helpers.h>
++#include <linux/workqueue.h>
+ 
+ #define MTK_PMIC_RST_DU_MASK	GENMASK(9, 8)
+ #define MTK_PMIC_PWRKEY_RST	BIT(6)
+@@ -141,6 +144,9 @@
+ 	int irq;
+ 	int irq_r; /* optional: release irq if different */
+ 	bool wakeup:1;
++	bool dark_press:1; /* Innioasis Y1: this press was the dark screen's Power */
++	bool held_back:1; /* Innioasis Y1: this press is reported at its release (tap_power_ms) */
++	unsigned long tap_from; /* Innioasis Y1: a held-back press released from here on is a Power tap */
+ };
+ 
+ struct mtk_pmic_keys {
+@@ -148,8 +154,73 @@
+ 	struct device *dev;
+ 	struct regmap *regmap;
+ 	struct mtk_pmic_keys_info keys[MTK_PMIC_MAX_KEY_COUNT];
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-REBORN-PLAN.md, power off): with "innioasis,hold-power-ms" a key held that
++	 * long also reports KEY_POWER on a second device named "mtk-pmic-keys", until it is released. The Y1's only
++	 * key (the centre button) is Select for Reborn; a long hold becomes Reborn's Power.
++	 */
++	struct input_dev *hold_dev;
++	struct delayed_work hold_work;
++	unsigned int hold_ms;
++	bool hold_down;
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-REBORN-PLAN.md, screen timeout): with a "backlight" phandle as well, a
++	 * press while that backlight's bl_power is off (Reborn's dark screen) is a Power tap on the hold device
++	 * and the key itself reports nothing until its release, so the press wakes the screen as Power does on
++	 * the Y2 and does not select. Only bl_power counts: PID1's charge screen blanks with brightness 0 and
++	 * FBIOBLANK and keeps reading the key. Looked up at the first press, so the keys never wait for it.
++	 */
++	struct device_node *dark_bl_node;
++	struct backlight_device *dark_bl;
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-REBORN-PLAN.md, sleep): with the sysfs tap_power_ms (0, off, by default)
++	 * a press on the lit screen reports nothing until its release: released sooner it is the key's press and
++	 * release, released later but before the hold a KEY_POWER tap (Reborn's screen off), and after the hold only
++	 * the hold's KEY_POWER. Reborn's start script sets it; PID1's charge mode times a KEY_ENTER hold itself.
++	 */
++	unsigned int tap_ms;
+ };
+ 
++static bool mtk_pmic_keys_dark(struct mtk_pmic_keys *keys)
++{
++	struct backlight_device *bl = READ_ONCE(keys->dark_bl);
++
++	if (!bl && keys->dark_bl_node) {
++		bl = of_find_backlight_by_node(keys->dark_bl_node);
++		if (bl && cmpxchg(&keys->dark_bl, NULL, bl)) {
++			put_device(&bl->dev);
++			bl = READ_ONCE(keys->dark_bl);
++		}
++	}
++	return bl && READ_ONCE(bl->props.power) != BACKLIGHT_POWER_ON;
++}
++
++static void mtk_pmic_keys_dark_release(void *data)
++{
++	struct mtk_pmic_keys *keys = data;
++
++	if (keys->dark_bl)
++		put_device(&keys->dark_bl->dev);
++	of_node_put(keys->dark_bl_node);
++}
++
++static void mtk_pmic_keys_power_tap(struct mtk_pmic_keys *keys)
++{
++	input_report_key(keys->hold_dev, KEY_POWER, 1);
++	input_sync(keys->hold_dev);
++	input_report_key(keys->hold_dev, KEY_POWER, 0);
++	input_sync(keys->hold_dev);
++}
++
++static void mtk_pmic_keys_hold_work(struct work_struct *work)
++{
++	struct mtk_pmic_keys *keys = container_of(to_delayed_work(work), struct mtk_pmic_keys, hold_work);
++
++	keys->hold_down = true;
++	input_report_key(keys->hold_dev, KEY_POWER, 1);
++	input_sync(keys->hold_dev);
++}
++
+ enum mtk_pmic_keys_lp_mode {
+ 	LP_DISABLE,
+ 	LP_ONEKEY,
+@@ -205,6 +276,8 @@
+ static irqreturn_t mtk_pmic_keys_irq_handler_thread(int irq, void *data)
+ {
+ 	struct mtk_pmic_keys_info *info = data;
++	struct mtk_pmic_keys *keys = info->keys;
++	bool held = false;
+ 	u32 key_deb, pressed;
+ 
+ 	regmap_read(info->keys->regmap, info->regs->deb_reg, &key_deb);
+@@ -213,8 +286,45 @@
+ 
+ 	pressed = !key_deb;
+ 
+-	input_report_key(info->keys->input_dev, info->keycode, pressed);
+-	input_sync(info->keys->input_dev);
++	if (keys->hold_dev) {
++		if (pressed) {
++			mod_delayed_work(system_wq, &keys->hold_work, msecs_to_jiffies(keys->hold_ms));
++		} else {
++			cancel_delayed_work_sync(&keys->hold_work);
++			held = keys->hold_down;
++		}
++	}
++
++	if (pressed && keys->hold_dev && mtk_pmic_keys_dark(keys)) {
++		info->dark_press = true;
++		mtk_pmic_keys_power_tap(keys);
++	} else if (pressed && keys->hold_dev && READ_ONCE(keys->tap_ms)) {
++		info->held_back = true;
++		info->tap_from = jiffies + msecs_to_jiffies(READ_ONCE(keys->tap_ms));
++	} else if (info->held_back) {
++		/* After the hold its KEY_POWER release, below, is all. */
++		if (!held && time_before(jiffies, info->tap_from)) {
++			input_report_key(keys->input_dev, info->keycode, 1);
++			input_sync(keys->input_dev);
++			input_report_key(keys->input_dev, info->keycode, 0);
++			input_sync(keys->input_dev);
++		} else if (!held) {
++			mtk_pmic_keys_power_tap(keys);
++		}
++	} else if (pressed || !info->dark_press) {
++		input_report_key(keys->input_dev, info->keycode, pressed);
++		input_sync(keys->input_dev);
++	}
++	if (!pressed) {
++		info->dark_press = false;
++		info->held_back = false;
++	}
++
++	if (held) {
++		keys->hold_down = false;
++		input_report_key(keys->hold_dev, KEY_POWER, 0);
++		input_sync(keys->hold_dev);
++	}
+ 
+ 	dev_dbg(info->keys->dev, "(%s) key =%d using PMIC\n",
+ 		 pressed ? "pressed" : "released", info->keycode);
+@@ -222,6 +332,41 @@
+ 	return IRQ_HANDLED;
+ }
+ 
++static ssize_t tap_power_ms_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct mtk_pmic_keys *keys = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%u\n", READ_ONCE(keys->tap_ms));
++}
++
++static ssize_t tap_power_ms_store(struct device *dev, struct device_attribute *attr,
++				  const char *buf, size_t count)
++{
++	struct mtk_pmic_keys *keys = dev_get_drvdata(dev);
++	unsigned int ms;
++	int error;
++
++	error = kstrtouint(buf, 0, &ms);
++	if (error)
++		return error;
++	/* A tap must be shorter than the hold. */
++	if (ms >= keys->hold_ms)
++		return -EINVAL;
++	WRITE_ONCE(keys->tap_ms, ms);
++	return count;
++}
++
++static DEVICE_ATTR_RW(tap_power_ms);
++
++static struct attribute *mtk_pmic_keys_hold_attrs[] = {
++	&dev_attr_tap_power_ms.attr,
++	NULL
++};
++
++static const struct attribute_group mtk_pmic_keys_hold_group = {
++	.attrs = mtk_pmic_keys_hold_attrs,
++};
++
+ static int mtk_pmic_key_setup(struct mtk_pmic_keys *keys,
+ 		struct mtk_pmic_keys_info *info)
+ {
+@@ -351,6 +496,8 @@
+ 	}
+ 
+ 	input_dev->name = "mtk-pmic-keys";
++	/* As gpio-keys: an optional "label" names the input device (Innioasis Y1). */
++	of_property_read_string(node, "label", &input_dev->name);
+ 	input_dev->id.bustype = BUS_HOST;
+ 	input_dev->id.vendor = 0x0001;
+ 	input_dev->id.product = 0x0001;
+@@ -405,10 +552,38 @@
+ 		return error;
+ 	}
+ 
++	if (!of_property_read_u32(node, "innioasis,hold-power-ms", &keys->hold_ms) && keys->hold_ms) {
++		keys->hold_dev = devm_input_allocate_device(keys->dev);
++		if (!keys->hold_dev)
++			return -ENOMEM;
++		keys->hold_dev->name = "mtk-pmic-keys";
++		keys->hold_dev->id.bustype = BUS_HOST;
++		input_set_capability(keys->hold_dev, EV_KEY, KEY_POWER);
++		error = devm_delayed_work_autocancel(keys->dev, &keys->hold_work, mtk_pmic_keys_hold_work);
++		if (error)
++			return error;
++		error = input_register_device(keys->hold_dev);
++		if (error)
++			return error;
++		dev_info(keys->dev, "a %u ms hold also reports KEY_POWER\n", keys->hold_ms);
++		keys->dark_bl_node = of_parse_phandle(node, "backlight", 0);
++		error = devm_add_action_or_reset(keys->dev, mtk_pmic_keys_dark_release, keys);
++		if (error)
++			return error;
++		if (keys->dark_bl_node)
++			dev_info(keys->dev, "a press with the backlight powered down is a KEY_POWER tap\n");
++	}
++
+ 	mtk_pmic_keys_lp_reset_setup(keys, mtk_pmic_regs);
+ 
+ 	platform_set_drvdata(pdev, keys);
+ 
++	if (keys->hold_dev) {
++		error = devm_device_add_group(keys->dev, &mtk_pmic_keys_hold_group);
++		if (error)
++			return error;
++	}
++
+ 	return 0;
+ }
+ 

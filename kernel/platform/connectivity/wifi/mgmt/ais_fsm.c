@@ -2294,7 +2294,7 @@ aisFsmSteps (
 #if CFG_SUPPORT_RDD_TEST_MODE
             prScanReqMsg->eScanType         = SCAN_TYPE_PASSIVE_SCAN;
 #else
-            prScanReqMsg->eScanType         = SCAN_TYPE_ACTIVE_SCAN;
+            prScanReqMsg->eScanType         = SCAN_TYPE_ACTIVE_SCAN; Y2_WIFI_SCAN_TYPE(prAdapter, prAisFsmInfo, prScanReqMsg);
 #endif
 
 #if CFG_SUPPORT_ROAMING_ENC
@@ -2554,6 +2554,13 @@ aisFsmRunEventScanDone (
     if (ucSeqNumOfCompMsg != prAisFsmInfo->ucSeqNumOfScanReq) {
         DBGLOG(AIS, WARN, ("SEQ NO of AIS SCN DONE MSG is not matched %d %d.\n",
 				ucSeqNumOfCompMsg, prAisFsmInfo->ucSeqNumOfScanReq));
+    }
+    else if ((prAisFsmInfo->eCurrentState == AIS_STATE_SCAN ||
+              prAisFsmInfo->eCurrentState == AIS_STATE_ONLINE_SCAN ||
+              prAisFsmInfo->eCurrentState == AIS_STATE_LOOKING_FOR) &&
+             y2_wifi_scan_listen(prAdapter, prAisFsmInfo->eCurrentState)) {
+        /* Y2: the pass over the listen-only channels runs; its end completes the scan. */
+        return;
     }
     else {
         switch (prAisFsmInfo->eCurrentState) {

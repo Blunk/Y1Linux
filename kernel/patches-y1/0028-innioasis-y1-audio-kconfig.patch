@@ -1,0 +1,19 @@
+--- a/sound/soc/mediatek/Kconfig
++++ b/sound/soc/mediatek/Kconfig
+@@ -5,6 +5,16 @@
+ 	tristate
+ 	select REGMAP_MMIO
+ 
++config SND_SOC_Y1_AUDIO
++	tristate "Innioasis Y1 audio (MT6572 AFE, MT6323 codec, AW87559 speaker)"
++	depends on ARCH_MEDIATEK && MFD_MT6397 && OF && I2C
++	select REGMAP_MMIO
++	select REGMAP_I2C
++	help
++	  Say Y here for playback on the Innioasis Y1: the MT6572 AFE's DL1
++	  to its internal ADDA path, the MT6323 PMIC's codec (headphones) and
++	  the AW87559 speaker amplifier.
++
+ config SND_SOC_MT2701
+ 	tristate "ASoC support for Mediatek MT2701 chip"
+ 	depends on ARCH_MEDIATEK

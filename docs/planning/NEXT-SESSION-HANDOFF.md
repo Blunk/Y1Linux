@@ -1,6 +1,39 @@
 # Next-session handoff — Y2Linux 1.0 Beta 8.4 candidate (latest entry first; started 2026-10-09 as the deep-sleep continuation)
 
-> **START HERE (2026-11-08): BETA 9.3.19 (BASELINE 228) RELEASE.** Update Notifications (Y2Reborn #97, closed):
+> **START HERE (2026-11-11): BETA 9.3.24 (BASELINE 235) RELEASE.** SBC XQ removed (Y2Reborn #123), battery level
+> after charging while off (#113, F81), encoder rate log in reports (`/run/y2/bt-encoder-rate.jsonl`). Not on a
+> player yet. Open: F80 (underruns while the Wi-Fi radio starts; needs the per-core timer probe on a player),
+> report fc7f2d20 (died 75 s after boot as an A2DP stream started). Waiting for answers: Y2Reborn #123, Y2Linux #99.
+> Next free label 236, sequence above 16000, next version 9.3.25
+> ([Beta 9.3.24 report](../validation/Y2-LINUX-1.0-BETA-9.3.24.md)).
+>
+> Previous entry: **START HERE (2026-11-10): BETA 9.3.23 (BASELINE 234) RELEASE.** Now Playing's wave in the cover's colour
+> (#108), issue forms (install method, radio state, "Install, start or update"), `needs-info` workflow,
+> `tools/reports/summary.py`. Not on a player yet. Waiting for answers: Y2Reborn #120 (fresh install, Couldn't
+> Start), #116 (overnight). Next free label 235, sequence above 15900, next version 9.3.24
+> ([Beta 9.3.23 report](../validation/Y2-LINUX-1.0-BETA-9.3.23.md)).
+>
+> Previous entry: **START HERE (2026-11-10): BETA 9.3.22 (BASELINE 233) RELEASE.** A failed sleep before kernel entry restores
+> dark (Y2Player #132, Y2Reborn #116); issue forms, `docs/NOT-PLANNED.md` and the similar-issues workflow. Still
+> owed from 9.3.21: the weak-signal capture, a join on channel 12/13, other headsets, reporter answers. Next free
+> label 234, sequence above 15800, next version 9.3.23
+> ([Beta 9.3.22 report](../validation/Y2-LINUX-1.0-BETA-9.3.22.md)).
+>
+> Previous entry: **START HERE (2026-11-10): BETA 9.3.21 (BASELINE 232) RELEASE.** Bluetooth measured on a player and fixed where
+> it burst after a stalled link (BlueALSA 0009, 0010), AFH mask from the Wi-Fi channel, real-time audio threads,
+> exFAT highmem oops (kernel 0072), sleep without radios (Y2Reborn #116), channels 12 and 13 (#110), FLAC and Opus
+> bitrate (#87). Owed on a player: the weak-signal capture with this build, a join on channel 12/13, a listening
+> test with other headsets, reporter answers on Y2Reborn #87, #116 and Y2Linux #99, #110. Not done: skin list glide
+> (Y2Reborn #114), the stock Wi-Fi driver's BWCS channel, why one player has no radio data. Next free label 233,
+> sequence above 15700, next version 9.3.22 ([Beta 9.3.21 report](../validation/Y2-LINUX-1.0-BETA-9.3.21.md)).
+>
+> Previous entry: **START HERE (2026-11-10): BETA 9.3.20 (BASELINE 229) RELEASE.** Bug fixes for #103 (audiobook buttons/place),
+> Y2Reborn #113 (one album in order, closed), #112 (skin Cover Flow captions, closed), #83 (Wi-Fi after wake, F79),
+> #84 (long M4B counted unreadable), #99 (SBC Auto Rate). Host-tested only: Wi-Fi/BT wake and audiobook buttons owe
+> a device check. Open: #103 Clear All favourites, #84 own MP4 index reader, #99 reporter test. Next free label 230,
+> sequence above 15400, next version 9.3.21 ([Beta 9.3.20 report](../validation/Y2-LINUX-1.0-BETA-9.3.20.md)).
+>
+> Previous entry: **START HERE (2026-11-08): BETA 9.3.19 (BASELINE 228) RELEASE.** Update Notifications (Y2Reborn #97, closed):
 > opt-in toggle, any screen observes every 120 s while online so the daily check's answer reaches Reborn, once per
 > version. Release text now follows docs/RELEASE-NOTES-TEMPLATE.md (`github-only` markers; Innioasis Updater PR
 > y1-community/Innioasis-Updater#62 open). Open: Song Info has no menu entry since UI v3, CBR/VBR (#87), #104

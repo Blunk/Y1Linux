@@ -107,7 +107,7 @@ static int deliver(struct y2_conn *c, unsigned channel, const unsigned char *p, 
 	    !(READ_ONCE(c->wmt_reg_read) && p[1]==8 && size==16 && y2_conn_le16(p+2)==4))) return -EPROTO;
 	if (size > sizeof(c->response_data)) {
 		if (!c->full_stp || !READ_ONCE(c->wmt_rf_calibrate) ||
-		    !y2_wmt_rf_result(c->chip, c->hvr, c->fvr, p, size)) return -EPROTO;
+		    !Y2_CONN_RF_RESULT(c, p, size)) return -EPROTO;
 		/* The full RF event is already CRC-checked. Keep its real length
 		 * and status prefix; calibration results are neither copied into
 		 * the small command buffer nor logged/persisted as factory data. */

@@ -2,9 +2,9 @@
 //! scan that takes it, or deletes a later one once the firmware is in place.
 // SPDX-License-Identifier: GPL-2.0-only
 use super::{
-    from_system_image, fs, install, installed, media, os_path, present, record, start, Path,
-    PathBuf, Result, Reviewed, Root, SystemTime, ENOSPC, FOLDER, INBOX, INTERNAL_INBOX, README,
-    SD_INBOX, SOURCE, STATE, UNIX_EPOCH,
+    from_supplement_image, from_system_image, fs, install, install_supplement, installed, media,
+    os_path, present, record, start, supplemented, Path, PathBuf, Result, Reviewed, Root,
+    SystemTime, ENOSPC, FOLDER, INBOX, INTERNAL_INBOX, README, SD_INBOX, SOURCE, STATE, UNIX_EPOCH,
 };
 use serde::{Deserialize, Serialize};
 use std::os::unix::fs::DirBuilderExt;
@@ -81,9 +81,24 @@ fn mkdir_exist_ok(path: &Path, mode: u32) -> Result<()> {
     }
 }
 
-/// Where the copy goes, created with its note when needed: the Firmware folder on
-/// Internal Storage, else the Firmware drive's folder on Y2DATA.
+/// The image's own place for the copy (radio-firmware.json `inbox`) and its note.
+fn configured(root: &Root) -> Option<(PathBuf, String)> {
+    let reviewed = Reviewed::of(root).ok()?;
+    let note = reviewed.note.unwrap_or_else(|| README.into());
+    Some((root.path(&reviewed.inbox?), note))
+}
+
+/// Where the copy goes, created with its note when needed: the image's configured folder, else the
+/// Firmware folder on Internal Storage, else the Firmware drive's folder on Y2DATA.
 pub(crate) fn inbox(root: &Root) -> Result<PathBuf> {
+    if let Some((folder, text)) = configured(root) {
+        mkdir_exist_ok(&folder, 0o755)?;
+        let note = folder.join("README.txt");
+        if !note.exists() {
+            fs::write(&note, text).map_err(|e| os_path(e, &note))?;
+        }
+        return Ok(folder);
+    }
     let folder = if internal(root) {
         let folder = root.path(INTERNAL_INBOX);
         mkdir_exist_ok(&folder, 0o755)?;
@@ -109,6 +124,9 @@ pub fn candidates(root: &Root) -> Vec<PathBuf> {
     let mut places = vec![root.path(INBOX), root.path(SD_INBOX)];
     if internal(root) {
         places.insert(0, root.path(INTERNAL_INBOX));
+    }
+    if let Some((folder, _)) = configured(root) {
+        places.insert(0, folder);
     }
     let inbox = root.path(INBOX);
     places.extend(
@@ -145,12 +163,21 @@ fn remove(root: &Root, source: &Path) {
     }
 }
 
-/// After the install the Internal Storage Firmware folder goes away again (only its
-/// note; anything the owner put there stays).
+/// After the install the Internal Storage (or the configured) Firmware folder goes away again (only
+/// its note; anything the owner put there stays). The configured one stays while a supplement is
+/// still to come.
 fn tidy(root: &Root) {
-    let folder = root.path(INTERNAL_INBOX);
-    if fs::remove_file(folder.join("README.txt")).is_ok() {
-        let _ = fs::remove_dir(&folder);
+    let waiting = Reviewed::of(root).is_ok_and(|r| !supplemented(root, &r));
+    let configured = configured(root)
+        .map(|(folder, _)| folder)
+        .filter(|_| !waiting);
+    for folder in [Some(root.path(INTERNAL_INBOX)), configured]
+        .into_iter()
+        .flatten()
+    {
+        if fs::remove_file(folder.join("README.txt")).is_ok() {
+            let _ = fs::remove_dir(&folder);
+        }
     }
 }
 
@@ -162,6 +189,9 @@ fn record_state(root: &Root, record: &Record) -> Result<()> {
 /// `firmware status`: Ready, the scan's Installing or Failed, or Missing with where the copy goes
 /// (and `no_space` when the computer's copy did not fit, #39).
 pub fn state(root: &Root) -> Status {
+    if let Err(error) = Reviewed::of(root) {
+        return Status::of("Failed", Some(error.text()));
+    }
     if present(root) {
         return Status::of("Ready", None);
     }
@@ -231,9 +261,17 @@ pub(super) fn scan(root: &Root, reviewed: &Reviewed) -> Result<Status> {
                 ..Record::new("Installing")
             },
         )?;
-        if let Err(error) =
-            from_system_image(reviewed, &source).and_then(|files| install(root, reviewed, files))
+        let result =
+            from_system_image(reviewed, &source).and_then(|files| install(root, reviewed, files));
+        // The other package's image first: its files wait in the folder for the set.
+        if result.is_err()
+            && !supplemented(root, reviewed)
+            && take_supplement(root, reviewed, &source)
         {
+            record_state(root, &Record::new("Missing"))?;
+            return Ok(Status::of("Missing", None));
+        }
+        if let Err(error) = result {
             let reason: String = error.text().chars().take(80).collect();
             record_state(
                 root,
@@ -287,6 +325,11 @@ pub(super) fn leftover(root: &Root, reviewed: &Reviewed) -> Result<Status> {
             value.leftover = Some(seen);
             break;
         }
+        if !supplemented(root, reviewed) && take_supplement(root, reviewed, &source) {
+            record_state(root, &value)?;
+            start(root);
+            return Ok(Status::of("Ready", None));
+        }
         if from_system_image(reviewed, &source).is_err() {
             value.kept = Some(seen);
             break;
@@ -298,6 +341,20 @@ pub(super) fn leftover(root: &Root, reviewed: &Reviewed) -> Result<Status> {
         record_state(root, &value)?;
     }
     Ok(Status::of("Ready", None))
+}
+
+/// The supplement from this copy, installed, the copy deleted; false when it is not that package's.
+fn take_supplement(root: &Root, reviewed: &Reviewed, source: &Path) -> bool {
+    let taken = from_supplement_image(reviewed, source)
+        .and_then(|files| install_supplement(root, reviewed, files))
+        .is_ok();
+    if taken {
+        remove(root, source);
+        if installed(root, reviewed) {
+            tidy(root);
+        }
+    }
+    taken
 }
 
 /// Cheap check for the service: a copy leftover() has not judged yet.
