@@ -50,8 +50,13 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
 
   That table is test build 243. Since then (test build 245) shrinking and colour run in NEON: measured alone
   on the player at full clock, 7.0 ms for a 1280×720 picture (was 11.3), 10.6 ms at 1920×1080 (was 16.7),
-  5.7 ms for 640×360. What is left is mostly fetching the picture from memory. Software MPEG-4 at 720×576
-  decodes in 1.7 ms a picture, so the hardware decoder would gain nothing for it.
+  5.7 ms for 640×360. What is left is mostly fetching the picture from memory. The same four films on build
+  245, ten seconds each: no picture dropped in any of them, and all of Reborn used 61 % (720p H.264), 64 %
+  (1080p H.264), 78 % (MPEG-4 576p) and 80 % (VP9 360p) of one core.
+
+  Software MPEG-4 depends on the material: the flat test pattern decodes in 1.7 ms a picture at 720×576, a
+  noisy 720×576 film at about 3 Mbit/s in 4.7 ms, a noisy 1280×720 film at about 6.5 Mbit/s in 10.8 ms (on the
+  four decoder threads). The hardware decoder would help MPEG-4 at 720p and above, little below.
 
   All of Reborn used 77 to 87 % of one of the four cores while a film played (build 243); the governor ran that core below
   its full clock, so the times above are longer than the work needs. The decoder's power goes off 200 ms after
@@ -66,8 +71,8 @@ costs more battery. On the hardware decoder a 1280×720 picture takes about 4 ms
 - Picture and sound are aligned by the position the player reports; nobody has judged lip sync by eye and ear
   yet. Over Bluetooth the sound is later than the picture by the headphones' own delay (not corrected, by the
   owner's decision for the first version).
-- MPEG-4 Part 2 decodes in software. The hardware could do it, but its register sequence is a second
-  reverse-engineering job of the size of H.264's and software already decodes a 576p picture in 1.7 ms.
+- MPEG-4 Part 2 decodes in software. The hardware could do it; its register sequence is a second
+  reverse-engineering job of the size of H.264's, worth it for 720p Xvid/DivX files, hardly for DVD-sized ones.
 - No choice of subtitle or sound track (the first text track and the default sound track are used), no switch
   to turn subtitles off.
 - Skins draw their own lists; the film itself always uses Reborn's own picture screen.
