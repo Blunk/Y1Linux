@@ -88,12 +88,14 @@ static int h264_feed(struct y2_vdec *v, u32 size)
 	vdec_write(v, VDEC_VLD(0x8c), 0x800000);
 	vdec_write(v, VDEC_AVLD(0x28c), 0);
 	v->trace[0] = vdec_read(v, VDEC_AVLD(0));
-	/* Find the start code, then consume it and the NAL header. */
-	vdec_write(v, VDEC_AVLD(0x2d8), 1);
-	v->trace[1] = h264_wait(v, VDEC_AVLD(0x2d8), BIT(0), 0, 100000);
-	v->trace[2] = vdec_read(v, VDEC_AVLD(0x2c8));
-	if (v->trace[1] && !(v->trace[2] & BIT(11)))
-		return -EILSEQ;
+	/* H264_HAL_GetStartCode_8530: search only when the reader is not on a start code already
+	 * (a search from a start code runs on to the next one). */
+	v->trace[1] = vdec_read(v, VDEC_AVLD(0x84));
+	if (v->trace[0] >> 8 != 1 || (s32)v->trace[1] < 0) {
+		vdec_write(v, VDEC_AVLD(0x2d8), 1);
+		v->trace[2] = h264_wait(v, VDEC_AVLD(0x2d8), BIT(0), 0, 100000);
+		if (v->trace[2] && !(vdec_read(v, VDEC_AVLD(0x2c8)) & BIT(11))) return -EILSEQ;
+	}
 	v->trace[3] = vdec_read(v, VDEC_AVLD(0));
 	h264_bits(v, 32);
 	v->trace[4] = vdec_read(v, VDEC_AVLD(0));

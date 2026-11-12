@@ -3,7 +3,7 @@
 Status: **reverse-engineering notes, 2026-11-12** (video plan step 1). Read from the stock
 `y2_v3.2.0_FM-20260813` kernel (`out/rea/fm-kernel.elf`, symbols present) and from `/system/lib/libvcodecdrv.so`
 (not stripped; decompiled with Ghidra into `out/rea/video/decomp/vcodecdrv/`, one file per function). Nothing in
-this file has run on the player unless a line says so.
+this file has run on the player unless a line says so; the bring-up section near the end is measured.
 
 Extraction: `system.img` is an Android sparse image; convert it to raw, then
 `debugfs -R "dump /lib/libvcodecdrv.so libvcodecdrv.so" system.raw`. Ghidra loads the library at `0x10000`, so a
@@ -165,11 +165,32 @@ is not copied: FFmpeg does that part for us.
 **Limit seen in the library:** `H264_CheckHWParameter` and `Vdec_Drv_H264_open` refuse more than
 `0x1fe000` luma samples (1920×1088) and less than 64 in either direction.
 
-## What is still unknown after reading (bring-up answers these)
+## Bring-up on the owner's player, 2026-11-12 (test builds 236 and 237)
 
-- Whether the decoder takes plain physical addresses with the M4U left off (the display path on this player
-  already runs that way), or needs the larb's MMU enable bits cleared explicitly.
-- Whether the power domain and the three clocks are all the hardware needs (stock also restores larb1's
-  registers after power-up; with the M4U off those may be irrelevant).
-- The chip-type value on this unit (7 assumed).
+Measured on the player, kernel `6.18.56-y2linux-1.0.0-beta.9.3.24` with `kernel/platform/vdec.c`:
+
+- Power: after the domain sequence and the two clock-enable writes `SYS+0x0` reads `0x111` and `SYS+0x8` reads
+  `0x1`; the decoder's registers answer (`MISC+0xa4 = 0x1000`, `MISC+0xc8 = MISC+0xcc = 0xffffffff` after
+  power-up). Power-off and repeated cycles are clean. `CLK_CFG_1` reads `0x00810100`: the loader left the decoder's
+  mux on source 1 (VENCPLL), which the display keeps running.
+- Memory: the decoder reads the bitstream and writes pictures at **plain physical addresses**; the M4U is not
+  needed and no IOMMU driver exists or is planned.
+- The hardware's bit reader returns `0x00000165` for a buffer starting `00 00 01 65`, and `AVC_VLD+0x84` reads
+  back `0x2e00c007` (bit 31 clear), so the start-code search of step 4 is skipped when the reader already stands
+  on a start code. Searching anyway runs on to the *next* start code and loses the picture (the one mistake of
+  the first driver version).
+- Decoding: 95 pictures in six test streams (x264: intra CAVLC and CABAC at 320×240; P with one and with three
+  references and weighted prediction; B pictures; 1280×720 with four slices per picture) decode with error word
+  0 and are **byte-identical to FFmpeg's software decoding** after the block layout is unpacked
+  (`tools/development/vdec/compare.py`). The layout is as read: luma in 16×32 blocks, CbCr in 16×16 blocks.
+- These runs used the bench `vdec-lab` (the driver's `vdec-h264.c` compiled into a userspace program that
+  reaches the registers through the driver's debugfs file). The kernel's own call path with the corrected
+  start-code step is checked with the next kernel build.
+
+## Still open
+
+- The chip-type value on this unit (7 assumed; the 6/9/10 branches were left out and nothing missed them).
+- Streams beyond what the job tool can describe (long-term references, memory management operations, picture
+  order type 1): checked through FFmpeg once our FFmpeg path exists.
+- Timing and power per picture size; sleep and wake with an open decoder.
 - MPEG-4 Part 2: the sequence is in `mpeg4_part2_risc_settings` and `mpeg4_hw_reg_init`; not read out yet.
