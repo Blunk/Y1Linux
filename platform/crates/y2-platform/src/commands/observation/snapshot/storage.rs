@@ -13,9 +13,10 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::{collections::BTreeMap, path::Path};
 use y2p_core::volume::{
-    controller, expected_uuid, SpaceState, VolumeState, EMMC_CONTROLLER, SD_CONTROLLER,
+    expected_uuid, read_only_by_design, source_valid, SpaceState, VolumeState, EMMC_CONTROLLER,
+    SD_CONTROLLER,
 };
-use y2p_core::{command, lenient::Shaped, mounts::Mount, Root};
+use y2p_core::{command, lenient::Shaped, mounts::Mount, player::Player, Root};
 
 /// Product capacity budget, not electrical thresholds. Never delete user data (statvfs byte counts are
 /// never negative).
@@ -49,6 +50,7 @@ pub use crate::commands::storage::records::RefusedCard;
 pub fn volume_at(root: &Root, target: &str) -> Result<Volume, Failure> {
     volume(
         root,
+        Player::of(root),
         &y2p_core::mounts::mounts(root),
         &root.boot_id(),
         target,
@@ -58,6 +60,7 @@ pub fn volume_at(root: &Root, target: &str) -> Result<Volume, Failure> {
 /// One volume of the section: its mount, controller, identity, claim, space and state.
 fn volume(
     root: &Root,
+    player: Player,
     mounts: &[Mount],
     boot: &Option<String>,
     target: &str,
@@ -86,11 +89,10 @@ fn volume(
         .filter(|b| !b.is_empty())
         .map(|b| format!("{b}:{mount_id}:{device_id}"));
     let device = root.path(&format!("/sys/dev/block/{device_id}"));
-    let real = realpath(&device).to_string_lossy().into_owned();
-    // The SD card on MSDC1, everything else on the eMMC (MSDC0).
-    let expected = controller(target);
+    // The SD card on MSDC1, everything else on the eMMC (MSDC0); the Y1's root and Y2DATA on their
+    // loops over its eMMC.
     let instance = device_instance(root, device_id);
-    let controller_valid = real.contains(expected) && device.exists();
+    let controller_valid = source_valid(root, player, target, device_id);
     item.source_instance = instance.clone();
     item.controller_valid = controller_valid;
     let mut state = if controller_valid {
@@ -114,7 +116,7 @@ fn volume(
                 .filter(|o| !o.is_empty())
                 .map_or(Value::Null, Value::String);
         }
-        if expected_uuid(target).is_some_and(|expected| uuid.as_str() != Some(expected)) {
+        if expected_uuid(player, target).is_some_and(|expected| uuid.as_str() != Some(expected)) {
             (state, reason) = (VolumeState::Failed, Some("filesystem_identity_invalid"));
         }
         if target == "/media/sd" {
@@ -148,7 +150,7 @@ fn volume(
         }
     }
     item.uuid = uuid;
-    let readonly = mount.read_only();
+    let readonly = mount.read_only() && !read_only_by_design(player, target);
     // The storage group mounts a healthy card read-only between writes: it is Ready; so is one that
     // plays while its check finishes in the background (F49).
     let protected = target == "/media/sd"
@@ -221,10 +223,11 @@ fn volume(
 pub fn storage(root: &Root) -> Result<Storage, Failure> {
     let mounts = y2p_core::mounts::mounts(root);
     let boot = root.boot_id();
+    let player = Player::of(root);
     let mut volumes = Vec::new();
     // Index order is a consumer contract: root, Y2DATA, SD, then Y2Media (internal user media).
     for target in ["/", "/data", "/media/sd", "/media/internal"] {
-        volumes.push(volume(root, &mounts, &boot, target)?);
+        volumes.push(volume(root, player, &mounts, &boot, target)?);
     }
     let mut blocks = Vec::new();
     for path in root.glob("/sys/class/block/*") {

@@ -2,7 +2,9 @@
 # Innioasis Y1: Y2DATA on USRDATA as /data (docs/planning/Y1-DATA-PLAN.md, stage B2), as the Y2's initramfs and
 # S02y2-data do it. PID1 attached USRDATA writable on a loop (offset 0x4cf40000, 2 GiB) behind the kernel's eMMC
 # guard. Here: the filesystem must be ext4 labelled Y2DATA with the Y1 UUID, e2fsck -p may fix (0/1) but anything
-# else leaves it alone, the schema must be 1; then mounted rw,nosuid,nodev,noatime. Nothing is ever formatted.
+# else leaves it alone, the schema must be 1; then mounted rw,nosuid,nodev,noatime, and its loop recorded in
+# /run/y2-data-device as the Y2's initramfs records its partition: the platform keeps durable records (the boot
+# journal, updates) only on that device. Nothing is ever formatted.
 # On any failure Reborn's RAM /data (S90y1-reborn data) takes its place and the reason goes to the kernel log.
 UUID=79314c69-6e75-4801-8000-000000000102
 OFFSET=1291059200
@@ -33,7 +35,8 @@ mount_data() {
 		umount /data
 		return 1
 	fi
-	mkdir -p -m 0700 /data/music /data/reborn /data/system/platform
+	mkdir -p -m 0700 /data/music /data/reborn /data/system/platform /data/updates
+	printf '%s\n' "$dev" > /run/y2-data-device
 	log "Y2DATA on $dev mounted at /data (e2fsck $status)"
 }
 

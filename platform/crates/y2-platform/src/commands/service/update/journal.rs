@@ -7,6 +7,7 @@ use serde::Deserialize;
 pub use y2p_contract::update::{CoreJournal, Download, Records, Status};
 pub(super) use y2p_core::json::python_error as json_error;
 use y2p_core::lenient;
+use y2p_core::player::Player;
 use y2p_core::py::PyValue;
 
 /// Download.json, with a download or check whose process is gone shown as
@@ -81,14 +82,14 @@ fn lock_held(root: &Root, path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|meta| !y2p_core::lock::flock_pids(root, &meta).is_empty())
 }
 
-/// One action of the native core; its refusal becomes the error text.
+/// One action of the native core (the Y1's own on the Y1); its refusal becomes the error text.
 pub fn core(
     root: &Root,
     action: &str,
     directory: Option<&str>,
     timeout: f64,
 ) -> Result<Map<String, Value>> {
-    let mut argv = vec!["/usr/sbin/y2-update-core", action];
+    let mut argv = vec![Player::of(root).update_core(), action];
     argv.extend(directory);
     let result = command::run_with(root, &argv, timeout, 20000, true);
     if !result.ok {

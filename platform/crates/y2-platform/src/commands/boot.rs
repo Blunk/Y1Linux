@@ -1,5 +1,6 @@
 //! `y2-platform boot-stage <stage>`: one bounded durable boot journal; an unclean boot
-//! is not a reset diagnosis. `application_ready` also arms the runtime power features.
+//! is not a reset diagnosis. `application_ready` also arms the runtime power features (the Y2's
+//! drivers' switches; the Innioasis Y1 has none of them).
 // SPDX-License-Identifier: GPL-2.0-only
 use super::power_features;
 use crate::reply::At;
@@ -14,6 +15,7 @@ use std::{
 };
 use y2p_contract::BootStage;
 use y2p_core::mounts::mounts_at;
+use y2p_core::player::Player;
 use y2p_core::{
     json::dumps,
     py::{python_number, truthy},
@@ -324,7 +326,7 @@ pub fn mark(root: &Root, stage: &str) -> Outcome {
             .as_bytes(),
         );
     }
-    if stage == BootStage::ApplicationReady {
+    if stage == BootStage::ApplicationReady && Player::of(root) == Player::Y2 {
         power_features::apply(root);
     }
     Reply::sorted(&value, 0)
