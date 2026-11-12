@@ -89,17 +89,7 @@ From the repository root on the `y1` branch:
    mkdir -p out/y1-ssh && ssh-keygen -t ed25519 -N '' -f out/y1-ssh/id_ed25519
    ```
 
-2. **BOOTIMG** (the Y1 kernel with Bluetooth, Wi-Fi, MTP, charging and Reborn's devices; `out/y1-boot` must not
-   exist yet):
-
-   ```sh
-   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/y1-boot \
-       -- sh /project/tools/build/y1-build.sh
-   ```
-
-   Result: `out/y1-boot/BOOTIMG.img` with its `SHA256SUMS`.
-
-3. **Y2ROOT** from this branch (the firmware import from two packages needs this branch's platform; the Y2's
+2. **Y2ROOT** from this branch (the firmware import from two packages needs this branch's platform; the Y2's
    release root images do not have it):
 
    ```sh
@@ -107,6 +97,17 @@ From the repository root on the `y1` branch:
    ```
 
    Result: `out/y1-root/buildroot/images/rootfs.ext4` (512 MiB, label `Y2ROOT`).
+
+3. **BOOTIMG** (the Y1 kernel with Bluetooth, Wi-Fi, MTP, charging and Reborn's devices; `out/y1-boot` must not
+   exist yet). Its initramfs carries the updater from step 2's build (`y1-update-core`, the recovery screen and
+   their libraries), so step 2 comes first:
+
+   ```sh
+   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/y1-boot \
+       -- sh /project/tools/build/y1-build.sh /project/out/y1-root
+   ```
+
+   Result: `out/y1-boot/BOOTIMG.img` (and the recovery image `RECOVERY.img`) with its `SHA256SUMS`.
 
 4. **Y2DATA** (2 GiB, with your key from step 1):
 

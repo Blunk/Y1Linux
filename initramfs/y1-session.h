@@ -33,7 +33,10 @@ static void quiet_wait_disk(long watchdog);
 static int root_shell_running(void);
 static int root_command(const char *line, const char *argument, long watchdog);
 static int recovery_mode(void);
-static void recovery_probe(void);
+static void attach_data(void);
+static void recovery_run(void);
+static void recovery_idle(void);
+static int update_rescue(void);
 
 static void sleep_ms(unsigned ms)
 {
@@ -422,8 +425,12 @@ static void run_session(long watchdog)
     if (iio[0]) { say(iio); say("\n"); }
     say(udc[0] ? "usb: " : "usb: no device controller\n");
     if (udc[0]) { say(udc); say("\n"); }
+    attach_data();
     if (recovery_mode()) {
-        recovery_probe();
+        recovery_run(); /* returns only when the recovery needs a person */
+    } else if (!update_rescue()) {
+        console_to("/dev/tty0");
+        say("Y1: an update needs attention; PID1's log is on the serial console, its shell on USB\n");
     } else {
         prepare_root();
         if (root_ready) charge_gate();
@@ -438,7 +445,7 @@ static void run_session(long watchdog)
     }
     say("\ny1-init: session running; connect USB and open the serial port\n");
     for (unsigned tick = 0;; ++tick) {
-        if (tick % TICKS_PER_SECOND == 0) feed(watchdog);
+        if (tick % TICKS_PER_SECOND == 0) { feed(watchdog); recovery_idle(); }
         if (tick % (TICKS_PER_SECOND * TELEMETRY_SECONDS) == 0) show_telemetry();
         if (tick % TICKS_PER_SECOND == 0 && udc[0] && read_text(udc, state, sizeof(state)) > 0 &&
             !same(state, last_state)) {
