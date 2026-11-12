@@ -32,6 +32,8 @@ static void console_to(const char *path);
 static void quiet_wait_disk(long watchdog);
 static int root_shell_running(void);
 static int root_command(const char *line, const char *argument, long watchdog);
+static int recovery_mode(void);
+static void recovery_probe(void);
 
 static void sleep_ms(unsigned ms)
 {
@@ -264,7 +266,8 @@ static void shell_help(void)
               "  bars         colour bars on the DRM frame buffer for 10 s\n"
               "  bl [N]       backlight brightness 0..32 (the only command that writes)\n"
               "  rootsh       the Y2 root filesystem's shell (exit returns here)\n"
-              "  reboot       restart the player\n");
+              "  reboot       restart the player\n"
+              "  poweroff     switch the player off\n");
 }
 
 static void shell_cat(const char *path, long watchdog)
@@ -336,6 +339,14 @@ static void shell_reboot(void)
     call5(SYS_REBOOT, (long)0xfee1dead, 0x28121969, 0x01234567, 0, 0);
 }
 
+static void shell_poweroff(void)
+{
+    usb_say("powering off\n");
+    say("y1-init: power-off requested over USB\n");
+    sleep_seconds(1);
+    call5(SYS_REBOOT, (long)0xfee1dead, 0x28121969, 0x4321fedc, 0, 0);
+}
+
 static void shell_line(char *line, long watchdog)
 {
     char *argument = line;
@@ -351,6 +362,7 @@ static void shell_line(char *line, long watchdog)
     else if (same(line, "ls") && *argument) each_entry(argument, list_entry);
     else if (same(line, "disks")) { shell_cat("/proc/partitions", watchdog); each_entry("/sys/block", show_read_only_flag); }
     else if (same(line, "reboot")) shell_reboot();
+    else if (same(line, "poweroff")) shell_poweroff();
     else if (charging_command(line, argument, watchdog)) {}
     else if (registers_command(line, argument, watchdog)) {}
     else if (bars_command(line, argument, watchdog)) {}
@@ -410,12 +422,16 @@ static void run_session(long watchdog)
     if (iio[0]) { say(iio); say("\n"); }
     say(udc[0] ? "usb: " : "usb: no device controller\n");
     if (udc[0]) { say(udc); say("\n"); }
-    prepare_root();
-    if (root_ready) charge_gate();
-    if (root_ready) switch_to_y2();
-    /* The Y2 system did not start: the screen gets PID1's text again. */
-    console_to("/dev/tty0");
-    say("Y1: the system did not start; PID1's log is on the serial console, its shell on USB\n");
+    if (recovery_mode()) {
+        recovery_probe();
+    } else {
+        prepare_root();
+        if (root_ready) charge_gate();
+        if (root_ready) switch_to_y2();
+        /* The Y2 system did not start: the screen gets PID1's text again. */
+        console_to("/dev/tty0");
+        say("Y1: the system did not start; PID1's log is on the serial console, its shell on USB\n");
+    }
     for (unsigned i = 0; i < INPUT_NODES; ++i) {
         path[16] = (char)('0' + i);
         keys[i] = call5(SYS_OPEN, (long)path, O_RDONLY | O_NONBLOCK, 0, 0, 0);

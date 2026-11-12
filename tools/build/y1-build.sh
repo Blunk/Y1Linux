@@ -19,9 +19,14 @@ make -C /src O=/build/kernel scripts_dtc
 clang -E -nostdinc -undef -D__DTS__ -x assembler-with-cpp -I /src/include \
     -I /src/arch/arm/boot/dts/mediatek /project/kernel/dts/innioasis-y1.dts -o /build/y1.preprocessed.dts
 /build/kernel/scripts/dtc/dtc -I dts -O dtb -o /build/y1.dtb /build/y1.preprocessed.dts
+# The RECOVERY image's tree: the same source with Y1_RECOVERY (docs/planning/Y1-RECOVERY-PLAN.md).
+clang -E -nostdinc -undef -D__DTS__ -DY1_RECOVERY -x assembler-with-cpp -I /src/include \
+    -I /src/arch/arm/boot/dts/mediatek /project/kernel/dts/innioasis-y1.dts -o /build/y1-recovery.preprocessed.dts
+/build/kernel/scripts/dtc/dtc -I dts -O dtb -o /build/y1-recovery.dtb /build/y1-recovery.preprocessed.dts
 cd /project
 python3 -m tools.build.y1_package /build
 cd /build
 cp kernel/.config kernel.config
-sha256sum BOOTIMG.img zImage-dtb y1.dtb y1-init kernel.config > SHA256SUMS
+sha256sum BOOTIMG.img RECOVERY.img zImage-dtb zImage-recovery-dtb y1.dtb y1-recovery.dtb y1-init kernel.config \
+    > SHA256SUMS
 cat SHA256SUMS

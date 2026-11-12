@@ -99,6 +99,7 @@ static int is_selftest(long *stack)
 #include "y1-charge-mode.h"
 #include "y1-console.h"
 #include "y1-charge-screen.h"
+#include "y1-recovery.h"
 
 static void observe(void)
 {
@@ -122,6 +123,7 @@ void diag_start(long *stack)
         if (!sha256_selftest()) { say("Y1INIT SELFTEST SHA-256 FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         if (!telemetry_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         if (!pack_temperature_selftest()) { say("Y1INIT SELFTEST PACK TEMPERATURE FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+        if (!recovery_selftest()) { say("Y1INIT SELFTEST RECOVERY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);
     }
