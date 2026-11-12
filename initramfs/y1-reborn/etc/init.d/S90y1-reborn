@@ -3,7 +3,7 @@
 # S90reborn, boot-gate and reborn-supervise. /data is a 64 MiB ext4 image on its own tmpfs (Reborn accepts
 # only an ext4 /data with schema 1), so nothing survives a reboot. The SSH files already in the RAM
 # overlay's /data are copied in first. The screen timeout is Reborn's default, as on the Y2 (a centre press wakes
-# the dark screen: overlay 0033); the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
+# the dark screen, a 1 s centre hold switches it off: overlay 0033); the speaker setting is seeded off and the speaker pin switched off. Reborn is restarted at most four times (a run of 60 s or more resets the count); no splash,
 # no report, no power-off. With the power daemon (docs/planning/Y1-POWER-PLAN.md, D2) /data must exist before
 # it starts, so S03y1-data runs "data" early; a requested shutdown (/run/y2/shutdown.json) ends the restarts.
 RAM=/run/y1-ram
@@ -65,6 +65,11 @@ case "$1" in
 		# Reborn switches only the pin it plays to (the Y1 has no jack device, so always Headphone);
 		# the speaker pin defaults on and is switched off here (stage R3).
 		amixer -q -c Y2Audio sset Speaker off 2>/dev/null
+		# A centre press released after 1 s (before the 3 s hold) is Reborn's short Power: the screen
+		# goes off. Select then comes at the release and has no long press (overlay 0033).
+		for tap in /sys/bus/platform/drivers/mtk-pmic-keys/*/tap_power_ms; do
+			[ ! -e "$tap" ] || echo 1000 > "$tap"
+		done
 		supervise &
 		echo $! > "$PIDFILE"
 		echo OK

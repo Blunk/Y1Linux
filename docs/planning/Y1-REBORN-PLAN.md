@@ -331,3 +331,30 @@ as before; repeat several cycles, also during playback; the charge screen still 
 Build `out/y1-build-screen-timeout`, BOOTIMG sha256
 `d664e5e82845d3747de081b1b549e57208f12ea5885863f839fd174513725039` (BOOTIMG only; the root and USRDATA unchanged).
 **Run — PASS — 2026-11-09**: the screen went dark after the timeout and a centre press woke it (owner: "works").
+
+## 17. Sleep from a centre hold — 2026-11-12
+
+The owner asked for a way to send the Y1 to sleep without a Power key, in the kernel, from the centre button. On the
+Y2 a short Power press turns Reborn's screen off (and asks the platform for sleep, which the Y1 refuses, section 16).
+Until now only a release between 3.0 and 3.65 s did that on the Y1. A quick press must stay Select and Reborn opens
+Select's context menu at 650 ms, so the owner chose a medium hold that also holds Select back:
+
+- **Overlay `0033`**: with the hold device, the keys device gains the sysfs attribute `tap_power_ms` (0, off, by
+  default; it must be under `innioasis,hold-power-ms`). When it is set, a press on the lit screen reports nothing
+  until its release: released before `tap_power_ms` it is a `KEY_ENTER` press and release (Select); released later
+  but before the hold, a `KEY_POWER` tap on the hold device (Reborn: a short Power → screen off); held to the 3 s
+  hold, only the hold's `KEY_POWER` as before (turn-off at about 4.9 s), no `KEY_ENTER`. The release cancels the
+  hold work before it decides, so a release right at the hold is never both. A dark press is a Power tap as in
+  section 16.
+- **Off unless Reborn runs**: PID1's charge mode opens every input device and times a 2 s `KEY_ENTER` hold itself.
+  `S90y1-reborn` writes 1000 to `/sys/bus/platform/drivers/mtk-pmic-keys/*/tap_power_ms` before Reborn starts.
+- Lost on the Y1 by design while it is set: Select's long press (Reborn's context menu); Select comes at the release.
+
+Build `out/y1-build-sleep-tap` (the screen-timeout build plus the above), BOOTIMG sha256
+`21ec30efe2b588bc03c3bfd18a3cd74781c8334e8d9ea2a72ccf6f89370920c0`; no new compiler warning. `S90y1-reborn` is in
+the BOOTIMG's initramfs (`initramfs/y1-production.list`), so this BOOTIMG carries it (BOOTIMG only; the root and
+USRDATA unchanged). Root `out/y1-root-sleep-tap` (rebuilt at the owner's request from the committed tree, nothing of
+the above in it), `rootfs.ext4` sha256 `0758be8294fa233ae88c205568cd6e92f3ab224237c6a9b16216c8828a08f5e9`.
+Run: a quick centre press selects; a 1–3 s hold, released, turns the screen off and a centre press wakes it; a hold
+of about 5 s powers off; the charge screen still starts the system on a 2 s hold.
+**Run — PASS — 2026-11-12**: both images written; the centre hold sends the Y1 to sleep (owner: "works as expected").
