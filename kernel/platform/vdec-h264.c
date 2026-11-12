@@ -40,6 +40,14 @@ static int h264_wait(struct y2_vdec *v, unsigned reg, u32 mask, u32 want, unsign
 	return readl_poll_timeout_atomic(v->regs + reg, value, (value & mask) == want, 1, us);
 }
 
+/* Give the hardware its 1.5 ms for a step it does on its own (or less, once `reg` reads non-zero),
+ * asleep: the caller holds only the device mutex. */
+static void h264_settle(struct y2_vdec *v, unsigned reg)
+{
+	u32 value;
+	readl_poll_timeout(v->regs + reg, value, value, 100, 1500);
+}
+
 /* H264_HAL_ResetHW and H264_HAL_InitVDecHW. */
 static void h264_reset(struct y2_vdec *v)
 {
@@ -348,18 +356,18 @@ static int h264_slice_header(struct y2_vdec *v, const struct y2_vdec_h264 *p, st
 	if (s->kind != SLICE_B) s->l1 = 0;
 	h264_write_picture(v, p, s);
 	if (s->kind != SLICE_I && s->kind != SLICE_SI) {
-		/* H264_HAL_Reording: the hardware reads the modification syntax and reorders. */
-		u32 value;
+		/* H264_HAL_Reording: the hardware reads the modification syntax and reorders. The
+		 * stock library gives it 1.5 ms or until the register reads non-zero. */
 		vdec_write(v, VDEC_AVLD(0x22c), 1);
-		readl_poll_timeout_atomic(v->regs + VDEC_AVLD(0x22c), value, value, 1, 3000);
+		h264_settle(v, VDEC_AVLD(0x22c));
 	}
 	if (((f & Y2_VDEC_H264_WEIGHTED_PRED) && (s->kind == SLICE_P || s->kind == SLICE_SP)) ||
 	    (p->weighted_bipred_idc == 1 && s->kind == SLICE_B)) {
 		/* H264_HAL_PredWeightTable, write for write. */
-		u32 value, misc = vdec_read(v, VDEC_MISC(0xf0)) | 1;
+		u32 misc = vdec_read(v, VDEC_MISC(0xf0)) | 1;
 		vdec_write(v, VDEC_MISC(0xf0), misc);
 		vdec_write(v, VDEC_AVLD(0x230), 1);
-		readl_poll_timeout_atomic(v->regs + VDEC_AVLD(0x230), value, value, 1, 3000);
+		h264_settle(v, VDEC_AVLD(0x230));
 		vdec_write(v, VDEC_AVLD(0xf0), misc & ~1U);
 	}
 	if (p->nal_ref_idc) h264_skip_marking(v, p);

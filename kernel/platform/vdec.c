@@ -177,8 +177,10 @@ static int y2_vdec_h264(struct y2_vdec *v, struct y2_vdec_h264 *p)
 	/* The picture ends with a start code; the hardware is told about 0x100 bytes more. */
 	memset(v->bits.va + p->size, 0, VDEC_BITSTREAM_TAIL);
 	((u8 *)v->bits.va)[p->size + 3] = 1;
-	dma_sync_single_for_device(v->dev, v->bits.dma, v->bits.size, DMA_TO_DEVICE);
-	dma_sync_single_for_device(v->dev, frame->dma, frame->size, DMA_FROM_DEVICE);
+	/* What the caller wrote goes out to memory. The frame needs nothing before: nobody can write
+	 * its mapping, so no cached line of it is waiting to land on the picture. */
+	dma_sync_single_for_device(v->dev, v->bits.dma, PAGE_ALIGN(p->size + VDEC_BITSTREAM_TAIL),
+				   DMA_TO_DEVICE);
 	reinit_completion(&v->done);
 	ret = y2_vdec_h264_start(v, p);
 	if (!ret && !wait_for_completion_timeout(&v->done, msecs_to_jiffies(VDEC_PICTURE_MS))) {

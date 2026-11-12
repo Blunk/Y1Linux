@@ -39,6 +39,8 @@ void lab_writel(u32 value, uintptr_t address);
 double lab_now_us(void);
 #define readl(address) lab_readl((uintptr_t)(address))
 #define writel(value, address) lab_writel(value, (uintptr_t)(address))
+#define readl_poll_timeout(address, value, condition, delay_us, timeout_us) \
+	readl_poll_timeout_atomic(address, value, condition, delay_us, timeout_us)
 #define readl_poll_timeout_atomic(address, value, condition, delay_us, timeout_us) ({ \
 	double end_ = lab_now_us() + (timeout_us); \
 	int result_; \
