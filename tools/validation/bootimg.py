@@ -1,21 +1,20 @@
 """Independent parser for the single reviewed legacy Android/MTK boot format."""
 import hashlib
 import struct
+from tools.build.bootimage import NAMES
 from tools.validation.d08 import require, up
 
 PAGE = 2048
 MAGIC = 0x58881688
-NAME = b'Y2Linux-M1'.ljust(16, b'\0')
-RECOVERY_NAME = b'Y2Recovery-1'.ljust(16, b'\0')
 
 
-def check(data, kernel, ramdisk, layout, recovery=False):
-    """BOOTIMG, or the OTA-35 RECOVERY image (RECOVERY ramdisk label, own name)."""
+def check(data, kernel, ramdisk, layout, recovery=False, device='y2'):
+    """BOOTIMG, or the OTA-35 RECOVERY image (RECOVERY ramdisk label, own name), of the player device."""
     require(2048 <= len(data) <= 0x1000000, 'BOOTIMG file/partition size')
     fields = struct.unpack_from('<8s10I16s', data)
     k, r = len(kernel) + 512, len(ramdisk) + 512
     require(fields == (b'ANDROID!',k,0x10008000,r,0x11000000,0,0x10f00000,
-                       0x10000100,PAGE,0,0,RECOVERY_NAME if recovery else NAME), 'legacy Android header fields')
+                       0x10000100,PAGE,0,0,NAMES[device][recovery].ljust(16,b'\0')), 'legacy Android header fields')
     require(not any(data[64:576]) and not any(data[596:PAGE]), 'Android commandline/ID/header padding')
     ko, ro = PAGE, PAGE + up(k,PAGE)
     def unwrap(offset, length, label, payload):

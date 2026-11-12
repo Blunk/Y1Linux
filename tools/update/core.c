@@ -12,6 +12,11 @@
  * loss re-enters recovery. A kernel never writes the image it was booted from
  * (kernel/platform/storage-policy.h enforces the same rule below this tool).
  * Y2_UPDATE_TEST enables regular-file/fault fixtures; never used in the image.
+ * Y2_UPDATE_Y1 builds y1-update-core for the Innioasis Y1
+ * (docs/planning/Y1-RECOVERY-PLAN.md): its geometry, its image names, packages
+ * for "device": "y1" only, and LK's door into RECOVERY, the RTC PDN1 flag,
+ * set and cleared together with the MISC request (kernel/y1/emmc-guard.h holds
+ * each image to its own write windows).
  */
 #define _GNU_SOURCE
 #define _FILE_OFFSET_BITS 64
@@ -21,6 +26,7 @@
 #include <json-c/json.h>
 #include <limits.h>
 #include <linux/fs.h>
+#include <linux/loop.h>
 #include <pthread.h>
 #include <sodium.h>
 #include <stdarg.h>
@@ -41,18 +47,44 @@
 #include <unistd.h>
 #include <zlib.h>
 
-#define LIMIT (820ULL * 1024 * 1024)
 #define RESERVE (96ULL * 1024 * 1024)
 #define CHUNK 131072
+#ifdef Y2_UPDATE_Y1
+/* The Y1's mmcblk0 (7569408 sectors) has no partitions in Linux: every image by
+ * its offset (scatter - 0x600000), Y2ROOT on ANDROID (650 MiB) through a loop
+ * device. Boot images 6 MiB. */
+#define DEVICE "y1"
+#define PLAYER "Y1"
+#define LIMIT (0x145000ULL * 512)
+#define DISK_SECTORS 7569408ULL
+#define DISK_SECTORS_TEXT "7569408"
+#define DISK_CONTROLLER "/11120000.mmc/"
+#define IMAGE_BYTES (6ULL * 1024 * 1024)
+#define BOOTIMG_OFFSET (0x15c00ULL * 512)
+#define RECOVERY_OFFSET (0x18c00ULL * 512)
+#define MISC_OFFSET (0x1be00ULL * 512)
+#define ROOT_OFFSET (0x22a00ULL * 512)
+#define BOOT_NAME "Y1Linux-M1"
+#define RECOVERY_NAME "Y1Recovery-1"
+#define BOOT_METADATA "/proc/cmdline"
+#define RECOVERY_FLAG "/sys/bus/platform/drivers/mt6323-pwrc/mt6323-pwrc/recovery_flag"
+#else
 /* Stock logical disk (mmcblk0, 15203328 sectors); see storage-policy.h. */
+#define DEVICE "y2"
+#define PLAYER "Y2"
+#define LIMIT (820ULL * 1024 * 1024)
 #define DISK_SECTORS 15203328ULL
+#define DISK_SECTORS_TEXT "15203328"
+#define DISK_CONTROLLER "/11230000.mmc/"
 #define IMAGE_BYTES (16ULL * 1024 * 1024)
 #define BOOTIMG_OFFSET (60416ULL * 512)
 #define RECOVERY_OFFSET (93184ULL * 512)
 #define MISC_OFFSET (138240ULL * 512)
-#define MISC_BYTES 4096
 #define BOOT_NAME "Y2Linux-M1"
 #define RECOVERY_NAME "Y2Recovery-1"
+#define BOOT_METADATA "/sys/firmware/y2_boot/metadata"
+#endif
+#define MISC_BYTES 4096
 #define RECOVERY_API 1
 #define HEALTH_BOOTS 2
 
@@ -1112,6 +1144,11 @@ static json_object *verify(int package, int check, int64_t installed_sequence, b
             failure("incompatible %s", exact[i]);
             goto fail;
         }
+    /* The player the boot images are for; a package without the field is a Y2's. */
+    if (field(m, "device") ? strcmp(str(m, "device"), DEVICE) : strcmp(DEVICE, "y2")) {
+        failure("incompatible device");
+        goto fail;
+    }
     if (num(m, "layout_schema") != num(compat, "layout_schema") ||
         num(m, "data_schema") != num(compat, "data_schema") || num(m, "data_schema") < 1 ||
         num(m, "recovery_api") != RECOVERY_API || num(m, "reborn_database_schema") != 1 ||
@@ -1215,7 +1252,7 @@ fail:
 /* Internal eMMC by controller, media type and immutable geometry; never a
  * caller-supplied device path. Writes are confined to the matching kernel policy. */
 static bool internal_disk(const char *actual, char *parent, size_t cap) {
-    if (!strstr(actual, "/11230000.mmc/") || !strstr(actual, "/block/"))
+    if (!strstr(actual, DISK_CONTROLLER) || !strstr(actual, "/block/"))
         return false;
     char item[PATH_MAX + 32];
     if (snprintf(parent, cap, "%s", actual) >= (int)cap)
@@ -1226,17 +1263,30 @@ static bool internal_disk(const char *actual, char *parent, size_t cap) {
     snprintf(item, sizeof(item), "%s/device/type", parent);
     return text_is(item, "MMC");
 }
+/* word is one whole space-separated word of line. */
+static bool has_word(const char *line, const char *word) {
+    size_t n = strlen(word);
+    for (const char *p = strstr(line, word); p; p = strstr(p + 1, word))
+        if ((p == line || p[-1] == ' ') && (p[n] == 0 || p[n] == ' '))
+            return true;
+    return false;
+}
 static bool environment_writer(void) {
 #ifdef Y2_UPDATE_TEST
     if (testroot)
         return true;
 #endif
-    /* The recovery initramfs marker and the kernel's own image identity agree. */
-    char meta[160];
-    return (text_is("/etc/y2linux/recovery-update", "1") &&
-            readtext("/sys/firmware/y2_boot/metadata", meta, sizeof(meta)) &&
-            strstr(meta, " recovery_image=1")) ||
-           failure("Y2 recovery environment required");
+    /* The recovery initramfs marker and the kernel's own image identity agree:
+     * the Y2's boot metadata, the Y1 recovery tree's y2.recovery=1. */
+    char meta[1024];
+#ifdef Y2_UPDATE_Y1
+    const char *mark = "y2.recovery=1";
+#else
+    const char *mark = "recovery_image=1";
+#endif
+    return (text_is("/etc/y2linux/recovery-update", "1") && readtext(BOOT_METADATA, meta, sizeof(meta)) &&
+            has_word(meta, mark)) ||
+           failure(PLAYER " recovery environment required");
 }
 static int disk_device(void) {
 #ifdef Y2_UPDATE_TEST
@@ -1263,7 +1313,7 @@ static int disk_device(void) {
         if (!internal_disk(actual, parent, sizeof(parent)))
             continue;
         snprintf(item, sizeof(item), "%s/size", parent);
-        if (!text_is(item, "15203328"))
+        if (!text_is(item, DISK_SECTORS_TEXT))
             continue;
         snprintf(dev, sizeof(dev), "/dev/%s", e->d_name);
         struct stat st;
@@ -1324,8 +1374,20 @@ static bool region_write(int fd, uint64_t offset, const unsigned char *buf, size
     free(check);
     return ok;
 }
+#ifdef RECOVERY_FLAG
+/* The Y1's LK starts RECOVERY only for the RTC PDN1 flag (overlay 0041's
+ * recovery_flag) and clears it at that start; written, then read back. */
+static bool recovery_flag(bool on) {
+    int fd = open(path(RECOVERY_FLAG), O_WRONLY | O_CLOEXEC);
+    bool ok = fd >= 0 && write(fd, on ? "1" : "0", 1) == 1;
+    if (fd >= 0)
+        close(fd);
+    return (ok && text_is(RECOVERY_FLAG, on ? "1" : "0")) || failure("recovery flag");
+}
+#endif
 /* Android bootloader message: command[32] status[32] recovery[768]. LK
- * compares command with "boot-recovery"; recovery names our operation. */
+ * compares command with "boot-recovery"; recovery names our operation. On the
+ * Y1 the PDN1 flag follows the message: set with it, cleared with it. */
 static bool misc_request(int disk, const char *operation) {
     unsigned char *msg = NULL;
     if (posix_memalign((void **)&msg, 4096, MISC_BYTES))
@@ -1339,6 +1401,17 @@ static bool misc_request(int disk, const char *operation) {
         }
         ok = region_write(disk, MISC_OFFSET, msg, MISC_BYTES);
     }
+#ifdef RECOVERY_FLAG
+    if (ok && !recovery_flag(operation != NULL)) {
+        /* No request without the door: take the message back. */
+        if (operation) {
+            memset(msg, 0, 2048);
+            region_write(disk, MISC_OFFSET, msg, MISC_BYTES);
+            failure("recovery flag");
+        }
+        ok = false;
+    }
+#endif
     free(msg);
     return ok;
 }
@@ -1368,7 +1441,7 @@ static bool recovery_installed(int disk, unsigned char *mem, const char *raw_sha
     if (!region_read(disk, RECOVERY_OFFSET, mem, IMAGE_BYTES))
         return false;
     if (!boot_identity(mem, IMAGE_BYTES, RECOVERY))
-        return failure("RECOVERY holds no Y2 recovery image");
+        return failure("RECOVERY holds no " PLAYER " recovery image");
     if (!raw_sha256)
         return true;
     unsigned char sum[32];
@@ -1380,6 +1453,69 @@ static bool recovery_installed(int disk, unsigned char *mem, const char *raw_sha
             return failure("RECOVERY differs from package");
     return true;
 }
+#ifdef Y2_UPDATE_Y1
+/* 1: a loop device of the disk at offset (bytes) serves the running root;
+ * -1: the inventory is unreadable. */
+static int loop_serves(uint64_t offset) {
+    DIR *dir = opendir(path("/sys/block"));
+    if (!dir)
+        return -1;
+    struct dirent *e;
+    bool found = false;
+    while ((e = readdir(dir))) {
+        char item[320], text[256];
+        if (strncmp(e->d_name, "loop", 4))
+            continue;
+        snprintf(item, sizeof(item), "/sys/block/%s/loop/offset", e->d_name);
+        if (!readtext(item, text, sizeof(text)) || strtoull(text, NULL, 10) != offset)
+            continue;
+        snprintf(item, sizeof(item), "/sys/block/%s/loop/backing_file", e->d_name);
+        found = found || (readtext(item, text, sizeof(text)) && !strncmp(text, "/dev/mmcblk", 11));
+    }
+    closedir(dir);
+    return found;
+}
+/* Y2ROOT on ANDROID: a loop device over exactly ANDROID gives the root writer
+ * the Y2's view of a partition; its writes reach the disk only through the
+ * recovery tree's guard window. Refused while a loop device serves ANDROID. */
+static int root_device(void) {
+#ifdef Y2_UPDATE_TEST
+    if (testroot)
+        return openfile(AT_FDCWD, path("/root.img"), O_RDWR, 0);
+#endif
+    if (!environment_writer())
+        return -1;
+    int served = loop_serves(ROOT_OFFSET);
+    if (served) {
+        failure(served > 0 ? "root is attached" : "loop inventory");
+        return -1;
+    }
+    int disk = disk_device();
+    if (disk < 0)
+        return -1;
+    int control = open("/dev/loop-control", O_RDWR | O_CLOEXEC);
+    int number = control < 0 ? -1 : ioctl(control, LOOP_CTL_GET_FREE);
+    char dev[32];
+    snprintf(dev, sizeof(dev), "/dev/loop%d", number);
+    int result = number < 0 ? -1 : open(dev, O_RDWR | O_CLOEXEC | O_EXCL | O_NOFOLLOW);
+    struct loop_config config = {.fd = (uint32_t)disk};
+    config.info.lo_offset = ROOT_OFFSET;
+    config.info.lo_sizelimit = LIMIT;
+    config.info.lo_flags = LO_FLAGS_AUTOCLEAR;
+    uint64_t bytes = 0;
+    if (result < 0 || ioctl(result, LOOP_CONFIGURE, &config) || ioctl(result, BLKGETSIZE64, &bytes) ||
+        bytes != LIMIT) {
+        failure("root loop: %s", strerror(errno));
+        if (result >= 0)
+            close(result);
+        result = -1;
+    }
+    if (control >= 0)
+        close(control);
+    close(disk);
+    return result;
+}
+#else
 static int root_device(void) {
 #ifdef Y2_UPDATE_TEST
     if (testroot)
@@ -1472,6 +1608,7 @@ bad:
     closedir(dir);
     return -1;
 }
+#endif
 static bool state(json_object *j, const char *value, const char *why) {
     setstr(j, "state", value);
     setstr(j, "failure", why ? why : "");
@@ -1895,7 +2032,7 @@ static bool recover(json_object *j) {
     if (!*current)
         return failure("boot identity missing");
     if (!recovery_env || !environment_writer())
-        return failure("Y2 recovery environment required");
+        return failure(PLAYER " recovery environment required");
     int disk = disk_device();
     if (disk < 0)
         return false;
@@ -1905,11 +2042,17 @@ static bool recover(json_object *j) {
     const char *s = str(j, "state");
     if (!mem || !misc_operation(disk, operation, sizeof(operation)))
         goto done;
+#ifdef RECOVERY_FLAG
+    /* LK cleared the flag at this start: set it again until the outcome is
+     * verified, so an interruption returns here as MISC does on the Y2. */
+    if (*operation && !recovery_flag(true))
+        goto done;
+#endif
     if (!strcmp(operation, "y2-probe")) {
         json_object *probe = json_object_new_object();
         char meta[160];
         setstr(probe, "boot_id", current);
-        setstr(probe, "metadata", readtext("/sys/firmware/y2_boot/metadata", meta, sizeof(meta)) ? meta : "");
+        setstr(probe, "metadata", readtext(BOOT_METADATA, meta, sizeof(meta)) ? meta : "");
         setstr(probe, "result", "recovery_started");
         ok = save("recovery-probe.json", probe) && misc_request(disk, NULL);
         json_object_put(probe);
@@ -2269,6 +2412,9 @@ int main(int argc, char **argv) {
             setstr(j, "misc_request", *operation ? operation : "none");
             json_object_object_add(j, "recovery_image_valid",
                                    json_object_new_boolean(recovery_installed(disk, mem, NULL, 0)));
+#ifdef RECOVERY_FLAG
+            json_object_object_add(j, "recovery_flag", json_object_new_boolean(text_is(RECOVERY_FLAG, "1")));
+#endif
             error_text[0] = 0;
             ok = true;
         }

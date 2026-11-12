@@ -350,7 +350,7 @@ def validate_rootfs(out,build,m):
                 require(run('debugfs','-R','cat /'+resolve(name),str(out/'Y2ROOT.img'))==content,'graphics raw ext4/tar agreement '+name)
             require(not any(name in members for name in ('usr/lib/dri/swrast_dri.so','usr/bin/Xorg','usr/bin/weston')), 'no software/desktop graphics fallback')
         if m.get('platform_api_version') == 1:
-            for name in ('usr/sbin/y2-update-core','usr/sbin/y2-audio-contract','usr/libexec/y2-sftp-server',
+            for name in ('usr/sbin/y2-update-core','usr/sbin/y1-update-core','usr/sbin/y2-audio-contract','usr/libexec/y2-sftp-server',
                          'usr/sbin/y2-bt-observe','usr/sbin/y2-bt-afh','usr/bin/reborn-bench','usr/sbin/y2-platform'):
                 content=read(name)
                 require(content[:6]==b'\x7fELF\x01\x01' and struct.unpack_from('<H',content,18)[0]==40,'platform ARM binary '+name)
@@ -390,7 +390,8 @@ def validate_rootfs(out,build,m):
                 expected = {'--codec=-' + codec for codec, entry in codec_inventory['codecs'].items()
                             if codec != 'SBC' and entry['compiled_locally']}
                 require(set(codec_args.decode().split()) == expected, 'immutable Bluetooth codec disable baseline matches compiled set')
-            require(b'Y2_TEST_ROOT' not in read('usr/sbin/y2-update-core') and b'Y2_TEST_FAULT' not in read('usr/sbin/y2-update-core'),'production updater has no fixture writer')
+            for name in ('usr/sbin/y2-update-core','usr/sbin/y1-update-core'):
+                require(b'Y2_TEST_ROOT' not in read(name) and b'Y2_TEST_FAULT' not in read(name),'production updater has no fixture writer '+name)
             caps=json.loads(read('etc/y2linux/capabilities.json'))
             require(caps['schema']=='org.y2linux.capabilities/v1' and caps['api_version']==1,'platform API identity')
             require(caps.get('platform_version') == json.loads(read('etc/y2linux/versions.json'))['release_version'],
