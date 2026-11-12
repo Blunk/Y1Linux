@@ -16,6 +16,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include "clocks.h"
 #include "spm.h"
@@ -88,7 +89,7 @@ static void y2_vdec_idle(struct work_struct *work)
 {
 	struct y2_vdec *v = container_of(work, struct y2_vdec, idle.work);
 	mutex_lock(&v->lock);
-	y2_vdec_power_off(v);
+	if (!v->debug_hold) y2_vdec_power_off(v);
 	mutex_unlock(&v->lock);
 }
 
@@ -136,6 +137,8 @@ static int y2_vdec_configure(struct y2_vdec *v, struct y2_vdec_config *c)
 	    (c->width | c->height) & 15 || c->width < 64 || c->height < 64 || c->width > 1920 ||
 	    c->height > 1920 || c->width * c->height > 1920 * 1088)
 		return -EINVAL;
+	/* A mapping of the old buffers would outlive them. */
+	if (atomic_read(&v->maps)) return -EBUSY;
 	y2_vdec_power_off(v);
 	y2_vdec_release_buffers(v);
 	v->mbs_w = c->width / 16;
@@ -225,6 +228,18 @@ static long y2_vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	return -ENOTTY;
 }
 
+static void y2_vdec_vm_open(struct vm_area_struct *vma)
+{
+	atomic_inc(&((struct y2_vdec *)vma->vm_private_data)->maps);
+}
+static void y2_vdec_vm_close(struct vm_area_struct *vma)
+{
+	atomic_dec(&((struct y2_vdec *)vma->vm_private_data)->maps);
+}
+static const struct vm_operations_struct y2_vdec_vm_ops = {
+	.open = y2_vdec_vm_open, .close = y2_vdec_vm_close,
+};
+
 /* The bitstream buffer is the caller's to write; frames are read only. A mapping stays valid until
  * the buffers are sized again, which the single owner does only between streams. */
 static int y2_vdec_mmap(struct file *file, struct vm_area_struct *vma)
@@ -243,6 +258,11 @@ static int y2_vdec_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 	vma->vm_pgoff = 0;
 	ret = dma_mmap_pages(v->dev, vma, size, b->page);
+	if (!ret) {
+		vma->vm_private_data = v;
+		vma->vm_ops = &y2_vdec_vm_ops;
+		atomic_inc(&v->maps);
+	}
 out:
 	mutex_unlock(&v->lock);
 	return ret;
@@ -297,6 +317,7 @@ static int y2_vdec_debug_power_set(void *data, u64 on)
 	int ret = 0;
 	cancel_delayed_work_sync(&v->idle);
 	mutex_lock(&v->lock);
+	v->debug_hold = on;
 	if (on) ret = y2_vdec_power_on(v);
 	else y2_vdec_power_off(v);
 	mutex_unlock(&v->lock);
@@ -347,6 +368,24 @@ static ssize_t y2_vdec_debug_reg_write(struct file *file, const char __user *fro
 	mutex_unlock(&v->lock);
 	return n;
 }
+/* Where the buffers are, and what the last picture's start read back. */
+static int y2_vdec_debug_buffers_show(struct seq_file *m, void *unused)
+{
+	struct y2_vdec *v = m->private;
+	unsigned i;
+	mutex_lock(&v->lock);
+	seq_printf(m, "bits %pad %zu\nwork %pad\nwork_a %pad\nwork_b %pad\n", &v->bits.dma,
+		   v->bits.size, &v->work.dma, &v->work_a.dma, &v->work_b.dma);
+	for (i = 0; i < v->cfg.frames; i++)
+		seq_printf(m, "frame %u %pad mv %pad %zu\n", i, &v->frame[i].dma, &v->mv[i].dma,
+			   v->mv[i].size);
+	seq_printf(m, "trace %#x %#x %#x %#x %#x %#x %#x %#x\n", v->trace[0], v->trace[1],
+		   v->trace[2], v->trace[3], v->trace[4], v->trace[5], v->trace[6], v->trace[7]);
+	mutex_unlock(&v->lock);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(y2_vdec_debug_buffers);
+
 static const struct file_operations y2_vdec_debug_reg = {
 	.owner = THIS_MODULE, .open = simple_open, .read = y2_vdec_debug_reg_read,
 	.write = y2_vdec_debug_reg_write,
@@ -385,6 +424,7 @@ static int y2_vdec_probe(struct platform_device *pdev)
 	v->debug = debugfs_create_dir("y2_vdec", NULL);
 	debugfs_create_file("power", 0600, v->debug, v, &y2_vdec_debug_power);
 	debugfs_create_file("reg", 0600, v->debug, v, &y2_vdec_debug_reg);
+	debugfs_create_file("buffers", 0400, v->debug, v, &y2_vdec_debug_buffers_fops);
 	return 0;
 }
 

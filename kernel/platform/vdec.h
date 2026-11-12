@@ -50,8 +50,11 @@ struct y2_vdec {
 	dma_addr_t last_y;          /* luma of the picture decoded before this one */
 	/* Counters for sysfs and error reports. */
 	unsigned pictures, errors, timeouts, power_ons, last_error, last_mux;
+	atomic_t maps;              /* user mappings of the buffers */
 	struct dentry *debug;
 	u32 debug_reg;
+	bool debug_hold;            /* powered by hand: the idle timer leaves it on */
+	u32 trace[8];               /* what the last picture's start saw, for bring-up */
 };
 
 static inline u32 vdec_read(struct y2_vdec *v, unsigned reg)

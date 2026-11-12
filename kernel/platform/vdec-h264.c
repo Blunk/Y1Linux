@@ -87,13 +87,16 @@ static int h264_feed(struct y2_vdec *v, u32 size)
 		return -EIO;
 	vdec_write(v, VDEC_VLD(0x8c), 0x800000);
 	vdec_write(v, VDEC_AVLD(0x28c), 0);
-	vdec_read(v, VDEC_AVLD(0));
+	v->trace[0] = vdec_read(v, VDEC_AVLD(0));
 	/* Find the start code, then consume it and the NAL header. */
 	vdec_write(v, VDEC_AVLD(0x2d8), 1);
-	if (h264_wait(v, VDEC_AVLD(0x2d8), BIT(0), 0, 100000) &&
-	    !(vdec_read(v, VDEC_AVLD(0x2c8)) & BIT(11)))
+	v->trace[1] = h264_wait(v, VDEC_AVLD(0x2d8), BIT(0), 0, 100000);
+	v->trace[2] = vdec_read(v, VDEC_AVLD(0x2c8));
+	if (v->trace[1] && !(v->trace[2] & BIT(11)))
 		return -EILSEQ;
+	v->trace[3] = vdec_read(v, VDEC_AVLD(0));
 	h264_bits(v, 32);
+	v->trace[4] = vdec_read(v, VDEC_AVLD(0));
 	return 0;
 }
 
@@ -315,6 +318,9 @@ static int h264_slice_header(struct y2_vdec *v, const struct y2_vdec_h264 *p, st
 	*s = (struct h264_slice){ .l0 = p->ref_l0_default - 1, .l1 = p->ref_l1_default - 1 };
 	s->first_mb = h264_ue(v);
 	s->type = h264_ue(v);
+	v->trace[5] = s->first_mb;
+	v->trace[6] = s->type;
+	v->trace[7] = vdec_read(v, VDEC_AVLD(0));
 	if (s->type > 9) return -EILSEQ;
 	s->kind = s->type % 5;
 	h264_ue(v); /* pic_parameter_set_id */
