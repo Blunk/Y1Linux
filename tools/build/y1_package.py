@@ -1,4 +1,5 @@
-"""Package and check the Innioasis Y1 BOOTIMG from a fresh build directory; never access a device.
+"""Package and check the Innioasis Y1 BOOTIMG and RECOVERY images from a fresh build directory; never access a
+device.
 
 Kernel payload: zImage with the Y1 device tree appended (padded to 8 bytes). The initramfs is built into
 the kernel, so the separate ramdisk is an empty archive that only keeps LK's loader satisfied.
@@ -120,11 +121,12 @@ def empty_ramdisk():
     return gzip.compress(archive, compresslevel=9, mtime=0)
 
 
-def check_dtb(root, dtb):
+def check_dtb(root, name):
+    dtb = (root / name).read_bytes()
     require(dtb[:4] == b'\xd0\x0d\xfe\xed', 'DTB magic')
     require(len(dtb) <= DTB_LIMIT, 'DTB size')
     source = subprocess.run([str(root / 'kernel/scripts/dtc/dtc'), '-I', 'dtb', '-O', 'dts', '-q',
-                             str(root / 'y1.dtb')], capture_output=True, text=True, check=True).stdout
+                             str(root / name)], capture_output=True, text=True, check=True).stdout
     missing = [line for line in EXPECTED if line not in source]
     require(not missing, 'DTB lacks: ' + '; '.join(missing))
     present = [text for text in FORBIDDEN if text in source]
@@ -136,6 +138,20 @@ def check_dtb(root, dtb):
     return source
 
 
+def payload(zimage, dtb):
+    """zImage with the tree appended, padded to 8 bytes."""
+    return zimage + dtb + b'\0' * (-len(dtb) % 8)
+
+
+def boot_image(kernel, ramdisk, recovery=False):
+    image = pack(kernel, ramdisk, recovery=recovery)
+    read_end = 2048 + up(len(kernel) + 512, 2048) + up(len(ramdisk) + 512, 2048) + 2 * 2048
+    result = check_bootimg(image, kernel, ramdisk, {'bootimg_read_end': read_end}, recovery=recovery)
+    require(len(image) <= BOOTIMG_PARTITION, 'fits the Y1 BOOTIMG/RECOVERY partition (6 MiB each)')
+    result['partition_bytes'] = BOOTIMG_PARTITION
+    return image, result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
@@ -143,20 +159,30 @@ def main():
     zimage = (root / 'kernel/arch/arm/boot/zImage').read_bytes()
     require(struct.unpack_from('<I', zimage, 0x24)[0] == ZIMAGE_MAGIC, 'zImage magic')
     dtb = (root / 'y1.dtb').read_bytes()
-    check_dtb(root, dtb)
-    kernel = zimage + dtb + b'\0' * (-len(dtb) % 8)
+    source = check_dtb(root, 'y1.dtb')
+    kernel = payload(zimage, dtb)
     ramdisk = empty_ramdisk()
-    image = pack(kernel, ramdisk)
-    read_end = 2048 + up(len(kernel) + 512, 2048) + up(len(ramdisk) + 512, 2048) + 2 * 2048
-    result = check_bootimg(image, kernel, ramdisk, {'bootimg_read_end': read_end})
-    require(len(image) <= BOOTIMG_PARTITION, 'fits the Y1 BOOTIMG partition')
-    result.update({'partition_bytes': BOOTIMG_PARTITION, 'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb),
+    image, result = boot_image(kernel, ramdisk)
+    result.update({'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb),
                    'zimage_dtb_sha256': hashlib.sha256(kernel).hexdigest()})
+    # RECOVERY (docs/planning/Y1-RECOVERY-PLAN.md): the same kernel; its tree differs only in y2.recovery=1.
+    recovery_dtb = (root / 'y1-recovery.dtb').read_bytes()
+    recovery_source = check_dtb(root, 'y1-recovery.dtb')
+    bootargs = [line for line in source.splitlines() if line.strip().startswith('bootargs = ')]
+    require(len(bootargs) == 1 and bootargs[0].endswith('";'), 'one bootargs line')
+    require(recovery_source == source.replace(bootargs[0], bootargs[0][:-2] + ' y2.recovery=1";'),
+            'the recovery tree differs only in y2.recovery=1')
+    recovery_kernel = payload(zimage, recovery_dtb)
+    recovery_image, recovery = boot_image(recovery_kernel, ramdisk, recovery=True)
+    recovery.update({'dtb_bytes': len(recovery_dtb),
+                     'zimage_dtb_sha256': hashlib.sha256(recovery_kernel).hexdigest()})
+    result['recovery'] = recovery
     (root / 'zImage-dtb').write_bytes(kernel)
     (root / 'BOOTIMG.img').write_bytes(image)
+    (root / 'zImage-recovery-dtb').write_bytes(recovery_kernel)
+    (root / 'RECOVERY.img').write_bytes(recovery_image)
     (root / 'package.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
-
 
 if __name__ == '__main__':
     main()

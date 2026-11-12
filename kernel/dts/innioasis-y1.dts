@@ -49,7 +49,12 @@
 		/* clk_ignore_unused: the clock driver must not gate the display clocks LK left running.
 		 * firmware_class.path: the owner's radio files on Y2DATA (/data, mounted at about 2.3 s; the
 		 * B5 attempt is started later from userspace), searched before /lib/firmware. */
+#ifdef Y1_RECOVERY
+		/* The RECOVERY image (docs/planning/Y1-RECOVERY-PLAN.md): the only difference to BOOTIMG's tree. */
+		bootargs = "rdinit=/init earlycon console=ttyS0,921600n8 console=tty0 loglevel=3 vt.global_cursor_default=0 panic=10 clk_ignore_unused firmware_class.path=/data/firmware y2.recovery=1";
+#else
 		bootargs = "rdinit=/init earlycon console=ttyS0,921600n8 console=tty0 loglevel=3 vt.global_cursor_default=0 panic=10 clk_ignore_unused firmware_class.path=/data/firmware";
+#endif
 		stdout-path = "serial0:921600n8";
 	};
 
