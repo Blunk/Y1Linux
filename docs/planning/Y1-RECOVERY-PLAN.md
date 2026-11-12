@@ -3,7 +3,7 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2, R3, R4's PID1 part and R4b built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+Status: **R0 done, R1 PASS, R2, R3 built, R4 and R4b PASS on the device** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
 [R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
 [R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12),
 [R4b](#11-r4b--the-normal-systems-update-service--2026-11-12)): the RTC
@@ -12,7 +12,9 @@ clears it each time; each image's tree carries its own eMMC write windows; `y1-u
 with the Y1's geometry and sets the flag with every request; both images carry it in their initramfs and PID1 runs
 it as the recovery and as the BOOTIMG rescue, host-built and selftested; the normal system runs the update
 service's daily check and health acknowledgement with `y1-update-core` and reports OTA off (host code and tests).
-Next: R4's device run (the probe through the recovery) with R4b's service checked on the way, then R5. The
+R4's device run passed: the probe from the normal system went through the recovery and back, the guard refused
+BOOTIMG and ANDROID from the normal system, and R4b's service runs with every health check an update needs OK.
+Next: R5. The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
@@ -417,3 +419,15 @@ mtkclient; all three read back identical on the player (`5d64b3b1…`, `9d49f77d
 - **Found**: `root` FAILED (`source_missing_or_wrong_controller`): the root is the overlay, not the loop the host
   fixtures had assumed. With the fix above, a cross-built platform run from `/tmp` read `root` as found but
   DEGRADED (CriticalSpace, the 32 MiB upper layer). Both fixed; the fixtures now carry the device's mountinfo.
+- **PASS** with the images from `6e81b162` (ANDROID `a2781fd8…`, BOOTIMG `61f28a1e…`, RECOVERY `453d8232…`, written in
+  one mtkclient command, all read back identical): `/` 128 MiB, 126 MiB free; `root`, `data`, `filesystem_errors`,
+  `render_node`, `display`, `audio` and `input` OK; the service daemon running; `y1-update-core misc` Idle, flag 0.
+- **The probe** (R4): `y1-update-core probe` from the normal system wrote MISC (`boot-recovery`, request `y2-probe`)
+  through the guard's MISC window and set the flag (PDN1 `0x0010`); `reboot` started RECOVERY (its own boot),
+  which logged `recovery started`, set the flag again, ran the probe (`step=probe 100`), cleared flag and request
+  together and restarted into the normal system: `recovery-probe.json`, `recovery-last.json` (`outcome: probe`) and
+  `logs/recovery-last.log` on Y2DATA, MISC without a request, flag 0.
+- **The guard** (R4): a sector rewritten with its own content from the normal system: BOOTIMG (`0x15c00`) and
+  ANDROID (`0x22a00`) refused (`refused CMD24`, nothing written), MISC and RECOVERY written; all four unchanged.
+- Minor, left for R5: `recovery-probe.json`'s `metadata` is `/proc/cmdline` cut before `y2.recovery=1`; the
+  recovery's files are dated 1970 (no clock source in the recovery).
