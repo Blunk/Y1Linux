@@ -3,6 +3,7 @@ service daemon in its network and update parts, started by the Y1's S42y2-readin
 S03y1-data records that device as the Y2's initramfs does; the capabilities report OTA off until R5."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -96,6 +97,13 @@ class Y1UpdateService(unittest.TestCase):
         # Only after the mount and the schema check.
         self.assertLess(body.index('mount -t ext4'), body.index('printf \'%s\\n\' "$dev" > /run/y2-data-device'))
         self.assertLess(body.index('.y2data-schema'), body.index('/run/y2-data-device'))
+
+    def test_the_root_overlay_leaves_the_root_out_of_the_low_space_budget(self):
+        # statvfs("/") is the overlay's tmpfs upper layer: the platform's LowSpace line is 96 MiB free
+        # (y2p_core::volume::space_state); the device run read 2 MiB used at boot (R4b, §11).
+        root = (ROOT / 'initramfs/y1-root.h').read_text()
+        size = int(re.search(r'"tmpfs", MS_NOSUID \| MS_NODEV, "size=(\d+)m,mode=0755"', root)[1])
+        self.assertGreaterEqual(size - 2, 96 + 16)
 
     def test_the_capabilities_report_ota_off_and_change_nothing_else(self):
         source = json.loads((ROOT / 'platform/capabilities.json').read_text())

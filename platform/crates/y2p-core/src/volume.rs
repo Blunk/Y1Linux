@@ -6,7 +6,7 @@
 //! own claim and protected read-only mounts (`media-mount.json`) belong to the storage group's
 //! observation; nothing here reads them.
 // SPDX-License-Identifier: GPL-2.0-only
-use crate::{command, mounts::mounts, player::Player, sys::statvfs, Root};
+use crate::{command, mounts::mounts, mounts::Mount, player::Player, sys::statvfs, Root};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -56,34 +56,58 @@ pub fn controller(target: &str) -> &'static str {
     }
 }
 
-/// Whether the block device `device_id` (`major:minor`) is the one `target` belongs on: below the
-/// target's controller; on the Y1 the root and Y2DATA each their loop over exactly their window of
-/// the whole eMMC.
-pub fn source_valid(root: &Root, player: Player, target: &str, device_id: &str) -> bool {
-    let device = root.path(&format!("/sys/dev/block/{device_id}"));
-    if !device.exists() {
-        return false;
-    }
-    match Y1_LOOPS.iter().find(|(path, ..)| *path == target) {
-        Some((_, offset, size)) if player == Player::Y1 => {
-            let read = |name: &str| crate::root::read(&device.join("loop").join(name), 64);
-            read("offset").as_deref() == Some(offset)
-                && read("sizelimit").as_deref() == Some(size)
-                && read("backing_file").as_deref() == Some("/dev/mmcblk0")
-                && resolve(&root.path("/sys/block/mmcblk0"))
-                    .to_string_lossy()
-                    .contains(Y1_EMMC_CONTROLLER)
-        }
-        _ => resolve(&device)
+/// Whether the loop device at `device` (its sysfs directory) covers exactly the window `offset`
+/// + `size` bytes of the Y1's eMMC.
+fn y1_loop(root: &Root, device: &Path, offset: &str, size: &str) -> bool {
+    let read = |name: &str| crate::root::read(&device.join("loop").join(name), 64);
+    read("offset").as_deref() == Some(offset)
+        && read("sizelimit").as_deref() == Some(size)
+        && read("backing_file").as_deref() == Some("/dev/mmcblk0")
+        && resolve(&root.path("/sys/block/mmcblk0"))
             .to_string_lossy()
-            .contains(controller(target)),
-    }
+            .contains(Y1_EMMC_CONTROLLER)
 }
 
-/// The Y1's root is read-only by design (a read-only loop, and the normal system's eMMC guard never
-/// writes ANDROID): mounted so, it is Ready, not Degraded.
-pub fn read_only_by_design(player: Player, target: &str) -> bool {
-    player == Player::Y1 && target == "/"
+/// The block device a mounted `target` is identified by (`blkid`), when it is the one the target
+/// belongs on: the mount's own source below the target's controller. On the Y1, Y2DATA's loop over
+/// exactly USRDATA; and the root is an overlay (a RAM upper layer) over PID1's read-only loop of
+/// exactly ANDROID, whose own mount is not visible (initramfs/y1-system.h): that loop, the only one.
+pub fn identity_source(root: &Root, player: Player, target: &str, mount: &Mount) -> Option<String> {
+    let window = Y1_LOOPS.iter().find(|(path, ..)| *path == target);
+    match window {
+        Some((_, offset, size)) if player == Player::Y1 && target == "/" => {
+            if mount.filesystem != "overlay" {
+                return None;
+            }
+            let loops: Vec<PathBuf> = root
+                .glob("/sys/block/loop*")
+                .into_iter()
+                .filter(|d| {
+                    y1_loop(root, d, offset, size)
+                        && crate::root::read(&d.join("ro"), 8).as_deref() == Some("1")
+                })
+                .collect();
+            match &loops[..] {
+                [device] => device
+                    .file_name()
+                    .map(|name| format!("/dev/{}", name.to_string_lossy())),
+                _ => None,
+            }
+        }
+        _ => {
+            let device = root.path(&format!("/sys/dev/block/{}", mount.device_id));
+            let valid = device.exists()
+                && match window {
+                    Some((_, offset, size)) if player == Player::Y1 => {
+                        y1_loop(root, &device, offset, size)
+                    }
+                    _ => resolve(&device)
+                        .to_string_lossy()
+                        .contains(controller(target)),
+                };
+            valid.then(|| mount.source.clone())
+        }
+    }
 }
 
 /// A volume's state: `Ready`, `Degraded` (mounted read-only), `Failed` (wrong controller or
@@ -223,17 +247,18 @@ fn probe(
         let generation = boot_id
             .filter(|b| !b.is_empty())
             .map(|b| format!("{b}:{}:{}", item.mount_id, item.device_id));
-        let controller_valid = source_valid(root, player, target, &item.device_id);
+        let identity = identity_source(root, player, target, item);
+        let controller_valid = identity.is_some();
         let mut state = if controller_valid {
             VolumeState::Ready
         } else {
             VolumeState::Failed
         };
         let mut uuid = None;
-        if controller_valid {
+        if let Some(source) = &identity {
             let answer = command::run(
                 root,
-                &["blkid", "-p", "-s", "UUID", "-o", "value", &item.source],
+                &["blkid", "-p", "-s", "UUID", "-o", "value", source],
                 command::TIMEOUT,
             );
             uuid = if answer.ok {
@@ -246,7 +271,7 @@ fn probe(
                 state = VolumeState::Failed;
             }
         }
-        let readonly = item.read_only() && !read_only_by_design(player, target);
+        let readonly = item.read_only();
         let (space_state, available_bytes) = match statvfs(&root.path(target)) {
             Ok(space) => {
                 let mut space_state = space_state(
@@ -328,9 +353,10 @@ mod tests {
         );
     }
 
-    /// The Y1 (docs/planning/Y1-RECOVERY-PLAN.md, R4b): the root's read-only loop over ANDROID
-    /// and Y2DATA's loop over USRDATA, as PID1 sets them up, are Ready; any other window, backing
-    /// device, UUID or player is not.
+    /// The Y1 (docs/planning/Y1-RECOVERY-PLAN.md, R4b), as its mountinfo read on the device:
+    /// the root an overlay over PID1's read-only loop of ANDROID, Y2DATA its loop over USRDATA.
+    /// Both are Ready; another window, a writable or second root loop, another backing device,
+    /// the Y2's Y2DATA UUID or another player are not.
     #[test]
     fn the_y1_volumes_are_loops_over_their_windows() {
         use crate::command::Outcome;
@@ -349,47 +375,30 @@ mod tests {
         put("proc/sys/kernel/random/boot_id", "boot-a\n");
         put(
             "proc/self/mountinfo",
-            "20 1 7:0 / / ro,noatime - ext4 /dev/loop0 ro\n\
-             30 20 7:1 / /data rw,nosuid,nodev,noatime - ext4 /dev/loop1 rw\n",
+            "26 1 0:19 / / rw,relatime - overlay overlay rw,lowerdir=/mnt/image,\
+             upperdir=/mnt/upper/u,workdir=/mnt/upper/w,uuid=null\n\
+             35 26 7:0 / /data rw,nosuid,nodev,noatime - ext4 /dev/loop0 rw\n",
         );
-        for (loop_, offset, size) in [
-            ("loop0", "72613888", "681574400"),
-            ("loop1", "1291059200", "2147483648"),
-        ] {
-            put(
-                &format!("sys/devices/virtual/block/{loop_}/loop/offset"),
-                &format!("{offset}\n"),
-            );
-            put(
-                &format!("sys/devices/virtual/block/{loop_}/loop/sizelimit"),
-                &format!("{size}\n"),
-            );
-            put(
-                &format!("sys/devices/virtual/block/{loop_}/loop/backing_file"),
-                "/dev/mmcblk0\n",
-            );
-        }
+        let windows = [
+            ("loop0", "1291059200", "2147483648", "0"),
+            ("loop1", "72613888", "681574400", "1"),
+            ("loop2", "0", "0", "0"),
+        ];
         std::fs::create_dir_all(dir.join("sys/dev/block")).unwrap();
-        symlink(
-            "../../devices/virtual/block/loop0",
-            dir.join("sys/dev/block/7:0"),
-        )
-        .unwrap();
-        symlink(
-            "../../devices/virtual/block/loop1",
-            dir.join("sys/dev/block/7:1"),
-        )
-        .unwrap();
-        std::fs::create_dir_all(
-            dir.join("sys/devices/platform/11120000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0"),
-        )
-        .unwrap();
         std::fs::create_dir_all(dir.join("sys/block")).unwrap();
-        symlink(
-            "../devices/platform/11120000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0",
-            dir.join("sys/block/mmcblk0"),
-        )
-        .unwrap();
+        for (number, (name, offset, size, ro)) in windows.into_iter().enumerate() {
+            let device = format!("sys/devices/virtual/block/{name}");
+            put(&format!("{device}/loop/offset"), &format!("{offset}\n"));
+            put(&format!("{device}/loop/sizelimit"), &format!("{size}\n"));
+            put(&format!("{device}/loop/backing_file"), "/dev/mmcblk0\n");
+            put(&format!("{device}/ro"), &format!("{ro}\n"));
+            let link = format!("../../devices/virtual/block/{name}");
+            symlink(&link, dir.join(format!("sys/dev/block/7:{number}"))).unwrap();
+            symlink(&link[3..], dir.join(format!("sys/block/{name}"))).unwrap();
+        }
+        let emmc = "devices/platform/11120000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0";
+        std::fs::create_dir_all(dir.join("sys").join(emmc)).unwrap();
+        symlink(format!("../{emmc}"), dir.join("sys/block/mmcblk0")).unwrap();
         std::fs::create_dir_all(dir.join("data")).unwrap();
         let blkid = |device: &str, uuid: &str| {
             (
@@ -405,44 +414,40 @@ mod tests {
         };
         let probe = |data_uuid: &str| {
             let root = Root::fixture(&dir).with_answers(vec![
-                blkid("/dev/loop0", ROOT_UUID),
-                blkid("/dev/loop1", data_uuid),
+                blkid("/dev/loop1", ROOT_UUID),
+                blkid("/dev/loop0", data_uuid),
             ]);
             (volume(&root, "/").state, volume(&root, "/data").state)
         };
-        assert_eq!(
-            probe(Y1_DATA_UUID),
-            (VolumeState::Ready, VolumeState::Ready)
-        );
+        let ready = (VolumeState::Ready, VolumeState::Ready);
+        assert_eq!(probe(Y1_DATA_UUID), ready);
         // The Y2's Y2DATA is not the Y1's.
         assert_eq!(probe(DATA_UUID).1, VolumeState::Failed);
         // Another window, or a loop over anything but the eMMC.
-        put(
-            "sys/devices/virtual/block/loop1/loop/offset",
-            "1291059712\n",
-        );
+        let data = "sys/devices/virtual/block/loop0/loop";
+        put(&format!("{data}/offset"), "1291059712\n");
         assert_eq!(probe(Y1_DATA_UUID).1, VolumeState::Failed);
-        put(
-            "sys/devices/virtual/block/loop1/loop/offset",
-            "1291059200\n",
-        );
-        put(
-            "sys/devices/virtual/block/loop1/loop/backing_file",
-            "/data/reborn/data.img\n",
-        );
+        put(&format!("{data}/offset"), "1291059200\n");
+        put(&format!("{data}/backing_file"), "/data/reborn/data.img\n");
         assert_eq!(probe(Y1_DATA_UUID).1, VolumeState::Failed);
-        // On the Y2 a loop is never a volume, and a read-only root is Degraded.
-        put(
-            "sys/devices/virtual/block/loop1/loop/backing_file",
-            "/dev/mmcblk0\n",
-        );
+        put(&format!("{data}/backing_file"), "/dev/mmcblk0\n");
+        // The root's loop must be read-only, and the only one over ANDROID.
+        put("sys/devices/virtual/block/loop1/ro", "0\n");
+        assert_eq!(probe(Y1_DATA_UUID).0, VolumeState::Failed);
+        put("sys/devices/virtual/block/loop1/ro", "1\n");
+        let second = "sys/devices/virtual/block/loop2";
+        put(&format!("{second}/loop/offset"), "72613888\n");
+        put(&format!("{second}/loop/sizelimit"), "681574400\n");
+        put(&format!("{second}/ro"), "1\n");
+        assert_eq!(probe(Y1_DATA_UUID).0, VolumeState::Failed);
+        put(&format!("{second}/loop/offset"), "0\n");
+        assert_eq!(probe(Y1_DATA_UUID), ready);
+        // On the Y2 an overlay or a loop is never a volume.
         put(
             "proc/device-tree/compatible",
             "innioasis,y2\0mediatek,mt6582\0",
         );
         assert_eq!(probe(DATA_UUID), (VolumeState::Failed, VolumeState::Failed));
-        assert!(!read_only_by_design(Player::Y2, "/"));
-        assert!(!read_only_by_design(Player::Y1, "/data"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
