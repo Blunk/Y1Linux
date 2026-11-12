@@ -9910,3 +9910,24 @@ under the owner's Android app. The October work was never run on any player.
 
 **Gate decision:** source work and an owner-only test build; the first power-up of the tuner on the owner's player
 is part of that test. Not a release authorization: FM has never played on a Y2 under Y2Linux.
+
+## Wi-Fi Share (a web file browser on the player): scope note — 2026-11-12
+
+**Boundary:** production scope, no hardware: Reborn gains a network service (plain HTTP on port 80) that lists,
+receives, renames and deletes files on Internal Storage and the SD card. Owner request 2026-11-12 after #115
+("make a plan for the wifi share mode ... implement this also"). Plan:
+[REBORN-WIFI-SHARE.md](https://github.com/SchulzCode/Y2Reborn/blob/main/docs/ui/REBORN-WIFI-SHARE.md).
+
+**Evidence:** the player has had no listening service besides the owner-only SSH on the USB network; storage
+writes from Reborn already go through the platform's SD write window (`media write --holder reborn`).
+
+| Area | Before | Now |
+| --- | --- | --- |
+| Listening services | none for listeners | one, only while Settings → Library → Wi-Fi Share is on screen; a six-digit code from the screen, lockout after five wrong ones; unencrypted, said so in the guide |
+| What it reaches | — | the two music roots; paths resolved inside them, links never followed, hidden names refused (tests) |
+| SD card | read-only between writes | unchanged: each change inside a write window, renewed during an upload |
+| Sleep | — | the player stays awake while the page is open |
+| Platform contract, kernel, images | — | unchanged |
+| Device checks | — | OWED: from a computer and a phone on the owner's Wi-Fi |
+
+**Gate decision:** source work and an owner test build. Publishing is the owner's decision.
