@@ -13,6 +13,23 @@ the patch download, tuning, the signal read-out, the capture path and sleep, not
 [FM re-entry](roadmap-gap-audit.md#fm-radio-re-entry-gap-audit--2026-11-12). The text below is the plan of
 2026-10-16 as it was written.
 
+### On the owner's player, 2026-11-12 (test builds 249 and 250, first-revision Y2)
+
+- **Firmware:** `system.img` copied into `Firmware` on Internal Storage; the next two passes took the tuner's two
+  files and deleted the copy; Wi-Fi and Bluetooth were not restarted.
+- **Tuner:** the first power-up worked: `chip=6627`, VCN28 on (one user), tuning accepted across the band, signal
+  −102 to −107 dBm on every frequency tried (the noise floor the owner's Android app measured on this player in
+  August). Connectivity: `functions=0xb` (Bluetooth, FM, Wi-Fi together), no transport error, no recovery.
+- **Sound:** `arecord -D hw:0,2` at 48 kHz delivers a steady stream (two seconds: 96,000 frames, noise at about
+  −43 dBFS, left and right identical).
+- **Reborn:** Radio shows FM Radio and Internet Radio; the search runs in about seven seconds and saves its result
+  (it listed 88.3 and 104.0 MHz, then 104.0 MHz alone: on this player false hits or very weak stations, not judged
+  by ear). Playing failed on 249: the stream decoder did not accept WAV (fixed, Reborn `media.c`, test build 250).
+  On 250 an FM station plays (position advances, "Mono" on Now Playing, no playback error); pausing stops the
+  capture at once and switches the tuner and VCN28 off after the three-second grace; resuming brings both back.
+- **Not checked:** reception (needs a later-revision Y2); sleep with FM on; FM over Bluetooth by ear; the hide
+  switch on the player (covered by tests only); long play, drain.
+
 ## 1. Evidence used
 
 | Source | Origin / date | What it shows | Limits |
