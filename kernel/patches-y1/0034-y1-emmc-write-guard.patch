@@ -9,20 +9,21 @@
  
  #define MAX_BD_NUM          1024
  #define MSDC_NR_CLOCKS      3
-@@ -517,6 +519,12 @@
+@@ -517,6 +519,13 @@
  	bool internal_cd;	/* Use internal card-detect logic */
  	bool cqhci;		/* support eMMC hw cmdq */
  	bool hsq_en;		/* Host Software Queue is enabled */
-+	/* Innioasis Y1 eMMC write guard (y1-emmc-guard.h): the writable user-area window in sectors,
++	/* Innioasis Y1 eMMC write guard (y1-emmc-guard.h): the writable user-area windows in sectors,
 +	 * the PARTITION_ACCESS in effect and the requests refused. */
 +	bool y1_guard;
-+	u32 y1_window[2];
++	unsigned int y1_window_count;
++	unsigned int y1_windows[Y1_EMMC_WINDOWS][2];
 +	u8 y1_partition;
 +	u32 y1_refused;
  	struct msdc_save_para save_para; /* used when gate HCLK */
  	struct msdc_tune_para def_tune_para; /* default tune setting */
  	struct msdc_tune_para saved_tune_para; /* tune result of CMD21/CMD19 */
-@@ -1283,12 +1291,53 @@
+@@ -1283,11 +1292,76 @@
  			 __func__, cmd->opcode, cmd->arg, host->error);
  }
  
@@ -48,10 +49,11 @@
 +		.partition = host->y1_partition,
 +		.part_config = card ? card->ext_csd.part_config : 0,
 +		.blockaddr = card && mmc_card_blockaddr(card),
-+		.window_start = host->y1_window[0], .window_sectors = host->y1_window[1],
++		.window_count = host->y1_window_count,
 +	};
 +	int partition;
 +
++	memcpy(r.windows, host->y1_windows, sizeof(r.windows));
 +	if (!y1_emmc_request_allowed(&r)) {
 +		host->y1_refused++;
 +		dev_warn_ratelimited(host->dev, "y1 eMMC guard: refused CMD%u arg %#x (%u blocks, %s)\n",
@@ -64,42 +66,60 @@
 +	return true;
 +}
 +
++/* The guard's windows from the device tree. Present but not a valid list: the guard refuses every write. */
++static void y1_guard_windows(struct msdc_host *host, struct platform_device *pdev)
++{
++	u32 cells[2 * Y1_EMMC_WINDOWS];
++	int count = of_property_count_u32_elems(pdev->dev.of_node, "innioasis,emmc-write-window");
++	unsigned int i;
++
++	host->y1_guard = true;
++	if (count <= 0 || count > ARRAY_SIZE(cells) ||
++	    of_property_read_u32_array(pdev->dev.of_node, "innioasis,emmc-write-window", cells, count) ||
++	    !y1_emmc_windows_valid(cells, count)) {
++		dev_err(&pdev->dev, "y1 eMMC guard: invalid write windows, no eMMC writes\n");
++		return;
++	}
++	host->y1_window_count = count / 2;
++	for (i = 0; i < host->y1_window_count; i++) {
++		host->y1_windows[i][0] = cells[2 * i];
++		host->y1_windows[i][1] = cells[2 * i + 1];
++		dev_info(&pdev->dev, "y1 eMMC guard: writes to sectors %#x..%#x of the user area\n",
++			 cells[2 * i], cells[2 * i] + cells[2 * i + 1]);
++	}
++}
++
  static void msdc_request_done(struct msdc_host *host, struct mmc_request *mrq)
  {
  	struct mmc_host *mmc = mmc_from_priv(host);
  	unsigned long flags;
  	bool hsq_req_done;
- 
++
 +	if (host->y1_guard && !mrq->cmd->error && y1_partition_switch(mrq->cmd) >= 0)
 +		host->y1_partition = y1_partition_switch(mrq->cmd);
-+
+ 
  	/*
  	 * No need check the return value of cancel_delayed_work, as only ONE
- 	 * path will go here!
-@@ -1485,6 +1534,13 @@
+@@ -1484,6 +1558,13 @@
+ static void msdc_ops_request(struct mmc_host *mmc, struct mmc_request *mrq)
  {
  	struct msdc_host *host = mmc_priv(mmc);
- 
++
 +	if (host->y1_guard && !y1_guard_request(host, mrq)) {
 +		mrq->cmd->error = -EPERM;
 +		if (!(host->hsq_en && mmc_hsq_finalize_request(mmc, mrq)))
 +			mmc_request_done(mmc, mrq);
 +		return;
 +	}
-+
+ 
  	host->error = 0;
  	WARN_ON(!host->hsq_en && host->mrq);
- 	host->mrq = mrq;
-@@ -2983,6 +3039,12 @@
+@@ -2983,6 +3064,8 @@
  		return PTR_ERR(host->base);
  
  	host->dev_comp = of_device_get_match_data(&pdev->dev);
-+	if (!of_property_read_u32_array(pdev->dev.of_node, "innioasis,emmc-write-window",
-+					host->y1_window, 2)) {
-+		host->y1_guard = true;
-+		dev_info(&pdev->dev, "y1 eMMC guard: writes only to sectors %#x..%#x of the user area\n",
-+			 host->y1_window[0], host->y1_window[0] + host->y1_window[1]);
-+	}
++	if (of_find_property(pdev->dev.of_node, "innioasis,emmc-write-window", NULL))
++		y1_guard_windows(host, pdev);
  
  	if (host->dev_comp->needs_top_base) {
  		host->top_base = devm_platform_ioremap_resource(pdev, 1);

@@ -65,14 +65,34 @@ static int attach_image(char device[16])
 
 /* Y2DATA (docs/planning/Y1-DATA-PLAN.md, stage B2): USRDATA (scatter 0x4d540000 - 0x600000 = physical
  * 0x4cf40000, 2 GiB) read-write on a free loop device, for S03y1-data to check and mount. The eMMC itself must
- * then be writable, so this happens only when the device tree carries the eMMC guard's window, exactly USRDATA
- * (sectors 0x267a00 + 0x400000); the kernel refuses every other eMMC write. Never formats anything. */
+ * then be writable, so this happens only when the device tree carries the eMMC guard's windows, one to four
+ * (start, sectors) pairs led by exactly USRDATA (sectors 0x267a00 + 0x400000; docs/planning/Y1-RECOVERY-PLAN.md);
+ * the kernel refuses every write outside them. Never formats anything. */
 enum { USRDATA_OFFSET = 0x4cf40000, USRDATA_SIZE = 0x80000000 };
+
+/* The guard's property as read (n bytes, big-endian cells) lists one to four windows, USRDATA first. */
+static int guard_covers_usrdata(const u8 *found, long n)
+{
+    static const u8 window[8] = { 0x00, 0x26, 0x7a, 0x00, 0x00, 0x40, 0x00, 0x00 };
+    int match = n >= 8 && n <= 32 && n % 8 == 0;
+    for (unsigned i = 0; match && i < 8; ++i) match = found[i] == window[i];
+    return match;
+}
+
+static int guard_selftest(void)
+{
+    static const u8 normal[24] = { 0x00, 0x26, 0x7a, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x01, 0x8c, 0x00,
+                                   0x00, 0x00, 0x30, 0x00, 0x00, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x04, 0x00 };
+    static const u8 other[8] = { 0x00, 0x01, 0x8c, 0x00, 0x00, 0x00, 0x30, 0x00 };
+    return guard_covers_usrdata(normal, 8) && guard_covers_usrdata(normal, 24) &&
+           !guard_covers_usrdata(normal, 12) && !guard_covers_usrdata(normal, 40) &&
+           !guard_covers_usrdata(normal, 0) && !guard_covers_usrdata(normal, -2) &&
+           !guard_covers_usrdata(other, 8);
+}
 
 static void attach_data(void)
 {
-    static const u8 window[8] = { 0x00, 0x26, 0x7a, 0x00, 0x00, 0x40, 0x00, 0x00 };
-    u8 found[9];
+    u8 found[33];
     struct loop_config config;
     u8 *raw = (u8 *)&config;
     int zero = 0;
@@ -80,9 +100,7 @@ static void attach_data(void)
                     O_RDONLY, 0, 0, 0);
     long n = fd < 0 ? fd : call5(SYS_READ, fd, (long)found, sizeof(found), 0, 0);
     if (fd >= 0) call5(SYS_CLOSE, fd, 0, 0, 0, 0);
-    int match = n == 8;
-    for (unsigned i = 0; match && i < 8; ++i) match = found[i] == window[i];
-    if (!match) { put("data: no eMMC guard for USRDATA, Y2DATA not attached\n"); send(SCREEN | USB); return; }
+    if (!guard_covers_usrdata(found, n)) { put("data: no eMMC guard for USRDATA, Y2DATA not attached\n"); send(SCREEN | USB); return; }
     long disk = call5(SYS_OPEN, (long)"/dev/mmcblk0", O_RDONLY, 0, 0, 0);
     long r = disk < 0 ? disk : call5(SYS_IOCTL, disk, BLKROSET, (long)&zero, 0, 0);
     if (disk >= 0) call5(SYS_CLOSE, disk, 0, 0, 0, 0);

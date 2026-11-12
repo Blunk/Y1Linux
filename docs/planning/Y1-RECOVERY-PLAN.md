@@ -3,18 +3,20 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
-[R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12)): the RTC PDN1 recovery flag starts RECOVERY on the Y1 by a
-Linux restart, a centre-button start and a charger start, and LK clears it each time. R2 (guard by mode) next. The
+Status: **R0 done, R1 PASS, R2 built** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+[R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12)): the RTC PDN1
+recovery flag starts RECOVERY on the Y1 by a Linux restart, a centre-button start and a charger start, and LK clears
+it each time; each image's tree now carries its own eMMC write windows, tested on the host. R3 (Y1 geometry in
+`core.c`, packages) next. The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
 Y1"). The goal is the Y2's chain on the Y1: a Y1 recovery image in RECOVERY, written once with mtkclient, that
 installs signed updates (BOOTIMG, Y2ROOT, RECOVERY) and restores the previous version if anything fails.
 
-This widens the Y1's write scope from USRDATA alone to BOOTIMG, ANDROID, RECOVERY and MISC. Before R2 the
-[roadmap/gap audit](roadmap-gap-audit.md#standing-milestone-boundary-rule) is repeated with R0/R1's hardware
-evidence.
+This widens the Y1's write scope from USRDATA alone to BOOTIMG, ANDROID, RECOVERY and MISC. The
+[roadmap/gap audit](roadmap-gap-audit.md#y1-recovery-r2-guard-by-mode-entry-audit--2026-11-12) was repeated with
+R0/R1's hardware evidence before R2.
 
 ## 1. Evidence
 
@@ -218,3 +220,30 @@ The flag carries mode 2 through every way the Y1 starts, LK clears it at that st
 normal: R0's reading of LK holds. Not run: MISC `boot-recovery` alone (R0 shows LK cannot keep it; it would need a
 MISC write and restore) and the keypad index 9 button (only visible on the UART). The probe stays in RECOVERY and the
 flag interface in BOOTIMG until R4 replaces them; RECOVERY is reached only through the flag.
+
+## 8. R2 — the guard by mode — 2026-11-12
+
+Host code and tests only; nothing built here was written to the Y1.
+
+- **Guard** (`kernel/y1/emmc-guard.h`, overlay 0034): `innioasis,emmc-write-window` is a list of one to four
+  (first sector, sectors) pairs. A write must lie inside **one** window, so a write from BOOTIMG across into the
+  adjacent RECOVERY (`0x18c00`) is refused even in the recovery's policy. The driver checks the list at probe
+  (`y1_emmc_windows_valid`: one to four windows, none empty, none past sector 2^32, no overlap); a property that is
+  present but invalid leaves the guard on with no window, so every write is refused. Everything else (no boot/RPMB
+  write, no erase, the EXT_CSD switches) is unchanged.
+- **The two trees** (`innioasis-y1.dts`), as the table in [§2](#2-design):
+  `<0x267a00 0x400000 0x18c00 0x3000 0x1be00 0x400>` for BOOTIMG and, with `Y1_RECOVERY`,
+  `<0x267a00 0x400000 0x15c00 0x3000 0x22a00 0x145000 0x1be00 0x400>`. `y1_package.py` requires each tree's list
+  and that the recovery tree differs only in `y2.recovery=1` and its list.
+- **PID1** (`y1-root.h`): attaches Y2DATA when the list is one to four pairs led by exactly USRDATA
+  (`guard_covers_usrdata`, in the QEMU selftest), instead of the single USRDATA window.
+- **PDN1 write exception: not needed.** The Y1's PMIC write policy (overlay 0005) covers only the charger block,
+  ISINK and the audio registers; the RTC block (`0x8000`…) is outside it, which is why R1's flag write worked.
+- **Host tests** (`tests/test_y1_emmc_guard.py`, the partitions from the 3.0.2 scatter): for each policy, every
+  window is exactly its partition (first and last sector and the whole partition writable; one sector past either
+  end, a write across into the neighbour and one sector too many refused); every other partition (MBR/EBR1,
+  PRO_INFO, NVRAM, PROTECT_F/S, SECCFG, UBOOT, SEC_RO, LOGO, EXPDB, CACHE, FAT, and BOOTIMG/ANDROID resp. RECOVERY)
+  refused at its first, middle and last sector; the tree's lists equal the policies and `y1_package.WINDOWS`; the
+  list validation at its limits. Three mutations of the guard (overlap check, window end, zero blocks) each fail
+  the suite.
+
