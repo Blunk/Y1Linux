@@ -124,6 +124,7 @@ void diag_start(long *stack)
         if (!telemetry_selftest()) { say("Y1INIT SELFTEST TELEMETRY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         if (!pack_temperature_selftest()) { say("Y1INIT SELFTEST PACK TEMPERATURE FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         if (!recovery_selftest()) { say("Y1INIT SELFTEST RECOVERY FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
+        if (!guard_selftest()) { say("Y1INIT SELFTEST EMMC GUARD FAILED\n"); call5(SYS_EXIT, 1, 0, 0, 0, 0); }
         say("Y1INIT SELFTEST OK\n");
         call5(SYS_EXIT, 0, 0, 0, 0, 0);
     }

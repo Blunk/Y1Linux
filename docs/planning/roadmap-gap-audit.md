@@ -10325,3 +10325,22 @@ Power on the PMIC; only `mtk-pmic-keys` is wake-enabled. The SPM suspend mask al
 | Device checks | — | OWED on the owner's player: every lockout path, dark feedback, a remapped layout through a day |
 
 **Gate decision:** source work and an owner test build. Publishing is the owner's decision.
+
+## Y1 RECOVERY R2 (guard by mode): entry audit — 2026-11-12
+
+**Boundary:** the Y1's eMMC write scope widens from USRDATA alone to RECOVERY and MISC (normal system) and BOOTIMG,
+ANDROID and MISC (recovery), [Y1-RECOVERY-PLAN.md](Y1-RECOVERY-PLAN.md) §2. The plan requires this audit before R2.
+
+**Evidence (date, revision, origin, limits):** Y2Linux 649959d8 (R0/R1). R0 offline: the 3.0.2 LK's boot-mode code;
+RECOVERY and MISC read on the Y1 equal the backup (`evidence-private/2026-11-12-y1-recovery-r0/`). R1 on the
+owner's Y1 (`evidence-private/2026-11-12-y1-recovery-r1/`, build `out/y1-recovery-r1`): the PDN1 flag started
+RECOVERY by a Linux restart, a charger start and a centre-button start on battery; LK cleared it each time; starts
+without it are normal. RECOVERY and BOOTIMG read back identical after the owner's mtkclient writes. Not measured:
+MISC `boot-recovery` alone, keypad index 9, a start below LK's 3250 mV with the flag set (plan §4 risk).
+
+**Coverage:** the door (PDN1) is proven on hardware; the MISC-only path is not and is not relied on. The guard
+change is host-tested at every window boundary of both policies; the refused write on the device is R4. No update
+code exists for the Y1 yet (R3–R5); `ota` stays off for the Y1.
+
+**Readiness:** R2 is host code and tests only (the guard list, the two trees, PID1's check). No image is written to
+the Y1 in R2; the R2 build is not installed. The device step stays R4's, under its admission.

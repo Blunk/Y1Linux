@@ -5,8 +5,8 @@
  *
  * - Clocks, pins, the PMIC wrapper and its charger-block write policy, UART0 at 921600 baud, both CPUs (their
  *   enable-method in mt6572-fork.dtsi).
- * - Storage: the eMMC (writes only inside the write guard's USRDATA window, Y2DATA) and the microSD card; the two
- *   card supplies are fixed descriptions, not PMIC regulators.
+ * - Storage: the eMMC (writes only inside the write guard's windows: Y2DATA and the update's images) and the
+ *   microSD card; the two card supplies are fixed descriptions, not PMIC regulators.
  * - Input: the APT32F wheel on I2C1, its zones on their own input device "Y2 navigation buttons" (play/pause,
  *   next, back, previous as KEY_PLAYPAUSE, KEY_RIGHT, KEY_BACK, KEY_LEFT), and the centre button (MT6323 power
  *   key) under the same name, so it is Select; a 3 s hold is also KEY_POWER (Reborn's Power).
@@ -50,7 +50,8 @@
 		 * firmware_class.path: the owner's radio files on Y2DATA (/data, mounted at about 2.3 s; the
 		 * B5 attempt is started later from userspace), searched before /lib/firmware. */
 #ifdef Y1_RECOVERY
-		/* The RECOVERY image (docs/planning/Y1-RECOVERY-PLAN.md): the only difference to BOOTIMG's tree. */
+		/* The RECOVERY image (docs/planning/Y1-RECOVERY-PLAN.md): with the eMMC write windows, the only
+		 * difference to BOOTIMG's tree. */
 		bootargs = "rdinit=/init earlycon console=ttyS0,921600n8 console=tty0 loglevel=3 vt.global_cursor_default=0 panic=10 clk_ignore_unused firmware_class.path=/data/firmware y2.recovery=1";
 #else
 		bootargs = "rdinit=/init earlycon console=ttyS0,921600n8 console=tty0 loglevel=3 vt.global_cursor_default=0 panic=10 clk_ignore_unused firmware_class.path=/data/firmware";
@@ -336,9 +337,16 @@
  */
 &mmc0 {
 	status = "okay";
-	/* The eMMC write guard (kernel/y1/emmc-guard.h): writes only to USRDATA, physical 0x4cf40000 (sector
-	 * 0x267a00), 2 GiB (0x400000 sectors). PID1 makes the eMMC writable only when this window is present. */
-	innioasis,emmc-write-window = <0x267a00 0x400000>;
+	/* The eMMC write guard (kernel/y1/emmc-guard.h): writes only inside these windows of sectors (first, count;
+	 * docs/planning/Y1-RECOVERY-PLAN.md). Both lists start with USRDATA, physical 0x4cf40000 (sector 0x267a00),
+	 * 2 GiB (0x400000 sectors); PID1 makes the eMMC writable only when it is there. Neither image may write
+	 * itself. BOOTIMG's system writes RECOVERY (6 MiB) and MISC (512 KiB) for an update; the recovery writes
+	 * BOOTIMG (6 MiB), ANDROID (650 MiB, Y2ROOT) and MISC. */
+#ifdef Y1_RECOVERY
+	innioasis,emmc-write-window = <0x267a00 0x400000 0x15c00 0x3000 0x22a00 0x145000 0x1be00 0x400>;
+#else
+	innioasis,emmc-write-window = <0x267a00 0x400000 0x18c00 0x3000 0x1be00 0x400>;
+#endif
 	vmmc-supply = <&emmc_vcc>;
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0;

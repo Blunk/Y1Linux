@@ -2,13 +2,17 @@
 /*
  * Innioasis Y1: the eMMC write guard (docs/planning/Y1-DATA-PLAN.md, stage B2). Linux sees the Y1's eMMC as one
  * disk without partitions; Y2DATA is a loop over USRDATA, so the disk has to be writable. The guard checks every
- * request to the eMMC host before it reaches the card: writes only inside one window of the user area (USRDATA,
- * from the device tree), no write to the boot or RPMB partitions, no erase, write protect, lock or CID/CSD
- * programming, and EXT_CSD switches only to the volatile settings Linux uses at runtime. Reads are not limited.
- * After the Y2's storage-policy.h, without its MT6582 modes and tuning.
+ * request to the eMMC host before it reaches the card: writes only inside the user-area windows the device tree
+ * lists (each write inside one of them), no write to the boot or RPMB partitions, no erase, write protect, lock or
+ * CID/CSD programming, and EXT_CSD switches only to the volatile settings Linux uses at runtime. Reads are not
+ * limited. Each image carries its own list (docs/planning/Y1-RECOVERY-PLAN.md): BOOTIMG's tree USRDATA, RECOVERY
+ * and MISC; RECOVERY's tree USRDATA, BOOTIMG, ANDROID and MISC. After the Y2's storage-policy.h, without its MT6582
+ * modes and tuning.
  */
 #ifndef Y1_EMMC_GUARD_H
 #define Y1_EMMC_GUARD_H
+
+#define Y1_EMMC_WINDOWS 4				/* the most windows a list may hold */
 
 struct y1_emmc_request {
 	unsigned opcode, arg;
@@ -18,16 +22,45 @@ struct y1_emmc_request {
 	unsigned partition;				/* PARTITION_ACCESS now in effect (0 = user) */
 	unsigned part_config;				/* the card's PARTITION_CONFIG (boot bits) */
 	unsigned blockaddr;				/* sector addressing (high capacity) */
-	unsigned window_start, window_sectors;		/* the writable user-area window */
+	unsigned window_count;				/* 0: no write anywhere */
+	unsigned windows[Y1_EMMC_WINDOWS][2];		/* writable user-area windows: first sector, sectors */
 };
 
-/* The writable window, in 512-byte sectors of the user area; overflow-safe. */
+/* Blocks from sector arg lie inside the window, in 512-byte sectors of the user area; overflow-safe. */
+static inline int y1_emmc_inside(unsigned arg, unsigned blocks, unsigned start, unsigned sectors)
+{
+	if (!blocks || arg < start)
+		return 0;
+	return arg - start <= sectors && blocks <= sectors - (arg - start);
+}
+
+/* The write lies inside one window; a write across two adjacent windows is refused. */
 static inline int y1_emmc_write_inside(const struct y1_emmc_request *r)
 {
-	if (!r->blocks || r->arg < r->window_start)
+	unsigned i;
+
+	for (i = 0; i < r->window_count && i < Y1_EMMC_WINDOWS; i++)
+		if (y1_emmc_inside(r->arg, r->blocks, r->windows[i][0], r->windows[i][1]))
+			return 1;
+	return 0;
+}
+
+/* The device tree's list (start, sectors pairs): one to Y1_EMMC_WINDOWS windows, none empty, none past the 32-bit
+ * sector range, no two overlapping. The host refuses every write when the list is not valid. */
+static inline int y1_emmc_windows_valid(const unsigned *cells, unsigned count)
+{
+	unsigned i, j;
+
+	if (!count || count % 2 || count > 2 * Y1_EMMC_WINDOWS)
 		return 0;
-	return r->arg - r->window_start <= r->window_sectors &&
-	       r->blocks <= r->window_sectors - (r->arg - r->window_start);
+	for (i = 0; i < count; i += 2) {
+		if (!cells[i + 1] || cells[i + 1] - 1 > 0xffffffffU - cells[i])
+			return 0;
+		for (j = 0; j < i; j += 2)		/* by last sectors, which cannot wrap */
+			if (cells[i] <= cells[j] + (cells[j + 1] - 1) && cells[j] <= cells[i] + (cells[i + 1] - 1))
+				return 0;
+	}
+	return 1;
 }
 
 /* CMD6 (SWITCH) with access "write byte" to an EXT_CSD field Linux sets at runtime. */

@@ -39,9 +39,8 @@ EXPECTED = [
     'regulator-name = "vgp1";',
     'regulator-min-microvolt = <0x2dc6c0>;',
     'regulator-max-microvolt = <0x2dc6c0>;',
-    # Storage: the eMMC (writes only inside USRDATA) and the microSD card.
+    # Storage: the eMMC (writes only inside the write windows, WINDOWS) and the microSD card.
     'max-frequency = <0x2faf080>;',
-    'innioasis,emmc-write-window = <0x267a00 0x400000>;',
     # USB peripheral, VUSB, the AUXADC and the charger (docs/planning/Y1-CHARGING-PLAN.md).
     'dr_mode = "peripheral";',
     'mediatek,eye-src = <0x04>;',
@@ -99,6 +98,13 @@ EXPECTED = [
     'regulator-name = "vcn33-bt";',
     'regulator-name = "vcn33-wifi";',
 ]
+# The eMMC write windows by image (docs/planning/Y1-RECOVERY-PLAN.md): USRDATA first, then RECOVERY and MISC for
+# BOOTIMG's system, BOOTIMG, ANDROID and MISC for the recovery.
+WINDOWS = {
+    'y1.dtb': 'innioasis,emmc-write-window = <0x267a00 0x400000 0x18c00 0x3000 0x1be00 0x400>;',
+    'y1-recovery.dtb': 'innioasis,emmc-write-window = <0x267a00 0x400000 0x15c00 0x3000 0x22a00 0x145000 0x1be00 '
+                       '0x400>;',
+}
 # LK's frame buffer is replaced by the DRM pipeline; no supply of the connectivity core is boot-on.
 FORBIDDEN = ['simple-framebuffer', 'iommus = ', 'regulator-boot-on', 'chip-id', 'innioasis,bring-up']
 # UART0, I2C0, I2C1, mmc0, mmc1, USB and its PHY, DSI, BLS and the connectivity core.
@@ -127,7 +133,7 @@ def check_dtb(root, name):
     require(len(dtb) <= DTB_LIMIT, 'DTB size')
     source = subprocess.run([str(root / 'kernel/scripts/dtc/dtc'), '-I', 'dtb', '-O', 'dts', '-q',
                              str(root / name)], capture_output=True, text=True, check=True).stdout
-    missing = [line for line in EXPECTED if line not in source]
+    missing = [line for line in EXPECTED + [WINDOWS[name]] if line not in source]
     require(not missing, 'DTB lacks: ' + '; '.join(missing))
     present = [text for text in FORBIDDEN if text in source]
     require(not present, 'DTB must not contain: ' + '; '.join(present))
@@ -165,13 +171,15 @@ def main():
     image, result = boot_image(kernel, ramdisk)
     result.update({'zimage_bytes': len(zimage), 'dtb_bytes': len(dtb),
                    'zimage_dtb_sha256': hashlib.sha256(kernel).hexdigest()})
-    # RECOVERY (docs/planning/Y1-RECOVERY-PLAN.md): the same kernel; its tree differs only in y2.recovery=1.
+    # RECOVERY (docs/planning/Y1-RECOVERY-PLAN.md): the same kernel; its tree differs only in y2.recovery=1 and
+    # the write windows.
     recovery_dtb = (root / 'y1-recovery.dtb').read_bytes()
     recovery_source = check_dtb(root, 'y1-recovery.dtb')
     bootargs = [line for line in source.splitlines() if line.strip().startswith('bootargs = ')]
     require(len(bootargs) == 1 and bootargs[0].endswith('";'), 'one bootargs line')
-    require(recovery_source == source.replace(bootargs[0], bootargs[0][:-2] + ' y2.recovery=1";'),
-            'the recovery tree differs only in y2.recovery=1')
+    expected = source.replace(bootargs[0], bootargs[0][:-2] + ' y2.recovery=1";')
+    expected = expected.replace(WINDOWS['y1.dtb'], WINDOWS['y1-recovery.dtb'])
+    require(recovery_source == expected, 'the recovery tree differs only in y2.recovery=1 and the write windows')
     recovery_kernel = payload(zimage, recovery_dtb)
     recovery_image, recovery = boot_image(recovery_kernel, ramdisk, recovery=True)
     recovery.update({'dtb_bytes': len(recovery_dtb),
