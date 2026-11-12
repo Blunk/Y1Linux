@@ -76,6 +76,37 @@ int main(void){
         self.assertIn('struct y2_vdec_h264_ref ref[16];', header)
         self.assertIn('__u8 scaling4[6][16], scaling8[2][64];', header)
 
+    def test_mpeg4_structure_and_the_copy_in_the_ffmpeg_patch(self):
+        import mpeg4_jobs
+        header = (PLATFORM / 'y2-vdec.h').read_text()
+        self.assertEqual(mpeg4_jobs.PICTURE.size, 184)
+        self.assertIn('__u8 intra_matrix[64], inter_matrix[64];', header)
+        patch = (ROOT / 'buildroot/patches/ffmpeg/0001-y2-vdec-h264-hwaccel.patch').read_text()
+        copy = patch[patch.index('+++ b/libavcodec/y2_vdec_uapi.h'):].split('\n')[2:]
+        self.assertEqual('\n'.join(line[1:] for line in copy if line.startswith('+')) + '\n', header)
+        # The picture comes from motion compensation, not from the deblocking post-processing stage.
+        self.assertIn('vdec_write(v, VDEC_MC(0x220), 0);', (PLATFORM / 'vdec-mpeg4.c').read_text())
+
+    def test_video_packet_headers_are_cut_from_b_pictures(self):
+        import mpeg4_jobs
+
+        def bits(text):
+            text = text.replace(' ', '')
+            text += '0' * (-len(text) % 8)
+            return bytes(int(text[n:n + 8], 2) for n in range(0, len(text), 8))
+
+        fields = dict(fcode_f=1, fcode_b=1, width=32, height=32, quant=4, header_bits=40)
+        # 17 zeros and a one, macroblock number (2 bits), quantiser, no extension.
+        packet = '0' * 17 + '1' + '10' + '00100' + '0'
+        start = '0' * 23 + '1' + '10110110' + '10101010'
+        first, second = '110010', '1011' * 9
+        unit = bits(start + first + '01' + packet + second)
+        self.assertEqual(mpeg4_jobs.strip_packets(fields, unit), bits(start + first + second))
+        # A header in the middle of a row, or with another quantiser, keeps the picture as it is.
+        for other in ('0' * 17 + '1' + '01' + '00100' + '0', '0' * 17 + '1' + '10' + '00101' + '0'):
+            unit = bits(start + first + '01' + other + second)
+            self.assertEqual(mpeg4_jobs.strip_packets(fields, unit), unit)
+
 
 if __name__ == '__main__':
     unittest.main()

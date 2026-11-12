@@ -130,10 +130,11 @@ static void y2_vdec_release_buffers(struct y2_vdec *v)
 
 static int y2_vdec_configure(struct y2_vdec *v, struct y2_vdec_config *c)
 {
-	unsigned i, tall;
+	bool mpeg4 = c->codec == Y2_VDEC_CODEC_MPEG4;
+	unsigned i, tall, vectors;
 	int ret;
 	/* The stock library's limits: 64..1920x1088 luma samples. */
-	if (c->codec != Y2_VDEC_CODEC_H264 || !c->frames || c->frames > Y2_VDEC_MAX_FRAMES ||
+	if ((c->codec != Y2_VDEC_CODEC_H264 && !mpeg4) || !c->frames || c->frames > Y2_VDEC_MAX_FRAMES ||
 	    (c->width | c->height) & 15 || c->width < 64 || c->height < 64 || c->width > 1920 ||
 	    c->height > 1920 || c->width * c->height > 1920 * 1088)
 		return -EINVAL;
@@ -148,14 +149,16 @@ static int y2_vdec_configure(struct y2_vdec *v, struct y2_vdec_config *c)
 	c->c_size = ALIGN(c->y_size / 2, 512);
 	c->bitstream_size = VDEC_BITSTREAM_SIZE;
 	c->reserved = 0;
+	vectors = v->mbs_w * (tall / 16) * 64;
 	ret = y2_vdec_buf_alloc(v, &v->bits, VDEC_BITSTREAM_SIZE);
-	if (!ret) ret = y2_vdec_buf_alloc(v, &v->work, VDEC_WORK_SIZE);
+	if (!ret) ret = y2_vdec_buf_alloc(v, &v->work, mpeg4 ? VDEC_MPEG4_WORK_SIZE : VDEC_WORK_SIZE);
 	if (!ret) ret = y2_vdec_buf_alloc(v, &v->work_a, VDEC_WORK_A_SIZE);
 	if (!ret) ret = y2_vdec_buf_alloc(v, &v->work_b, VDEC_WORK_B_SIZE);
 	for (i = 0; !ret && i < c->frames; i++) {
 		ret = y2_vdec_buf_alloc(v, &v->frame[i], c->y_size + c->c_size);
-		if (!ret) ret = y2_vdec_buf_alloc(v, &v->mv[i], v->mbs_w * (tall / 16) * 64);
+		if (!ret && (!mpeg4 || i < 2)) ret = y2_vdec_buf_alloc(v, &v->mv[i], vectors);
 	}
+	if (!ret && mpeg4 && c->frames < 2) ret = y2_vdec_buf_alloc(v, &v->mv[1], vectors);
 	if (ret) {
 		y2_vdec_release_buffers(v);
 		return ret;
@@ -164,42 +167,77 @@ static int y2_vdec_configure(struct y2_vdec *v, struct y2_vdec_config *c)
 	return 0;
 }
 
-static int y2_vdec_h264(struct y2_vdec *v, struct y2_vdec_h264 *p)
+/* Before a picture: power, and what the caller wrote, with `tail` and zeros behind it, goes out to
+ * memory. The frame needs nothing: nobody can write its mapping, so no cached line of it is waiting
+ * to land on the picture. */
+static int y2_vdec_begin(struct y2_vdec *v, u32 size, const u8 *tail, unsigned tail_size,
+			 unsigned reach)
 {
-	struct y2_vdec_buf *frame;
 	int ret;
-	if (!v->cfg.frames || p->frame >= v->cfg.frames) return -EINVAL;
-	if (p->size > v->bits.size - VDEC_BITSTREAM_TAIL) return -EINVAL;
+	if (!v->cfg.frames || size > v->bits.size - reach) return -EINVAL;
 	cancel_delayed_work(&v->idle);
 	ret = y2_vdec_power_on(v);
 	if (ret) return ret;
-	frame = &v->frame[p->frame];
-	/* The picture ends with a start code; the hardware is told about 0x100 bytes more. */
-	memset(v->bits.va + p->size, 0, VDEC_BITSTREAM_TAIL);
-	((u8 *)v->bits.va)[p->size + 3] = 1;
-	/* What the caller wrote goes out to memory. The frame needs nothing before: nobody can write
-	 * its mapping, so no cached line of it is waiting to land on the picture. */
-	dma_sync_single_for_device(v->dev, v->bits.dma, PAGE_ALIGN(p->size + VDEC_BITSTREAM_TAIL),
-				   DMA_TO_DEVICE);
+	memset(v->bits.va + size, 0, reach);
+	memcpy(v->bits.va + size, tail, tail_size);
+	dma_sync_single_for_device(v->dev, v->bits.dma, PAGE_ALIGN(size + reach), DMA_TO_DEVICE);
 	reinit_completion(&v->done);
-	ret = y2_vdec_h264_start(v, p);
-	if (!ret && !wait_for_completion_timeout(&v->done, msecs_to_jiffies(VDEC_PICTURE_MS))) {
-		v->timeouts++;
-		ret = -ETIMEDOUT;
-	}
-	y2_vdec_h264_result(v, p);
-	dma_sync_single_for_cpu(v->dev, frame->dma, frame->size, DMA_FROM_DEVICE);
+	return 0;
+}
+
+/* After the start: wait for the interrupt. True when the hardware never answered. */
+static bool y2_vdec_wait(struct y2_vdec *v, int started)
+{
+	if (started || wait_for_completion_timeout(&v->done, msecs_to_jiffies(VDEC_PICTURE_MS)))
+		return false;
+	v->timeouts++;
+	return true;
+}
+
+/* A picture the hardware never finished is reported in the result, not as a failed call: the caller
+ * shows or conceals it and goes on. A dead decoder is switched off and starts from reset. */
+static void y2_vdec_end(struct y2_vdec *v, unsigned frame, bool silent, u32 *error, u32 *complete)
+{
+	dma_sync_single_for_cpu(v->dev, v->frame[frame].dma, v->frame[frame].size, DMA_FROM_DEVICE);
 	v->pictures++;
-	if (p->error || !p->complete) { v->errors++; v->last_error = p->error; }
-	schedule_delayed_work(&v->idle, msecs_to_jiffies(VDEC_IDLE_MS));
-	/* A picture the hardware never finished is reported in the result, not as a failed call:
-	 * the caller shows or conceals it and goes on. A dead decoder is a failed call. */
-	if (ret == -ETIMEDOUT) {
+	if (silent) {
 		y2_vdec_power_off(v);
-		p->complete = 0;
-		if (!p->error) p->error = ~0U;
-		return 0;
+		*complete = 0;
+		if (!*error) *error = ~0U;
 	}
+	if (*error || !*complete) { v->errors++; v->last_error = *error; }
+	schedule_delayed_work(&v->idle, msecs_to_jiffies(VDEC_IDLE_MS));
+}
+
+static int y2_vdec_h264(struct y2_vdec *v, struct y2_vdec_h264 *p)
+{
+	/* The picture ends with a start code; the hardware is told about 0x100 bytes more. */
+	static const u8 tail[4] = { 0, 0, 0, 1 };
+	bool silent;
+	int ret;
+	if (p->frame >= v->cfg.frames) return -EINVAL;
+	ret = y2_vdec_begin(v, p->size, tail, sizeof(tail), VDEC_BITSTREAM_TAIL);
+	if (ret) return ret;
+	ret = y2_vdec_h264_start(v, p);
+	silent = y2_vdec_wait(v, ret);
+	y2_vdec_h264_result(v, p);
+	y2_vdec_end(v, p->frame, silent, &p->error, &p->complete);
+	return ret;
+}
+
+static int y2_vdec_mpeg4(struct y2_vdec *v, struct y2_vdec_mpeg4 *p)
+{
+	/* The stock library ends the picture with three VOP start codes. */
+	static const u8 tail[12] = { 0, 0, 1, 0xb6, 0, 0, 1, 0xb6, 0, 0, 1, 0xb6 };
+	bool silent;
+	int ret;
+	if (p->frame >= v->cfg.frames) return -EINVAL;
+	ret = y2_vdec_begin(v, p->size, tail, sizeof(tail), VDEC_MPEG4_TAIL);
+	if (ret) return ret;
+	ret = y2_vdec_mpeg4_start(v, p);
+	silent = y2_vdec_wait(v, ret);
+	y2_vdec_mpeg4_result(v, p);
+	y2_vdec_end(v, p->frame, silent, &p->error, &p->complete);
 	return ret;
 }
 
@@ -217,13 +255,14 @@ static long y2_vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		if (!ret && copy_to_user(user, &c, sizeof(c))) ret = -EFAULT;
 		return ret;
 	}
-	if (cmd == Y2_VDEC_H264_DECODE) {
-		struct y2_vdec_h264 *p = memdup_user(user, sizeof(*p));
+	if (cmd == Y2_VDEC_H264_DECODE || cmd == Y2_VDEC_MPEG4_DECODE) {
+		size_t size = _IOC_SIZE(cmd);
+		void *p = memdup_user(user, size);
 		if (IS_ERR(p)) return PTR_ERR(p);
 		mutex_lock(&v->lock);
-		ret = y2_vdec_h264(v, p);
+		ret = cmd == Y2_VDEC_H264_DECODE ? y2_vdec_h264(v, p) : y2_vdec_mpeg4(v, p);
 		mutex_unlock(&v->lock);
-		if (!ret && copy_to_user(user, p, sizeof(*p))) ret = -EFAULT;
+		if (!ret && copy_to_user(user, p, size)) ret = -EFAULT;
 		kfree(p);
 		return ret;
 	}

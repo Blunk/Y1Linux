@@ -16,6 +16,7 @@
 
 #define Y2_VDEC_MAX_FRAMES 24
 #define Y2_VDEC_CODEC_H264 1
+#define Y2_VDEC_CODEC_MPEG4 2
 
 /* mmap offsets, in pages: the bitstream buffer (read/write) and frame `n` (read only). */
 #define Y2_VDEC_MAP_BITSTREAM 0
@@ -85,6 +86,45 @@ struct y2_vdec_h264 {
 	__u32 mb_x, mb_y;  /* macroblock the hardware stopped at */
 };
 
+#define Y2_VDEC_MPEG4_INTERLACED 0x0001
+#define Y2_VDEC_MPEG4_TOP_FIELD_FIRST 0x0002
+#define Y2_VDEC_MPEG4_ALTERNATE_SCAN 0x0004
+#define Y2_VDEC_MPEG4_QUARTER_SAMPLE 0x0008
+#define Y2_VDEC_MPEG4_MPEG_QUANT 0x0010      /* quant_type 1: `intra_matrix` and `inter_matrix` are read */
+#define Y2_VDEC_MPEG4_RESYNC_DISABLE 0x0020  /* resync_marker_disable */
+#define Y2_VDEC_MPEG4_DATA_PARTITIONED 0x0040
+#define Y2_VDEC_MPEG4_REVERSIBLE_VLC 0x0080
+#define Y2_VDEC_MPEG4_ROUNDING 0x0100        /* vop_rounding_type */
+#define Y2_VDEC_MPEG4_BACKWARD_INTRA 0x0200  /* the backward reference of this B picture is an I picture */
+
+#define Y2_VDEC_MPEG4_I 0
+#define Y2_VDEC_MPEG4_P 1
+#define Y2_VDEC_MPEG4_B 2
+
+/* One MPEG-4 Part 2 picture (Simple and Advanced Simple profile without sprites, a rectangular
+ * 4:2:0 8-bit VOP). The bitstream buffer holds the VOP from any byte up to its end, `size` bytes;
+ * the first macroblock starts `header_bits` bits into it. The caller has parsed the headers. */
+struct y2_vdec_mpeg4 {
+	__u32 size;
+	__u32 header_bits;
+	__u8 frame;              /* frame to decode into */
+	__u8 forward, backward;  /* reference frames: forward for P and B, backward for B */
+	__u8 coding_type;        /* Y2_VDEC_MPEG4_I, _P or _B */
+	__u16 flags;             /* Y2_VDEC_MPEG4_* */
+	__u16 time_increment_resolution;
+	__u16 width, height;     /* of the picture, at most the configured size */
+	__u8 quant, intra_dc_vlc_thr, fcode_forward, fcode_backward;
+	/* Ticks between the two references and from the forward reference to this B picture, counted
+	 * in frames and (interlaced) in fields. */
+	__s32 trd, trb, trd_field, trb_field;
+	__u8 intra_matrix[64], inter_matrix[64]; /* zigzag order, as in the stream */
+	/* Result. */
+	__u32 error;       /* the hardware's error word, 0 when the picture is good */
+	__u32 complete;    /* 1 when the hardware reports the whole picture */
+	__u32 mb_x, mb_y;  /* macroblock the hardware stopped at */
+};
+
 #define Y2_VDEC_CONFIGURE _IOWR('y', 1, struct y2_vdec_config)
 #define Y2_VDEC_H264_DECODE _IOWR('y', 2, struct y2_vdec_h264)
+#define Y2_VDEC_MPEG4_DECODE _IOWR('y', 3, struct y2_vdec_mpeg4)
 #endif

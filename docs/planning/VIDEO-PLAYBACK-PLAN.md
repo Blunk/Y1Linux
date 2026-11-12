@@ -6,9 +6,9 @@ Status: **owner test build 243 plays films (2026-11-12).** What works, what was 
 | Step | State |
 |---|---|
 | 0 Audit and roadmap | Done (audit entry VIDEO) |
-| 1 Decoder reverse engineering | Done for H.264 ([register read-out](../knowledge/video-decoder.md)); MPEG-4 Part 2 not read out |
+| 1 Decoder reverse engineering | Done for H.264 and MPEG-4 Part 2 ([register read-out](../knowledge/video-decoder.md)) |
 | 2 Bring-up | Done: gate B met (pictures byte-identical to FFmpeg); no M4U needed |
-| 3 Kernel driver | H.264 progressive done (`kernel/platform/vdec*.c`); MPEG-4 on the hardware, field pictures and the sleep/wake part of gate C open |
+| 3 Kernel driver | H.264 (frames, fields, MBAFF) and MPEG-4 Part 2 (progressive) done (`kernel/platform/vdec*.c`); the sleep/wake part of gate C open |
 | 4 Userspace decode | Done: FFmpeg with our hardware path and the software decoders; hardware against software compared on nine files |
 | 5 Playback engine | Done as a second reader following the sound's position (Reborn `app/reborn/src/video.rs`) |
 | 6 Renderer | Done: one picture texture; shrinking and colour on the CPU |

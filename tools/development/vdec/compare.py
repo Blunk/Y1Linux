@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare frames from `vdec-run` with FFmpeg's decoding of the same stream.
 
-    compare.py stream.h264 jobs.bin frames.raw [--save DIR]
+    compare.py stream jobs.bin frames.raw [--save DIR]
 
 The hardware's frames are 16x32 luma and 16x16 chroma blocks; they are put back into raster NV12
 and compared byte for byte with FFmpeg's pictures, matched by picture order within each IDR period.
@@ -26,6 +26,18 @@ def raster(data, width, rows, block_rows):
     return bytes(plane)
 
 
+def mpeg4_order(stream):
+    """MPEG-4 pictures in decoding order, each with its time: one period, shown by time."""
+    import mpeg4_jobs
+    parsed = mpeg4_jobs.Stream()
+    for unit in mpeg4_jobs.units(open(stream, 'rb').read()):
+        if 0x20 <= unit[3] <= 0x2f:
+            parsed.vol = mpeg4_jobs.parse_vol(unit)
+        elif unit[3] == 0xb6 and parsed.vol:
+            parsed.vop(unit)
+    return [(False, fields['time']) for fields, _ in parsed.pictures]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('stream')
@@ -40,6 +52,8 @@ def main():
         fields = PICTURE.unpack_from(jobs, at + 4)
         order.append((fields[3] == 5, min(fields[7], fields[8])))
         at += 4 + PICTURE.size + fields[0]
+    if jobs[at:at + 4] == b'PIC4':
+        order = mpeg4_order(args.stream)
     # Display position of each decoded picture: order within its IDR period.
     display, start = [0] * len(order), 0
     for n in range(len(order) + 1):

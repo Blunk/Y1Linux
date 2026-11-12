@@ -50,7 +50,7 @@ library for debugging) and a `0x07fff000`/`0x08000000` range (not needed).
 | AVC_VLD | `+0x3000` | `H264_HAL_WriteAVCVLD` |
 | AVC_MV | `+0x4000` | `H264_HAL_WriteAVCMV` |
 | PP | `+0x5000` | `H264_HAL_WritePP` |
-| (three more, mapped, MPEG-4/VP8 side) | `+0x6800`, `+0x7000`, `+0x7800` | — |
+| (three more, mapped, VP6/VP8 side) | `+0x6800`, `+0x7000`, `+0x7800` | — |
 
 This is the same block layout mainline Linux names `VDEC_SYS/MISC/LD/TOP/CM/AD/AV/PP` for the later MT8173
 decoder (`mtk_vcodec_dec`), and the interrupt acknowledge (`0xa4`, `0x11`, `0x10`) is the same too. On MT8173
@@ -218,9 +218,95 @@ the hardware path at start and decoded in software. Per-file results:
 [video-h264-conformance-245.txt](evidence/video-h264-conformance-245.txt). The High-profile part of the suite
 (`FRExt/`) has not been run.
 
+## MPEG-4 Part 2 (read out and brought up 2026-11-12)
+
+Source: `mpeg4_part2_risc_settings` (the picture), `eBufInitBS` in `libvcodec_utility.so` (the bit reader),
+`mpeg4_parse_VOL`/`mpeg4_parse_VOP` (which header field goes where), `mpeg4_dec_init` (buffers). The library
+builds a list of register operations and hands it to `eHalCmdProc`; `eVDecDrvQueryCapability(3)` returns chip
+type **6** (`VAL_CHIP_NAME_MT6582`), and the list below is that branch. The library parses VOL and VOP headers
+itself; the hardware starts at the first macroblock and reads video packet headers on its own.
+
+Working memory (stock sizes): prediction rows 0x20000 at `VLD_TOP+0x28`; a row buffer of (width in MBs) × 256
+bytes at `MC+0xa24`; the **map of macroblocks that were not coded** at `VLD+0x2d4`; a second side buffer of
+64 bytes a macroblock at `VLD+0x2d8` (never written in our runs); the reference's motion vectors, 32 bytes a
+macroblock, at `MV+0x20c` (address >> 4). The map and the vectors are written by a P picture and read by the B
+pictures after it, so they live in memory across the per-picture reset (and across our power-off).
+
+One picture:
+
+1. Reset: `VLD+0x108 = 0x101`; `MISC+0xc8 = 0xfd`; `MISC+0xcc = 0x3e5a1108`; `MISC+0xf4 = 0`; `MISC+0x84 = 1`;
+   `VLD+0x108 = 0`; `SYS+0x18 = 1`; `MISC+0xec = 1`; `MISC+0x4 = 1`.
+2. Direct mode (`MV`): `+0x2e0` = TRD | TRB << 16 (ticks between the references, and from the forward
+   reference to this picture); `+0x2e4/8/c` the same in fields, and that ± 1; `+0x2f0`…`+0x2fc` the matching
+   14-bit ratios `(TRD − TRB) << 14 / TRD | (TRB << 14 / TRD) << 16`; `+0x2d8` = quarter_sample |
+   top_field_first << 1; `+0x2dc` = sprite vector (0); `+0x20c` = vector buffer >> 4; `+0x218` bit 0 = this
+   is a B picture and its backward reference is an I picture.
+3. Motion compensation (`MC`): `+0x1fc = 1`; `+0x200` = quarter_sample; `+0x204` = vop_rounding_type;
+   `+0x208`/`+0x20c` = coded width/height (multiples of 16; the picture's own size only for old DivX builds);
+   `+0x21c = 0`; **`+0x0`/`+0x4` reference 1** luma >> 9 / chroma >> 8, **`+0x8`/`+0xc` reference 2**,
+   **`+0x9c`/`+0xa0` the B place**; `+0x24` = where to decode: 0 or 1 = that reference, 4 = the B place;
+   `+0x18` = which reference is the forward one. `+0xa2c` bit 28 = width ≤ 176; `+0x920 |= 1 << 24`;
+   `+0x980` = width in MBs; `PP+0x3c |= 1 << 28`; `+0x220 = 1` with `+0x224`/`+0x228` = the *display* frame,
+   `+0x22c` = width in MBs, `+0x700 = 0`, `+0x238 = 3`, `+0x250 = 0`, `+0x658 &= ~1`, `+0x260`/`+0x264` =
+   last MB column/row, `+0xa24` = row buffer.
+4. Quantiser matrices (quant_type 1): 16 times `VLD+0x260 = 4i` (inter: `0x40 + 4i`), `VLD+0x264` = four
+   bytes of the matrix in stream (zigzag) order, first byte highest; then `VLD+0x104 = 0x100` (inter `0x200`).
+5. Parser (`VLD`): `+0x1e8` = (old & 0xfffffefc) | 0x100, | 3 for a B picture behind an I picture (| 1 behind a
+   sprite picture); `+0x1c8 = 0x10001`; `+0x88` = top_field_first << 26 | vop_coding_type << 21 |
+   alternate_scan << 17 | fcode_forward << 12 | fcode_backward << 4; `+0x1c4` = (old & 0xf8070000) |
+   resync_marker_disable << 26 | quarter_sample << 25 | quant_type << 24 | interlaced << 22 |
+   data_partitioned << 21 | reversible_vlc << 20 (not in B) | vop_time_increment_resolution; `+0x1d8 = 0`;
+   `+0x1d4` = vop_quant | intra_dc_vlc_thr << 8; `+0x90 = +0x94 = 0x1ff`; `VLD_TOP+0x68` = last MB column |
+   last MB row << 16; `VLD_TOP+0x70` = (width + 15) | (height + 15) << 16; the buffers; then for a picture
+   wider than 176: `+0x2dc` = map bytes >> 4 | (6 × width >> 4) << 16, `VLD_TOP+0x94` = prediction rows +
+   6 × width − 16, `VLD_TOP+0x2c` bit 30 = 0, `VLD_TOP+0x40` bits 4–5 = 0, `+0x2d0` = (old & ~4) | 0x80,
+   `+0x2e0 |= 2` (narrower: `+0x2dc` high half = width >> 1, `PP+0x800 |= 0x100`, `VLD_TOP+0x2c` bit 30,
+   `VLD_TOP+0x40` = 0x20, `+0x2d0 |= 0x84`). `+0x1fc = 0x31`; `+0x2f8 &= 0xfffff7bf`; `+0x1d0 = 0x100`.
+6. Bit reader (`eBufInitBS`): read `VLD+0xf4`; `+0xb4` = start >> 6; `+0xb8` = (end >> 6) + 12; `+0xb0` =
+   start; `+0x110` = end + 0x300; `+0x108 = 0x100`, `= 0`; `+0x1d0 |= 0x100`; `+0x8c = 0x100000`; wait for
+   `+0xe8` bit 0; `+0x8c = 0x800000`; then step over the VOP header by reading `VLD + 4n` (n ≤ 24 bits a
+   read). A header longer than 512 bits is shortened by starting 64 bytes later for every 512 bits. The
+   library puts three VOP start codes behind the picture.
+7. Start: `VLD+0x1cc = 1, 0`; `+0x1d0 = 1, 0`; `+0x8c = 0x8000000`; `+0x1d0 = 0`; `VLD_TOP+0x44 = ~0`;
+   `+0x84 |= 0x600`; `+0xdc = 0x10000`; wider than 176: `PP+0x754 |= 1`, `PP+0x804 &= ~0x10`; I picture:
+   `+0x2ec &= ~3`, `+0x2f0` = (old & 0xfc00fc00) | 0x103ff; other: `+0x2ec` = (old & 0xffffffb0) | 0x45;
+   data partitioned: `+0x2ec |= 1 << 17`; **`+0x1e4 = 1`, `= 0` starts the decode.** The interrupt is the
+   same as for H.264.
+8. After: `MISC+0xc8 = 0xfd`; `MISC+0xcc = 0x3e6a1108`; `SYS+0x0 = 1`. `VLD+0x3cc` bit 8 = error (a good
+   picture reads `0x02000000`, a failed one `0x02010101`); `MC+0x28`/`+0x2c` = last macroblock;
+   `VLD+0xfc` = where the reader stopped.
+
+What we do differently, and what the hardware does (bench `vdec-lab` with `mpeg4_jobs.py`, test build 245
+kernel, pictures compared with FFmpeg):
+
+- **The stock library shows a deblocked copy.** With `MC+0x220 = 1` the post-processing stage writes a second
+  frame, and that one is filtered: 10 % of the samples differ from FFmpeg's, up to 7 levels. The stock
+  library decodes into three fixed frames and shows only the copy. With **`MC+0x220 = 0`** the frame that
+  motion compensation writes is the picture, in the same block layout as H.264, and it is what the standard
+  decodes. Our driver uses that: no copy, no extra frames, and any frame can be a reference (reference 1 =
+  forward, reference 2 = backward or the I/P picture itself, `+0x24` = 1 or 4, `+0x18` = 0).
+- **The inverse transform is the hardware's own**, as the standard allows: an I picture differs from FFmpeg's
+  in 0.7 % of the samples by one level; after 40 pictures of a GOP 1.2 % by one and a few dozen by two.
+- **The map of not-coded macroblocks** is one bit a macroblock, lowest bit first, saved by the hardware in
+  64-bit words after a P picture (`+0x2dc` low half counts them) and loaded for a B picture: a B macroblock
+  whose bit is set has no data.
+- **A video packet header in front of such a macroblock is missed** and the rest of the B picture is lost
+  (the hardware then leaves a copy of the forward reference). The stock library knows: it scans every B
+  picture of a stream with resync markers in software (`mpeg4_preparse_bitstream`) and reports the picture as
+  broken. FFmpeg's own encoder writes a packet per slice thread, so such files are common. In a B picture a
+  header at the start of a macroblock row with the picture's quantiser changes nothing (the vector predictors
+  start afresh in every row), so our FFmpeg path cuts those headers and their stuffing out of B pictures
+  before the hardware sees them (`y2_cut_packet_headers`; `mpeg4_jobs.py` does the same for the bench).
+  16 of 16 and 40 of 40 pictures of multi-slice streams are right with it.
+- Quarter sample with four vectors and MPEG quantiser matrices: right. **Interlaced streams: I and P pictures
+  right, B pictures wrong in a few field-predicted macroblocks**; cause not found, so interlaced MPEG-4 stays
+  in software. Sprites (GMC), data partitioning and short headers were not tried and stay in software.
+- A register sweep for a diff (reading every offset of the decoder blocks) hung the player until the
+  watchdog reset it. Read only what the stock library reads.
+
 ## Still open
 
-- The chip-type value on this unit (7 assumed; the 6/9/10 branches were left out and nothing missed them).
-- Damaged streams have not been tried; top/left cropping is not applied to hardware pictures.
-- Timing and power per picture size; sleep and wake with an open decoder.
-- MPEG-4 Part 2: the sequence is in `mpeg4_part2_risc_settings` and `mpeg4_hw_reg_init`; not read out yet.
+- H.264: damaged streams have not been tried; top/left cropping is not applied to hardware pictures. (The
+  chip type is 6 on this unit; the H.264 code has no branch on it that matters.)
+- MPEG-4: interlaced B pictures; data partitioning, sprites; damaged streams.
+- Power per picture size; sleep and wake with an open decoder.

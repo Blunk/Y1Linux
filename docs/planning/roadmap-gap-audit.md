@@ -9856,3 +9856,30 @@ written on the player yet; nothing has been built.
 at run time); MPEG-4 Part 2 is not read out yet. Ready for source work, host builds and read-only device work.
 Live register writes on the owner's player (plan step 2) are a separate step with the owner's go, and nothing is
 installed until the plan's gates pass. Not a release authorization; publishing stays a later owner decision.
+
+### VIDEO addendum: MPEG-4 Part 2 on the same decoder — 2026-11-12
+
+**Boundary:** a second codec on the hardware subsystem audited above; no new power domain, clock, interrupt or
+memory pool. Owner request 2026-11-12 ("do it all", after the list of optimisations).
+
+**Evidence:** owner's player, test build 245 (kernel `6.18.56-y2linux-1.0.0-beta.9.3.24`), same day. The stock
+MPEG-4 sequence (chip type 6) was read out of `libvcodecdrv.so` and `libvcodec_utility.so` and run on the player
+through the bench (`vdec-lab`, the driver's register file in userspace over debugfs): I, P and B pictures,
+quarter sample, MPEG quantiser matrices decode with the hardware's own inverse transform (one or two levels from
+FFmpeg in about 1 % of the samples). Limits found: the stock path shows a deblocked copy (we take the picture
+from motion compensation instead); B pictures of interlaced streams are wrong in some macroblocks; a video
+packet header in front of a skipped B macroblock is missed (worked around by cutting such headers out). Details:
+[video-decoder.md](../knowledge/video-decoder.md#mpeg-4-part-2-read-out-and-brought-up-2026-11-12).
+
+**One incident:** a debugging sweep that read every register offset of the decoder blocks hung the player
+until the watchdog reset it (boot reason 4). No data was written; the bench now reads only registers the stock
+library reads.
+
+| Area | State before | Now |
+| --- | --- | --- |
+| Driver | H.264 only | `Y2_VDEC_CODEC_MPEG4`, `Y2_VDEC_MPEG4_DECODE` (`kernel/platform/vdec-mpeg4.c`); side buffers sized as stock |
+| FFmpeg | hardware path `h264_y2vdec` | plus `mpeg4_y2vdec`: progressive, no sprites, no data partitioning; the rest in software |
+| Reborn | takes whatever FFmpeg offers | unchanged |
+| Device checks | — | OWED on a build with the new kernel: hardware against software on files, films in Reborn, drain |
+
+**Gate decision:** source work and an owner-only test build. Not a release authorization.

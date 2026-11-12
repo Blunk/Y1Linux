@@ -20,7 +20,8 @@ REQUIRED_DECODERS = {
     "ac3",
 }
 REQUIRED_ARTWORK = {"mjpeg", "png", "webp"}
-# Video in software (H.264 also on the hardware decoder through hwaccel h264_y2vdec) and
+# Video in software (H.264 and MPEG-4 also on the hardware decoder through the hwaccels
+# h264_y2vdec and mpeg4_y2vdec) and
 # subtitles as text. HEVC and AV1 stay out (owner decision 2026-11-11).
 REQUIRED_VIDEO = {"h264", "mpeg4", "h263", "msmpeg4v3", "vp8", "vp9"}
 REQUIRED_SUBTITLES = {"subrip", "ass", "movtext", "webvtt"}

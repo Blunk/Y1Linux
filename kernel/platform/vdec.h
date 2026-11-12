@@ -17,11 +17,14 @@
 #define VDEC_MC(r) (0x2000 + (r))
 #define VDEC_AVLD(r) (0x3000 + (r))
 #define VDEC_AMV(r) (0x4000 + (r))
+#define VDEC_PP(r) (0x5000 + (r))
 
 /* Sizes the stock library gives the hardware's working memory. */
 #define VDEC_BITSTREAM_SIZE (2U << 20)
 #define VDEC_BITSTREAM_TAIL 0x104U /* terminator and the read-ahead the hardware is told about */
+#define VDEC_MPEG4_TAIL 0x400U     /* three start codes and the read-ahead of the MPEG-4 reader */
 #define VDEC_WORK_SIZE 0x8000U
+#define VDEC_MPEG4_WORK_SIZE 0x20000U
 #define VDEC_WORK_A_SIZE 0x1e000U
 #define VDEC_WORK_B_SIZE 0xf000U
 
@@ -46,6 +49,8 @@ struct y2_vdec {
 	struct y2_vdec_config cfg;  /* cfg.frames == 0: not configured */
 	unsigned mbs_w, mbs_h;
 	struct y2_vdec_buf bits, work, work_a, work_b;
+	/* Motion vectors: of every frame (H.264); MPEG-4 keeps the last reference's in mv[0] and its
+	 * second side buffer in mv[1]. */
 	struct y2_vdec_buf frame[Y2_VDEC_MAX_FRAMES], mv[Y2_VDEC_MAX_FRAMES];
 	dma_addr_t last_y;          /* luma of the picture decoded before this one */
 	/* Counters for sysfs and error reports. */
@@ -74,4 +79,6 @@ static inline void vdec_set(struct y2_vdec *v, unsigned reg, u32 bits)
 int y2_vdec_h264_start(struct y2_vdec *v, const struct y2_vdec_h264 *p);
 /* Read the result of the picture into `p`. */
 void y2_vdec_h264_result(struct y2_vdec *v, struct y2_vdec_h264 *p);
+int y2_vdec_mpeg4_start(struct y2_vdec *v, const struct y2_vdec_mpeg4 *p);
+void y2_vdec_mpeg4_result(struct y2_vdec *v, struct y2_vdec_mpeg4 *p);
 #endif

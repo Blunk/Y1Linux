@@ -27,6 +27,7 @@ struct delayed_work { int unused; };
 #define __iomem
 #define BIT(n) (1U << (n))
 #define S32_MAX INT32_MAX
+#define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
 #define min(a, b) ({ __typeof__(a) a_ = (a); __typeof__(b) b_ = (b); a_ < b_ ? a_ : b_; })
 #define max(a, b) ({ __typeof__(a) a_ = (a); __typeof__(b) b_ = (b); a_ > b_ ? a_ : b_; })
 #define min_t(type, a, b) min((type)(a), (type)(b))
