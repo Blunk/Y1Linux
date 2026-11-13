@@ -130,6 +130,40 @@ the stock `recovery.img` to the RECOVERY row with SP Flash Tool (Download Only, 
 Updates then stop working until the Y2 recovery image is flashed again. The full way back to
 stock is in [INSTALL](INSTALL.md#going-back-to-stock).
 
+## On the Y1
+
+The Y1 port ([INSTALL](INSTALL.md)) uses the same chain: the same updater (built for the Y1's eMMC as
+`y1-update-core`), the same checks, backups, readbacks, health confirmation and way back. What differs
+([Y1 recovery plan](planning/Y1-RECOVERY-PLAN.md)):
+
+- **The door is a flag in the clock chip, not MISC.** The Y1's bootloader reads MISC but then lets its charging
+  check decide, which only ever starts the normal system, charge mode or nothing. The one thing that carries
+  "start RECOVERY" through is a recovery flag in the RTC (PDN1), which stock Android's own `reboot recovery` sets.
+  The updater sets the flag together with the MISC request and clears both together; LK clears the flag at every
+  start, so the recovery sets it again as soon as it runs, and an interrupted install comes back to the recovery.
+  MISC stays the record the normal system's rescue reads.
+- **The rescue restarts instead of switching off.** When a normal start finds an unfinished update and asks for
+  the recovery again, the Y2 switches off; the Y1 restarts, since with the flag set a plain restart starts the
+  recovery.
+- **RECOVERY is written once with mtkclient**, not SP Flash Tool, together with the first install. A Y1 that was
+  installed before (with RECOVERY left stock) gets the recovery image either the same way or with its first update,
+  which writes it like every update does.
+- **The guard** (the Y1 has no partition table Linux reads; each image's device tree lists its windows):
+
+  | Running from | May write |
+  | --- | --- |
+  | BOOTIMG (normal system) | RECOVERY, MISC, USRDATA |
+  | RECOVERY (recovery image) | BOOTIMG, ANDROID (the system), MISC, USRDATA |
+
+- **Sizes**: BOOTIMG and RECOVERY are 6 MiB each (the Y2's 16 MiB), the system goes into the 650 MiB ANDROID
+  partition. The recovery image is the normal kernel with a recovery device tree; both carry the installer.
+- **Its own releases**: the Y1 checks [Blunk/Y1Linux](https://github.com/Blunk/Y1Linux/releases), signed with the
+  Y1 release key; its packages name the player (`"device": "y1"`, `Y1Linux-M1` / `Y1Recovery-1`), and each
+  player's updater refuses the other's.
+- **Tested on the Y1** (2026-11-12): install, cancel, a failed health check with the automatic way back, and going
+  back once by hand. An install cut off by a flat battery and a frozen installer could not be caused on the Y1 (no
+  reset button, no shell while the installer runs); both are covered by the host tests and the Y2's device runs.
+
 ## For developers
 
 - Contract, journal states and failure handling: [platform OTA v2](architecture/platform-ota-v2.md).

@@ -1,9 +1,10 @@
 # Installing Y2Linux on the Innioasis Y1
 
 The Y1 port runs the Y2's userspace (Y2ROOT, the platform and Reborn) on the Y1's MT6572 with its own kernel. It
-is **in development**: there are no Y1 release images yet, so you build the three images yourself and write them
-with **mtkclient** through the MediaTek preloader. The stock Y1 has no SP Flash Tool package for Y2Linux and no
-ADB, and there are no over-the-air updates on the Y1.
+is **in development**. You build the images yourself (or take them from a
+[Y1Linux release](https://github.com/Blunk/Y1Linux/releases)) and write them **once** with **mtkclient** through
+the MediaTek preloader; the stock Y1 has no SP Flash Tool package for Y2Linux and no ADB. After that the player
+updates itself over Wi-Fi, through the Y1 recovery image in RECOVERY ([Updating](#updating)).
 
 Read the whole page once before you start. The background for each step is in the Y1 plans under
 [`docs/planning/`](planning/) (`Y1-*.md`).
@@ -58,12 +59,15 @@ match. Bluetooth works without the Y2 package; Wi-Fi needs both.
 | --- | --- | --- |
 | BOOTIMG | `BOOTIMG.img` (Y1 build) | the Y1 kernel and its init, the Y1's `/etc/y2linux` overrides |
 | ANDROID (`/system`) | `rootfs.ext4` (512 MiB of the 650 MiB partition) | Y2ROOT, the Y2's userspace, read-only |
+| RECOVERY | `RECOVERY.img` (Y1 build), once | the Y1 recovery image, which installs updates |
 | USRDATA (`/data`, 2 GiB) | `Y2DATA-y1.img` | Y2DATA: settings, library, music, SSH keys, the radio firmware |
-| Preloader, MBR/EBR1, LK, RECOVERY, NVRAM, PROTECT_F/S, SECCFG, FAT, the built-in microSD | **never written** | stock |
+| MISC | by the player itself | the update request (Android's `bootloader_message`) |
+| Preloader, MBR/EBR1, LK, NVRAM, PROTECT_F/S, SECCFG, FAT, the built-in microSD | **never written** | stock |
 
-Stock Android and its user data are erased; stock no longer starts. The Y1 kernel has an eMMC write guard: Linux
-itself can write only inside USRDATA. Music lives in `/data/music` on Y2DATA (about 1.9 GB); the stock FAT partition
-and the built-in microSD card are not used.
+Stock Android and its user data are erased; stock no longer starts. The Y1 kernel has an eMMC write guard: the
+normal system can write only USRDATA, RECOVERY and MISC; only the recovery image writes BOOTIMG and ANDROID, and
+neither writes the image it runs from ([Recovery and updates](RECOVERY-AND-UPDATES.md#on-the-y1)). Music lives in
+`/data/music` on Y2DATA (about 1.9 GB); the stock FAT partition and the built-in microSD card are not used.
 
 ## Back up first
 
@@ -73,7 +77,7 @@ calibration (NVRAM, PROTECT_F/S) and are your only way back to stock:
 ```sh
 python mtk.py printgpt
 python mtk.py rf y1-emmc-full.bin              # the whole user area, about 3.6 GB
-python mtk.py r BOOTIMG,ANDROID,USRDATA boot-stock.img,android-stock.img,usrdata-stock.img
+python mtk.py r BOOTIMG,RECOVERY,ANDROID,USRDATA boot-stock.img,recovery-stock.img,android-stock.img,usrdata-stock.img
 sha256sum *.bin *.img > SHA256SUMS
 ```
 
@@ -107,7 +111,8 @@ From the repository root on the `y1` branch:
        -- sh /project/tools/build/y1-build.sh /project/out/y1-root
    ```
 
-   Result: `out/y1-boot/BOOTIMG.img` (and the recovery image `RECOVERY.img`) with its `SHA256SUMS`.
+   Result: `out/y1-boot/BOOTIMG.img` and the recovery image `out/y1-boot/RECOVERY.img` (the same kernel, which
+   installs updates) with their `SHA256SUMS`.
 
 4. **Y2DATA** (2 GiB, with your key from step 1):
 
@@ -125,11 +130,19 @@ Connect the switched-off Y1 for each command (mtkclient waits for it), from the 
 python mtk.py w USRDATA <repo>/out/y1-data/Y2DATA-y1.img
 python mtk.py w ANDROID <repo>/out/y1-root/buildroot/images/rootfs.ext4
 python mtk.py w BOOTIMG <repo>/out/y1-boot/BOOTIMG.img
+python mtk.py w RECOVERY <repo>/out/y1-boot/RECOVERY.img
 ```
+
+From a [release](https://github.com/Blunk/Y1Linux/releases): check the files with `sha256sum -c SHA256SUMS`,
+`gunzip rootfs.ext4.gz`, and write `rootfs.ext4`, `BOOTIMG.img` and `RECOVERY.img` the same way; build only
+Y2DATA (step 4) yourself.
 
 `w` finds the partition by name and stops if it is absent. Never write PRELOADER, MBR, EBR1, UBOOT, NVRAM,
 PROTECT_F, PROTECT_S or SECCFG. To check a write, read the partition back (`python mtk.py r BOOTIMG readback.img`)
 and compare the hash over the image's length.
+
+RECOVERY is written **once**: the normal system does not need it, only updates and the way back do, and every
+update brings its own recovery image and writes it there itself.
 
 ## First start
 
@@ -184,8 +197,24 @@ Instead of the import you can stage the files on the computer and copy them with
 
 ## Updating
 
-There is no over-the-air update on the Y1. Build newer images and write **only BOOTIMG and ANDROID**. **Never write
-USRDATA again**: it would wipe your settings, library, music and the radio firmware.
+**Over Wi-Fi** (once RECOVERY holds the Y1 recovery image): the player checks
+[Blunk/Y1Linux](https://github.com/Blunk/Y1Linux/releases) once a day on Wi-Fi. Settings → System → Software Update →
+**Update Now** needs the charger or at least half a battery. The player downloads and checks the signed update,
+restarts into the recovery image, which shows *Installing Update*, backs up the running version, installs the new
+one and restarts by itself. The download is about 60 MB (minutes on the Y1's slow Wi-Fi); the install about two
+minutes. Music, settings, library, Wi-Fi networks, pairings and the radio firmware stay. If the new version does not start properly within three minutes, the next start brings the
+previous one back by itself. **Restore Previous System** (Settings → System → About, tap Version seven times, then
+Diagnostics) goes back once by hand. How it works: [Recovery and updates](RECOVERY-AND-UPDATES.md#on-the-y1).
+
+**First update on a player without the recovery image** (installed with 1.0.0-beta.9.3.24 or earlier, when RECOVERY
+stayed stock): write the release's `RECOVERY.img` once with mtkclient, and its `BOOTIMG.img` and `rootfs.ext4` as
+under [Write the images](#write-the-images), since the older system cannot update itself. Back up RECOVERY first
+(`python mtk.py r RECOVERY recovery-stock.img`) if your full backup predates this page.
+
+**By hand** works as before: write a newer release's BOOTIMG and ANDROID (and RECOVERY, if its recovery image
+changed) with mtkclient. The next update over Wi-Fi then backs up the system you wrote.
+
+**Never write USRDATA again**: it would wipe your settings, library, music and the radio firmware.
 
 ## Known issues to plan around
 
@@ -193,13 +222,22 @@ USRDATA again**: it would wipe your settings, library, music and the radio firmw
   wake it).
 - **Wi-Fi throughput is low** (1–8 Mbit/s measured, the Y2 about 45), uncalibrated defaults; still being measured.
 - **Music over USB only** into the 2 GiB data partition; the built-in microSD is not used yet.
+- **Updates: two paths are tested on the computer only.** An install cut off by a flat battery and a frozen
+  installer (the recovery restarts the player after two minutes without progress) could not be caused on a Y1, which
+  has no reset button; both resume or restore on the next start in the host tests and on the Y2. Keep the charger
+  connected during an update.
 - More, with evidence: the Y1 plans under [`docs/planning/`](planning/).
 
 ## Going back to stock
 
-Write your own backups back with mtkclient: `boot-stock.img` to BOOTIMG, `android-stock.img` to ANDROID and
-`usrdata-stock.img` to USRDATA (or BOOTIMG and ANDROID from the stock 3.0.2 `rom.zip`, `boot.img` and
-`system.img`, plus your USRDATA backup). Nothing else was written, so nothing else needs restoring. Copy your music
-to a computer first.
+Write your own backups back with mtkclient: `boot-stock.img` to BOOTIMG, `recovery-stock.img` to RECOVERY,
+`android-stock.img` to ANDROID and `usrdata-stock.img` to USRDATA (or BOOTIMG, RECOVERY and ANDROID from the stock
+3.0.2 `rom.zip`, `boot.img`, `recovery.img` and `system.img`, plus your USRDATA backup). MISC holds no request once
+an update is finished, and stock ignores it. Nothing else was written, so nothing else needs restoring. Copy your
+music to a computer first.
+
+**Only the recovery image back to stock**: write `recovery-stock.img` (or the `rom.zip`'s `recovery.img`) to
+RECOVERY. Y2Linux keeps working, but **Restore Previous System** and the automatic way back after a failed update
+need the Y1 recovery image; the next update over Wi-Fi writes it into RECOVERY again (every update carries one).
 
 **A full restore has not yet been tested by the project.**
