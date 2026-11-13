@@ -200,7 +200,7 @@ the standard bar and skins' `indicators`; `wifi_connected` needs the radio on. D
 
 Release `1.0.0-beta.9.2.10`, tag `baseline-201`, Linux `1034c242`, Reborn `530f3ae`, sequence 12600 (includes test
 build 200 = 9.2.9). Reborn only: Settings reorganised into Bluetooth, Wi-Fi, Sound, Display, Skin, Customize (Home
-Menu, Browsing, Wheel & Buttons), Library, System, with pickers and hints (`customize.rs`; map and placement rule
+Menu, Browsing, Buttons), Library, System, with pickers and hints (`customize.rs`; map and placement rule
 in Y2Reborn `docs/ui/REBORN-SETTINGS-MAP.md`; sub-pages reuse existing screens so sessions stay rollback-safe); menus
 scroll on the screen like lists (#74), Music scrolls, Cover Flow's year once (#73). User guides follow the new
 paths. Details: [Beta 9.2.10 report](validation/Y2-LINUX-1.0-BETA-9.2.10.md).

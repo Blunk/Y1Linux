@@ -13,7 +13,7 @@ document links, rather than relocating or deleting proof. See the
 [shared knowledge rules](KNOWLEDGE_BASE.md)
 and the other repository's catalog for product-wide context.
 
-Indexed pages: **352**. Explicit scope notices: **228**.
+Indexed pages: **353**. Explicit scope notices: **228**.
 
 ## Entry
 
@@ -407,6 +407,7 @@ Indexed pages: **352**. Explicit scope notices: **228**.
 | [Speaker and haptics plan](planning/SPEAKER-HAPTICS-PLAN.md) | Stock REA of the vibrator, AW87559 and CS43131 speaker route; plan and device checks |
 | [FM radio on the Y2](FM-RADIO.md) | Which players receive FM, setting it up (the firmware file again), using and hiding it, what was checked and what was not |
 | [Wi-Fi Share](WIFI-SHARE.md) | Copying music over Wi-Fi from a phone or computer through the player's own web page: how to use it, who can get in, limits |
+| [Buttons](BUTTONS.md) | Customize > Buttons: giving buttons, holds and wheel turns other commands in the menus, on Now Playing and with the screen off; layouts and why nobody gets locked out |
 | [Videos on the Y2](VIDEO.md) | Owner test builds: how to use it, what plays, what was checked on the player, what is not done |
 | [Video playback plan](planning/VIDEO-PLAYBACK-PLAN.md) | Hardware video decoder driver, software VP8/VP9, Videos in Reborn: owner decisions, steps and gates |
 | [MT6582 hardware video decoder](knowledge/video-decoder.md) | What the stock firmware does: base, interrupt, power, and the H.264 register sequence |
