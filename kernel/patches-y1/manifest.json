@@ -475,7 +475,7 @@
     },
     {
       "path": "drivers/bluetooth/y1-conn-stp.c",
-      "source": "kernel/platform/connectivity/stp.c",
+      "source": "kernel/y1/connectivity/stp.c",
       "sha256": "1ffd29ad29bfe645b3dc969e2d803ee57d76e5a1a4cd478f86b0c21b81dc13f2"
     },
     {

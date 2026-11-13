@@ -74,11 +74,12 @@ class Y1ConnectivityFacts(unittest.TestCase):
     def test_the_y2_sources_are_shared_unchanged_and_pinned(self):
         manifest = json.loads((ROOT / 'kernel/patches-y1/manifest.json').read_text())
         added = {a['path']: a['source'] for a in manifest['added'] if a['path'].startswith('drivers/bluetooth/')}
-        shared = {'btif.c', 'stp.c', 'hci.c', 'firmware.c'}
+        shared = {'btif.c', 'hci.c', 'firmware.c'}
         for name in shared:
             self.assertEqual(added['drivers/bluetooth/y1-conn-' + name], 'kernel/platform/connectivity/' + name)
         self.assertEqual(added['drivers/bluetooth/protocol.h'], 'kernel/platform/connectivity/protocol.h')
-        for own in ('core.c', 'wmt.c'):
+        # stp.c stays at the Y1's reviewed copy: the Y2's now carries FM channel code the Y1's conn.h lacks.
+        for own in ('core.c', 'wmt.c', 'stp.c'):
             self.assertEqual(added['drivers/bluetooth/y1-conn-' + own], 'kernel/y1/connectivity/' + own)
         self.assertEqual(added['drivers/bluetooth/conn.h'], 'kernel/y1/connectivity/conn.h')
         # No Y2 modem or SPM code in the Y1 driver; the Y2's Wi-Fi subtree is not copied either: the Y1 builds
