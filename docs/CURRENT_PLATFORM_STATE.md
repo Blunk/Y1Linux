@@ -620,7 +620,7 @@ one filter-graph thread, preamp over 44.1–384 kHz. On the owner's player as te
 
 Release `1.0.0-beta.8.5`, tag `baseline-93`, Linux `04e2dc8`, Reborn `b694670`, sequence 6752. Headphone output
 level (kernel `HP Output Level`, default Low = stock, written only while the amplifier is down; Master −19.5 dB),
-headphone profiles (AutoEq, 47 shipped, FFmpeg lowshelf/highshelf), DAC filter, Sound on one screen with an Output
+headphone profiles (AutoEq, 48 shipped, FFmpeg lowshelf/highshelf), DAC filter, Sound on one screen with an Output
 page. On the owner's player as test build 93. Details: [Beta 8.5 report](validation/Y2-LINUX-1.0-BETA-8.5.md),
 [Headphone output](HEADPHONE-OUTPUT.md).
 

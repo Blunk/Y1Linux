@@ -28,7 +28,7 @@ Last.fm and seventeen skins. Once it's installed, the player updates itself over
 **Sound**
 - FLAC, ALAC, MP3, AAC/M4A, Opus, Ogg Vorbis, WAV, AIFF, APE and WavPack; gapless playback and crossfade. Files in
   other formats (WMA, DSD, …) are not added; Settings → Library says how many were left out.
-- A five-band equalizer with presets, **profiles for 47 popular headphones and IEMs** (AutoEq) and your own
+- A five-band equalizer with presets, **profiles for 48 popular headphones and IEMs** (AutoEq) and your own
   AutoEq files, Normalize Volume (ReplayGain), left/right balance, three headphone levels and the DAC's filters.
 - The internal speaker plays when no headphones are plugged in; plugging them in moves the music to them.
 
