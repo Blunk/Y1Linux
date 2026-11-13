@@ -10344,3 +10344,30 @@ code exists for the Y1 yet (R3–R5); `ota` stays off for the Y1.
 
 **Readiness:** R2 is host code and tests only (the guard list, the two trees, PID1's check). No image is written to
 the Y1 in R2; the R2 build is not installed. The device step stays R4's, under its admission.
+
+## Y1 RECOVERY R6 (OTA on): closing audit — 2026-11-13
+
+**Boundary:** the Y1 recovery epic closes and the Y1 reports `ota` and `automatic_bootimg_update` enabled
+([Y1-RECOVERY-PLAN.md](Y1-RECOVERY-PLAN.md) §13): a production-scope change, since a published Y1 release will now
+be offered and installed on players over Wi-Fi.
+
+**Evidence (date, revision, origin, limits):** Y2Linux 9f78d7df (R5 PASS). On the owner's Type A Y1, stock 3.0.2
+LK: R1 (`evidence-private/2026-11-12-y1-recovery-r1/`) the PDN1 door from every start; R4/R4b
+(`evidence-private/2026-11-12-y1-recovery-r4/`, images from `6e81b162`) the probe through the recovery and back,
+the guard refusing BOOTIMG and ANDROID from the normal system, the update service's health checks OK; R5
+(`evidence-private/2026-11-12-y1-recovery-r5/`, test release 9.3.25, sequences 16001–16004, Y1 key) install,
+cancel, failed health with automatic rollback, go back once, with PID1's result read fixed (`ebb3a003`). Not
+measured on the Y1, accepted by the owner 2026-11-13: an interrupted write and a stopped installer (no reset button,
+no shell during the install); covered by the host suite (`Y1UpdateTests`) and the Y2's device runs. Not measured: a
+recovery start below LK's 3250 mV (plan §4: the flag is lost, MISC keeps the request, the rescue asks again).
+
+**Coverage:** the update chain is working narrow behaviour on one Y1 with test packages; no package from a public
+Y1 release has been installed yet. The R6 images are not built or written: R6 changes only PID1's override list
+(selftest passes) and documentation. The release procedure (plan §13) has a step that stages the signed package on
+the owner's player before it is published. Known gap kept: the root's `ota` description names the Y2's door
+(display text only).
+
+**Readiness:** the epic is done on the project's side. Publishing the first Y1 release with an update is the owner's
+step under R6's admission; until then the Y1's daily check finds no Y1 manifest at Blunk/Y1Linux and offers
+nothing. Players installed before R6 need one mtkclient write (BOOTIMG, ANDROID, RECOVERY) to reach it
+([INSTALL](../INSTALL.md#updating)).

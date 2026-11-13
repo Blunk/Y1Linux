@@ -3,7 +3,8 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2, R3 built, R4, R4b and R5 PASS on the device** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+Status: **R0 done, R1 PASS, R2, R3 built, R4, R4b and R5 PASS on the device, R6 done** (2026-11-13: `ota` on for
+the Y1, the docs and the release procedure, [§13](#13-r6--release--2026-11-13); 2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
 [R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
 [R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12),
 [R4b](#11-r4b--the-normal-systems-update-service--2026-11-12)): the RTC
@@ -15,12 +16,13 @@ service's daily check and health acknowledgement with `y1-update-core` and repor
 R4's device run passed: the probe from the normal system went through the recovery and back, the guard refused
 BOOTIMG and ANDROID from the normal system, and R4b's service runs with every health check an update needs OK.
 R5 passed ([§12](#12-r5--install-cancel-failed-health-go-back--2026-11-12)): install, cancel, failed health with
-rollback and go back, each restarting by itself. Next: R6. The
-release channel (GitHub Releases of Blunk/Y1Linux) and
-the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
-Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
-Y1"). The goal is the Y2's chain on the Y1: a Y1 recovery image in RECOVERY, written once with mtkclient, that
-installs signed updates (BOOTIMG, Y2ROOT, RECOVERY) and restores the previous version if anything fails.
+rollback and go back, each restarting by itself. R6 enabled `ota` for the Y1 and wrote the user's side
+([INSTALL](../INSTALL.md#updating), [Recovery and updates](../RECOVERY-AND-UPDATES.md#on-the-y1)); what is left is the
+owner's: building, signing and publishing the first Y1 release with an update ([§13](#13-r6--release--2026-11-13)).
+The release channel (GitHub Releases of Blunk/Y1Linux) and the Y1 release key (`y1linux-release-20261112`,
+`tools/update/trust.json`) are in place since `ea684047`. Before this plan the Y1 was installed and updated only
+with mtkclient. The goal is the Y2's chain on the Y1: a Y1 recovery image in RECOVERY, written once with mtkclient,
+that installs signed updates (BOOTIMG, Y2ROOT, RECOVERY) and restores the previous version if anything fails.
 
 This widens the Y1's write scope from USRDATA alone to BOOTIMG, ANDROID, RECOVERY and MISC. The
 [roadmap/gap audit](roadmap-gap-audit.md#y1-recovery-r2-guard-by-mode-entry-audit--2026-11-12) was repeated with
@@ -388,7 +390,7 @@ anything else, and a fixture root, is the Y2).
   longer starts or stops it, so its restart after a firmware import leaves it running.
 - **Capabilities**: `tools/build/y1_capabilities.py` (run by `y1-build.sh` from the Y2ROOT build) writes the root's
   `capabilities.json` with `ota` and `automatic_bootimg_update` disabled (reason: R5), nothing else changed; PID1
-  installs it over the root's file. R6 drops the override.
+  installs it over the root's file. R6 dropped the override ([§13](#13-r6--release--2026-11-13)).
 - **Until R5**: the Blunk/Y1Linux release 9.3.24 has no `"device": "y1"` manifest, so the Y1's daily check records a
   failed check (the core refuses the manifest) until a Y1 package is published; it offers nothing to install.
 - **Tests**: `y2p_core` (`player`, the Y1 volumes: Ready as set up; another window, another backing file, the Y2's
@@ -465,3 +467,58 @@ grants Install, Cancel and Restore only with `ota` enabled: R4b's gate works).
   `RolledBack`); the highest accepted sequence is 16004, so the next release needs a higher one (`release.py`'s
   default +100 from 16000 is 16100). The Reborn cancel message is fixed in Y2Reborn `efb1df7` (branch
   `fix-cancel-result`, for upstream), on `y1` as `29c308a`.
+
+## 13. R6 — release — 2026-11-13
+
+No image built for the player and nothing written to it. Closing audit:
+[roadmap/gap audit](roadmap-gap-audit.md#y1-recovery-r6-ota-on-closing-audit--2026-11-13).
+
+- **`ota` on**: R4b's override is gone (`tools/build/y1_capabilities.py`, its `y1-build.sh` step, the
+  `y1-production.list` entry, PID1's override entry), so the Y1 reports the root's `capabilities.json`: `ota` and
+  `automatic_bootimg_update` enabled, as R5 had them in the RAM overlay. Its descriptive fields (`installer`:
+  "Y2 recovery image … after power-off; MISC boot-recovery request") still name the Y2's door; no platform code
+  reads them. `tests/test_y1_update_service.py` checks that no override is left; PID1 builds and its selftest
+  passes (`Y1INIT SELFTEST OK`, locked build userspace).
+- **INSTALL**: RECOVERY in the backup, written once with the other images, the release files as an alternative to
+  building; *Updating* over Wi-Fi, the first update of a player installed before (RECOVERY, BOOTIMG and ANDROID once
+  with mtkclient), the update by hand, the two paths not tested on the Y1; the way back with `recovery-stock.img`,
+  and RECOVERY alone back to stock. Found while writing it: stock RECOVERY does **not** stop updates. The core
+  writes the package's recovery image whenever RECOVERY differs (`core.c`, the `Queued` request), so only Restore
+  Previous System and the rollback before the next update need it; the Y2's page says otherwise and is left as
+  upstream's.
+- **Recovery and updates**: a section *On the Y1* (the RTC door, the rescue restarting, mtkclient, the guard,
+  sizes, its own releases, what was tested).
+- **Release notes**: [draft](../release/Y1LINUX-OTA-RELEASE-NOTES.md) in the
+  [release notes format](../RELEASE-NOTES-TEMPLATE.md), with VERSION and SEQUENCE to fill in.
+
+### Making a Y1 release (the owner's step)
+
+`release.py build` makes the Y2's release (SP Flash Tool package, Y2 kernel) and `bump` writes a `Y2LINUX-` build
+ID, so a Y1 release is made by hand, as 9.3.24 was:
+
+1. **Identity**: `tools/production/release.json`: `release_version`, `build_id` `Y1LINUX-…`, `rootfs_version` one
+   up, and `update_sequence` **at least 16100**: the owner's player accepted test sequences up to 16004 in R5, and a
+   lower or equal sequence is refused. Reborn's version as `release.py bump` sets it. Commit, tag
+   `y1linux-<version>` in Y2Linux and Y2Reborn.
+2. **Build** from that commit ([INSTALL](../INSTALL.md#build-the-images) steps 2 and 3): `out/y1-root-<version>`
+   (Y2ROOT with `y1-update-core`, `versions.json`), then `out/y1-boot-<version>` from it (`BOOTIMG.img`,
+   `RECOVERY.img`).
+3. **Sign**:
+
+   ```sh
+   python3 tools/update/package.py package --device y1 \
+       --image out/y1-root-<version>/buildroot/images/rootfs.ext4 \
+       --bootimg out/y1-boot-<version>/BOOTIMG.img --recovery out/y1-boot-<version>/RECOVERY.img \
+       --versions out/y1-root-<version>/versions.json --sequence <update_sequence> --rollback-allowed \
+       --key-id y1linux-release-20261112 --private ~/.local/share/y1linux/signing/y1linux-release-20261112.key \
+       --output out/y1-ota-<version>
+   ```
+
+   `--rollback-allowed` lets Restore Previous System go back from this release, as the Y2's releases do.
+4. **Check on the player** before publishing (R5's way): copy the package to `/data/r6`, `y2-platform update stage
+   --package /data/r6`, Install Now, and see it acknowledged. That consumes the sequence on this player only.
+5. **Publish** to Blunk/Y1Linux as the **latest** release (the player reads
+   `releases/latest/download/manifest.json`): `manifest.json`, `manifest.sig`, `rootfs.ext4.gz`, `bootimg.img.gz`,
+   `recovery.img.gz` from step 3, `BOOTIMG.img` and `RECOVERY.img` from step 2 for mtkclient, `SHA256SUMS` over all
+   seven. The update's `rootfs.ext4.gz` is one gzip stream of the exact image, so it is the mtkclient download too.
+   The text: the draft with VERSION and SEQUENCE filled in.

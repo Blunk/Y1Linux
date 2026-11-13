@@ -5,8 +5,7 @@
 # profile and policy (initramfs/y1-power), USB networking and SSH (initramfs/y1-network), Reborn and its audio
 # profile for the Y1 card (initramfs/y1-reborn), MTP (initramfs/y1-mtp), Bluetooth and Wi-Fi (initramfs/
 # y1-bluetooth: S41y2-connectivity, the radio firmware set) and the service daemon in its network and update parts
-# (initramfs/y1-update: S42y2-readiness, its policy; the capabilities with OTA off, made from the Y2ROOT build by
-# tools/build/y1_capabilities.py).
+# (initramfs/y1-update: S42y2-readiness, its policy).
 # /dev/ttyS0 carries PID1's text. The authorised SSH key is the public half of out/y1-ssh/id_ed25519 (made per
 # checkout, not committed): create it with
 #   ssh-keygen -t ed25519 -N "" -C y1linux-dev -f out/y1-ssh/id_ed25519
@@ -42,7 +41,6 @@ file /y1-system/etc/y2linux/power-policy.json /project/initramfs/y1-power/etc/y2
 file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json 0644 0 0
 file /y1-system/etc/y2linux/service-policy.json /project/initramfs/y1-update/etc/y2linux/service-policy.json 0644 0 0
 file /y1-system/etc/init.d/S42y2-readiness /project/initramfs/y1-update/etc/init.d/S42y2-readiness 0755 0 0
-file /y1-system/etc/y2linux/capabilities.json /build/y1-capabilities.json 0644 0 0
 dir /y1-system/data 0755 0 0
 dir /y1-system/data/ssh 0755 0 0
 dir /y1-system/data/ssh/authorized_keys.d 0700 0 0

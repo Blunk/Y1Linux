@@ -2,15 +2,13 @@
 # Innioasis Y1 BOOTIMG (docs/knowledge/y1-hardware.md, docs/INSTALL.md). Runs inside the locked build userspace:
 #   python3 tools/build/run.py --manifest kernel/patches-y1/manifest.json --output out/<fresh-dir> \
 #       -- sh /project/tools/build/y1-build.sh /project/out/<y2root-build>
-# The Y2ROOT build's Buildroot target supplies the installer both images carry (tools/build/y1_installer.py) and
-# the capabilities the Y1 reports (tools/build/y1_capabilities.py).
+# The Y2ROOT build's Buildroot target supplies the installer both images carry (tools/build/y1_installer.py).
 # SPDX-License-Identifier: GPL-2.0-only
 set -eu
 test ! -e /build/kernel || { echo 'a fresh output directory is required' >&2; exit 1; }
 test $# = 1 && test -x "$1/buildroot/target/usr/sbin/y1-update-core" ||
     { echo 'usage: y1-build.sh /project/out/<y2root-build with y1-update-core>' >&2; exit 1; }
 (cd /project && python3 -m tools.build.y1_installer "$1/buildroot/target" /build/installer)
-(cd /project && python3 -m tools.build.y1_capabilities "$1/buildroot/target" /build/y1-capabilities.json)
 fragment=/project/kernel/config/y1-production.config
 make -C /src O=/build/kernel KCONFIG_ALLCONFIG="$fragment" allnoconfig
 python3 /project/tools/build/check_config.py /build/kernel/.config "$fragment"
@@ -34,6 +32,6 @@ python3 -m tools.build.y1_package /build
 cd /build
 cp kernel/.config kernel.config
 sha256sum BOOTIMG.img RECOVERY.img zImage-dtb zImage-recovery-dtb y1.dtb y1-recovery.dtb y1-init kernel.config \
-    installer/y1-installer.list y1-capabilities.json \
+    installer/y1-installer.list \
     > SHA256SUMS
 cat SHA256SUMS

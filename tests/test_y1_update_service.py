@@ -1,6 +1,7 @@
 """The Innioasis Y1's update service in the normal system (docs/planning/Y1-RECOVERY-PLAN.md, R4b): the Y2's
 service daemon in its network and update parts, started by the Y1's S42y2-readiness only on the Y1's own Y2DATA;
-S03y1-data records that device as the Y2's initramfs does; the capabilities report OTA off until R5."""
+S03y1-data records that device as the Y2's initramfs does. Since R6 the Y1 reports the root's capabilities, OTA
+included."""
 import json
 import os
 import re
@@ -8,8 +9,6 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-
-from tools.build import y1_capabilities
 
 ROOT = Path(__file__).resolve().parents[1]
 S42 = ROOT / 'initramfs/y1-update/etc/init.d/S42y2-readiness'
@@ -30,18 +29,13 @@ class Y1UpdateService(unittest.TestCase):
         self.assertIn('const POLICY: &str = "/etc/y2linux/service-policy.json";', daemon)
         self.assertIn('updates: schema && policy.get("updates") == Some(&Value::Bool(true)),', daemon)
 
-    def test_pid1_installs_s42_the_policy_and_the_capabilities(self):
+    def test_pid1_installs_s42_and_the_policy(self):
         for path, mode, source in [
                 ('/etc/y2linux/service-policy.json', '0644', '/project/initramfs/y1-update/etc/y2linux/service-policy.json'),
-                ('/etc/init.d/S42y2-readiness', '0755', '/project/initramfs/y1-update/etc/init.d/S42y2-readiness'),
-                ('/etc/y2linux/capabilities.json', '0644', '/build/y1-capabilities.json')]:
+                ('/etc/init.d/S42y2-readiness', '0755', '/project/initramfs/y1-update/etc/init.d/S42y2-readiness')]:
             self.assertIn(f'file /y1-system{path} {source} {mode} 0 0\n', LISTING)
             self.assertIn(f'{{ "{path}", {mode} }},', PID1)
         self.assertTrue(os.access(S42, os.X_OK))
-        build = (ROOT / 'tools/build/y1-build.sh').read_text()
-        self.assertIn('python3 -m tools.build.y1_capabilities "$1/buildroot/target" /build/y1-capabilities.json',
-                      build)
-        self.assertLess(build.index('y1_capabilities'), build.index('allnoconfig'))
 
     def test_s42_runs_after_data_power_and_wifi(self):
         listed = services()
@@ -105,26 +99,15 @@ class Y1UpdateService(unittest.TestCase):
         size = int(re.search(r'"tmpfs", MS_NOSUID \| MS_NODEV, "size=(\d+)m,mode=0755"', root)[1])
         self.assertGreaterEqual(size - 2, 96 + 16)
 
-    def test_the_capabilities_report_ota_off_and_change_nothing_else(self):
-        source = json.loads((ROOT / 'platform/capabilities.json').read_text())
-        derived = y1_capabilities.derive(source)
-        for name in y1_capabilities.OFF:
-            self.assertIs(derived['capabilities'][name]['enabled'], False)
-            self.assertIn('R5', derived['capabilities'][name]['reason'])
-            derived['capabilities'][name].update(enabled=source['capabilities'][name]['enabled'],
-                                                 reason=source['capabilities'][name]['reason'])
-        self.assertEqual(derived, source)
-        self.assertIs(source['capabilities']['ota']['enabled'], True)  # the source is left alone
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / 'target'
-            (target / 'etc/y2linux').mkdir(parents=True)
-            (target / y1_capabilities.SOURCE).write_text(json.dumps(source))
-            text = y1_capabilities.build(target, Path(tmp) / 'out.json')
-            self.assertLess(len(text.encode()), 65536)
-            del source['capabilities']['ota']
-            (target / y1_capabilities.SOURCE).write_text(json.dumps(source))
-            with self.assertRaises(ValueError):
-                y1_capabilities.build(target, Path(tmp) / 'out.json')
+    def test_the_y1_reports_the_roots_capabilities_with_ota(self):
+        # R4b reported OTA off through a PID1 override until R5's device run; R6 dropped it.
+        self.assertNotIn('capabilities.json', LISTING)
+        self.assertNotIn('"/etc/y2linux/capabilities.json"', PID1)
+        self.assertNotIn('capabilities', (ROOT / 'tools/build/y1-build.sh').read_text())
+        capabilities = json.loads((ROOT / 'platform/capabilities.json').read_text())['capabilities']
+        for name in ('ota', 'automatic_bootimg_update'):
+            self.assertIs(capabilities[name]['enabled'], True)
+        self.assertIn('Blunk/Y1Linux', capabilities['ota']['channel'])
 
 
 if __name__ == '__main__':

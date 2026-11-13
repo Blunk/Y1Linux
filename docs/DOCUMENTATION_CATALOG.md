@@ -376,7 +376,8 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Y1 boot splash plan](planning/Y1-BOOT-SPLASH-PLAN.md) | The Y2's quiet boot on the Y1: loglevel 3, PID1 text on serial, reborn-splash before the services |
 | [Y1 Bluetooth plan](planning/Y1-BLUETOOTH-PLAN.md) | Bluetooth by adapting the Y2's connectivity driver: same core, Y1 register map and firmware, staged to hci0; admission |
 | [Y1 Wi-Fi plan](planning/Y1-WIFI-PLAN.md) | Wi-Fi on the Y1, shipped disabled and without firmware: evidence, firmware source options, stages W0–W6; admission |
-| [Y1 recovery plan](planning/Y1-RECOVERY-PLAN.md) | Over-the-air updates on the Y1: a recovery image in RECOVERY, LK's door (MISC or RTC), the guard by mode, Y1 geometry in the update core; stages R0–R6; admission |
+| [Y1 recovery plan](planning/Y1-RECOVERY-PLAN.md) | Over-the-air updates on the Y1: a recovery image in RECOVERY, LK's door (the RTC PDN1 flag), the guard by mode, Y1 geometry in the update core; stages R0–R6 (done) with their device runs; how a Y1 release is built, signed and published (§13) |
+| [Y1 OTA release notes draft](release/Y1LINUX-OTA-RELEASE-NOTES.md) | The listener-facing text for the first Y1Linux release with over-the-air updates (VERSION and SEQUENCE to fill in) |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
