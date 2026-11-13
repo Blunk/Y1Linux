@@ -3,7 +3,7 @@
 > Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The design follows the
 > Y2's [recovery and updates](../RECOVERY-AND-UPDATES.md) and [platform OTA v2](../architecture/platform-ota-v2.md).
 
-Status: **R0 done, R1 PASS, R2, R3 built, R4 and R4b PASS on the device** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
+Status: **R0 done, R1 PASS, R2, R3 built, R4, R4b and R5 PASS on the device** (2026-11-12, [R0](#6-r0--lks-recovery-door--2026-11-12),
 [R1](#7-r1--the-rtc-door-on-the-y1--pass--2026-11-12), [R2](#8-r2--the-guard-by-mode--2026-11-12),
 [R3](#9-r3--the-y1s-updater-and-packages--2026-11-12), [R4](#10-r4--pid1s-recovery-and-rescue--2026-11-12),
 [R4b](#11-r4b--the-normal-systems-update-service--2026-11-12)): the RTC
@@ -14,7 +14,8 @@ it as the recovery and as the BOOTIMG rescue, host-built and selftested; the nor
 service's daily check and health acknowledgement with `y1-update-core` and reports OTA off (host code and tests).
 R4's device run passed: the probe from the normal system went through the recovery and back, the guard refused
 BOOTIMG and ANDROID from the normal system, and R4b's service runs with every health check an update needs OK.
-Next: R5. The
+R5 passed ([§12](#12-r5--install-cancel-failed-health-go-back--2026-11-12)): install, cancel, failed health with
+rollback and go back, each restarting by itself. Next: R6. The
 release channel (GitHub Releases of Blunk/Y1Linux) and
 the Y1 release key (`y1linux-release-20261112`, `tools/update/trust.json`) are in place since `ea684047`. Today the
 Y1 is installed and updated only with mtkclient ([INSTALL](../INSTALL.md): "there are no over-the-air updates on the
@@ -455,5 +456,12 @@ grants Install, Cancel and Restore only with `ota` enabled: R4b's gate works).
   rolled_back`) and restarted by itself; `update` health DEGRADED with the restore's reason.
 - **Go back once (16004, rollback allowed)**: installed and acknowledged; Service → Diagnostics → Restore Previous
   System restored 16002 (`RolledBack`, `current_sequence` 16002, highest 16004: 16004 cannot be replayed).
-- **Not run**: an interrupted write and a stopped installer. Holding the centre button does not reset the player
-  in the recovery, and PID1 serves no shell while the installer runs, so neither can be caused from outside.
+- **Not run, accepted by the owner (2026-11-13)**: an interrupted write and a stopped installer. Holding the
+  centre button does not reset the player in the recovery, and PID1 serves no shell while the installer runs, so
+  neither can be caused from outside. Both paths are the host suite's (`Y1UpdateTests`: interrupted installs, the
+  flag re-armed, a lost flag with MISC kept) and the Y2's device runs.
+- **Cleaned up (2026-11-13)**: the four signed test packages deleted from `out/`, from `/data/r5` and the core's
+  kept copy of 16004 (`/data/updates/current`) on the player. The player stays on the test release (16002,
+  `RolledBack`); the highest accepted sequence is 16004, so the next release needs a higher one (`release.py`'s
+  default +100 from 16000 is 16100). The Reborn cancel message is fixed in Y2Reborn `efb1df7` (branch
+  `fix-cancel-result`, for upstream), on `y1` as `29c308a`.
