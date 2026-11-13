@@ -1,7 +1,9 @@
 # Buttons: give every button the job you want
 
-Status: **built for Beta 9.3.29, in an owner test build; not released yet.** Tried with the preview and the
-host tests; the player test is owed.
+Status: **built for Beta 9.3.29, in owner test builds 257 and 258; not released yet.** Tried on one player with
+its real buttons: changing a button, Save, Keep and the automatic undo, a changed button in the menus and with
+the screen off, the Quick Menu tile. Holds of the front buttons and the start-up escape were tested on the computer
+only.
 
 **Settings → Customize → Buttons** decides what every button, every hold and every turn of the wheel does. The
 buttons answer in three places, each with its own page:
@@ -32,8 +34,8 @@ wheel is the volume, the centre plays and pauses, the side buttons skip).
 
 - **Power is never changed.** A short press sleeps and wakes the player; holding it opens the Quick Menu. Holding
   it for about ten seconds restarts the player, whatever the software does.
-- **The Quick Menu** (hold Power) always uses the normal buttons, and while another layout is in use it has
-  **Reborn Default Buttons**: one Select and the buttons are as they came.
+- **The Quick Menu** (hold Power) always uses the normal buttons, and while another layout is in use it has a
+  **Buttons** tile (**Use Default**): one Select and the buttons are as they came.
 - **The Buttons pages** always use the normal buttons too, so the place to fix a layout always works.
 - **A layout that would trap you is not saved**: the menus must still be able to select, go back and scroll both
   ways, and Now Playing must have a way out. The player also walks through its menus with the new layout before
