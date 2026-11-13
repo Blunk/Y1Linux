@@ -1,9 +1,8 @@
 # Buttons: give every button the job you want
 
-Status: **built for Beta 9.3.29, in owner test builds 257 and 258; not released yet.** Tried on one player with
-its real buttons: changing a button, Save, Keep and the automatic undo, a changed button in the menus and with
-the screen off, the Quick Menu tile. Holds of the front buttons and the start-up escape were tested on the computer
-only.
+Status: **new in Beta 9.3.29 (13 November 2026).** Tried on one player with its real buttons: changing a
+button, Save, Keep and the automatic undo, a changed button in the menus and with the screen off, the Quick Menu
+tile. Holds of the front buttons and the start-up escape were tested on the computer only.
 
 **Settings → Customize → Buttons** decides what every button, every hold and every turn of the wheel does. The
 buttons answer in three places, each with its own page:
