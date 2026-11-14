@@ -1,7 +1,8 @@
 #!/bin/sh
 # Innioasis Y1: music transfer over MTP (docs/planning/Y1-MTP-PLAN.md, stage M2), with the Y2's patched umtprd but
 # not the Y2's service daemon (which also mounts cards read-write, checks updates and writes RECOVERY/MISC). One
-# storage, "Music" = /data/music on Y2DATA, read-write; nothing else is exposed. PID1 built the configfs gadget
+# storage, read-write, nothing else exposed: "Internal Storage" = /media/internal/music on the built-in card once
+# S03y1-media recorded it Ready, else "Music" = /data/music on Y2DATA. PID1 built the configfs gadget
 # (ECM + ACM); here MTP joins as the first function and the gadget is bound again. umtprd runs as the child of a
 # small supervisor (it refuses PID 1 as its parent), at most five starts. Its events become the receipt
 # /run/y2/usb-transfer.json that tells Reborn to rescan after a copy. Only with the real Y2DATA mounted.
@@ -9,6 +10,8 @@ G=/sys/kernel/config/usb_gadget/y1
 RUN=/run/y1-mtp
 CONF=$RUN/umtprd.conf
 OFFSET=1291059200
+MUSIC=/data/music
+NAME=Music
 
 log() { echo "y1-mtp: $*" > /dev/kmsg; }
 
@@ -19,6 +22,15 @@ real_data() {
 }
 
 udc() { ls /sys/class/udc | head -1; }
+
+# The card's music folder when S03y1-media mounted it this boot (its record names this very mount).
+choose_storage() {
+	set -- $(awk '$5 == "/media/internal" { print $1, $3 }' /proc/self/mountinfo)
+	[ $# = 2 ] && grep -q "\"state\":\"Ready\".*\"mount_id\":$1,\"device_id\":\"$2\"" /run/y2/internal-media.json 2>/dev/null &&
+		grep -q "\"boot_id\":\"$(cat /proc/sys/kernel/random/boot_id)\"" /run/y2/internal-media.json &&
+		[ -d /media/internal/music ] && { MUSIC=/media/internal/music; NAME="Internal Storage"; }
+	true
+}
 
 link_functions() {
 	rm -f "$G/configs/c.1/ffs.mtp" "$G/configs/c.1/ecm.usb0" "$G/configs/c.1/acm.GS0"
@@ -50,7 +62,7 @@ read_buffer_cache_size 0x100000
 sync_when_close 0
 no_inotify 1
 umask 077
-storage "/data/music" "Music" "rw,notmounted"
+storage "$MUSIC" "$NAME" "rw,notmounted"
 CONF
 }
 
@@ -65,7 +77,7 @@ supervise() {
 }
 
 # The receipt Reborn reads (org.y2linux.usb-transfer/v1): a rescan whenever umtprd's generation of durable changes
-# moves on, or the computer lets go. Then also a radio firmware copy in Music/Firmware is judged
+# moves on, or the computer lets go. Then also a radio firmware copy in the storage's Firmware folder is judged
 # (S41y2-connectivity; docs/planning/Y1-WIFI-PLAN.md, W6: the Y2 package's system.img for Wi-Fi).
 receipts() {
 	boot=$(cat /proc/sys/kernel/random/boot_id)
@@ -82,7 +94,7 @@ receipts() {
 		last_cable=$cable
 		if [ "$refresh" != "$judged" ]; then
 			judged=$refresh
-			[ -f /data/music/Firmware/system.img ] && /etc/init.d/S41y2-connectivity firmware
+			[ -f "$MUSIC/Firmware/system.img" ] && /etc/init.d/S41y2-connectivity firmware
 		fi
 		state=Ready
 		[ "$active" = true ] && state=Copying
@@ -97,7 +109,8 @@ receipts() {
 
 start() {
 	real_data || { log "no Y2DATA at /data, MTP not started"; return 1; }
-	mkdir -p -m 0700 "$RUN" /data/music
+	choose_storage
+	mkdir -p -m 0700 "$RUN" "$MUSIC"
 	mkdir -p -m 0700 /run/y2
 	rm -f "$RUN/stop"
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
@@ -118,14 +131,14 @@ start() {
 	done
 	[ -e /dev/ffs-mtp/ep3 ] || log "umtprd's endpoints did not appear"
 	echo "$controller" > "$G/UDC" || { log "bind to $controller failed"; return 1; }
-	/usr/sbin/umtprd -cmd:mount:Music > /dev/null 2>&1
+	/usr/sbin/umtprd "-cmd:mount:$NAME" > /dev/null 2>&1
 	i=0
-	while [ $i -lt 30 ] && ! grep -q '"/data/music"' /run/y2/mtp-roots.json 2>/dev/null; do
+	while [ $i -lt 30 ] && ! grep -q "\"$MUSIC\"" /run/y2/mtp-roots.json 2>/dev/null; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	grep -q '"/data/music"' /run/y2/mtp-roots.json 2>/dev/null && log "MTP on $controller: Music = /data/music" ||
-		log "Music not pinned by umtprd"
+	grep -q "\"$MUSIC\"" /run/y2/mtp-roots.json 2>/dev/null && log "MTP on $controller: $NAME = $MUSIC" ||
+		log "$NAME not pinned by umtprd"
 	receipts &
 	echo $! > "$RUN/receipts.pid"
 }

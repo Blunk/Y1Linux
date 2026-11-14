@@ -2,7 +2,7 @@
 //! read them (`transfer.data_volume`): root, Y2DATA, the SD card and Y2Media, in that consumer order,
 //! each checked for its controller and filesystem UUID with the same `blkid` request. On the Innioasis
 //! Y1 the root and Y2DATA are loop devices over its eMMC instead (docs/planning/Y1-RECOVERY-PLAN.md,
-//! R4b). The SD card's
+//! R4b), and Y2Media's place is taken by its built-in microSD. The SD card's
 //! own claim and protected read-only mounts (`media-mount.json`) belong to the storage group's
 //! observation; nothing here reads them.
 // SPDX-License-Identifier: GPL-2.0-only
@@ -25,6 +25,9 @@ pub const Y2MEDIA_START: &str = "3742720";
 pub const Y2MEDIA_SIZE: &str = "11460608";
 /// The Y1's eMMC controller (MSDC0 of the MT6572).
 pub const Y1_EMMC_CONTROLLER: &str = "11120000.mmc";
+/// The Y1's built-in microSD (MSDC1 of the MT6572): inside the case, so its Internal Storage at
+/// /media/internal (initramfs/y1-data/etc/init.d/S03y1-media), never an SD card.
+pub const Y1_CARD_CONTROLLER: &str = "11130000.mmc";
 /// The Y1's Y2DATA (tools/build/y1_data.py); its root is the same Y2ROOT image as the Y2's.
 pub const Y1_DATA_UUID: &str = "79314c69-6e75-4801-8000-000000000102";
 /// Linux sees the Y1's eMMC without partitions: PID1 puts ANDROID (read-only, the root) and USRDATA
@@ -41,6 +44,8 @@ pub fn expected_uuid(player: Player, target: &str) -> Option<&'static str> {
         (_, "/") => Some(ROOT_UUID),
         (Player::Y2, "/data") => Some(DATA_UUID),
         (Player::Y1, "/data") => Some(Y1_DATA_UUID),
+        // The owner's FAT: its volume serial is whatever the card was formatted with.
+        (Player::Y1, "/media/internal") => None,
         (_, "/media/internal") => Some(Y2MEDIA_UUID),
         _ => None,
     }
@@ -101,6 +106,9 @@ pub fn identity_source(root: &Root, player: Player, target: &str, mount: &Mount)
                     Some((_, offset, size)) if player == Player::Y1 => {
                         y1_loop(root, &device, offset, size)
                     }
+                    None if player == Player::Y1 && target == "/media/internal" => resolve(&device)
+                        .to_string_lossy()
+                        .contains(Y1_CARD_CONTROLLER),
                     _ => resolve(&device)
                         .to_string_lossy()
                         .contains(controller(target)),
@@ -356,7 +364,8 @@ mod tests {
     /// The Y1 (docs/planning/Y1-RECOVERY-PLAN.md, R4b), as its mountinfo read on the device:
     /// the root an overlay over PID1's read-only loop of ANDROID, Y2DATA its loop over USRDATA.
     /// Both are Ready; another window, a writable or second root loop, another backing device,
-    /// the Y2's Y2DATA UUID or another player are not.
+    /// the Y2's Y2DATA UUID or another player are not. The built-in card at /media/internal is
+    /// Ready with its own FAT serial, but only on its controller and only on the Y1.
     #[test]
     fn the_y1_volumes_are_loops_over_their_windows() {
         use crate::command::Outcome;
@@ -377,7 +386,8 @@ mod tests {
             "proc/self/mountinfo",
             "26 1 0:19 / / rw,relatime - overlay overlay rw,lowerdir=/mnt/image,\
              upperdir=/mnt/upper/u,workdir=/mnt/upper/w,uuid=null\n\
-             35 26 7:0 / /data rw,nosuid,nodev,noatime - ext4 /dev/loop0 rw\n",
+             35 26 7:0 / /data rw,nosuid,nodev,noatime - ext4 /dev/loop0 rw\n\
+             36 26 179:1 / /media/internal rw,noatime - vfat /dev/mmcblk1p1 rw\n",
         );
         let windows = [
             ("loop0", "1291059200", "2147483648", "0"),
@@ -400,6 +410,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("sys").join(emmc)).unwrap();
         symlink(format!("../{emmc}"), dir.join("sys/block/mmcblk0")).unwrap();
         std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::create_dir_all(dir.join("media/internal")).unwrap();
         let blkid = |device: &str, uuid: &str| {
             (
                 ["blkid", "-p", "-s", "UUID", "-o", "value", device]
@@ -412,6 +423,28 @@ mod tests {
                 },
             )
         };
+        let card = |controller: &str| {
+            let _ = std::fs::remove_file(dir.join("sys/dev/block/179:1"));
+            let partition = format!(
+                "devices/platform/{controller}/mmc_host/mmc1/mmc1:aaaa/block/mmcblk1/mmcblk1p1"
+            );
+            std::fs::create_dir_all(dir.join("sys").join(&partition)).unwrap();
+            symlink(
+                format!("../../{partition}"),
+                dir.join("sys/dev/block/179:1"),
+            )
+            .unwrap();
+        };
+        let internal = || {
+            let root = Root::fixture(&dir).with_answers(vec![blkid("/dev/mmcblk1p1", "0CDF-1366")]);
+            let v = volume(&root, "/media/internal");
+            (v.state, v.uuid)
+        };
+        card(Y1_CARD_CONTROLLER);
+        assert_eq!(internal(), (VolumeState::Ready, Some("0CDF-1366".into())));
+        card(EMMC_CONTROLLER);
+        assert_eq!(internal().0, VolumeState::Failed);
+        card(Y1_CARD_CONTROLLER);
         let probe = |data_uuid: &str| {
             let root = Root::fixture(&dir).with_answers(vec![
                 blkid("/dev/loop1", ROOT_UUID),
@@ -448,6 +481,7 @@ mod tests {
             "innioasis,y2\0mediatek,mt6582\0",
         );
         assert_eq!(probe(DATA_UUID), (VolumeState::Failed, VolumeState::Failed));
+        assert_eq!(internal().0, VolumeState::Failed);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -22,8 +22,11 @@ RECORD=/data/connectivity/bt-record
 WRECORD=/data/connectivity/wifi-record
 FIRMWARE=/data/firmware/mt6572
 WAIT=/run/y2/radio-firmware-wait.pid
-# radio-firmware.json's inbox: the Music storage, the Y1's one MTP storage.
+# The Firmware folder of the Y1's one MTP storage: Internal Storage on the built-in card once S03y1-media recorded it
+# Ready (the platform looks there too), else radio-firmware.json's inbox in the Music storage on Y2DATA.
 INBOX=/data/music/Firmware
+grep -q '"state":"Ready"' /run/y2/internal-media.json 2>/dev/null && [ -d /media/internal/music ] &&
+	INBOX=/media/internal/music/Firmware
 
 layout() {
 	umask 077

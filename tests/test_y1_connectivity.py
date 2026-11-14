@@ -1034,8 +1034,11 @@ class Y1WifiW6(unittest.TestCase):
     def test_the_inbox_is_the_configured_one_and_mtp_judges_a_finished_copy(self):
         config = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json').read_text())
         self.assertIn(f"INBOX={config['inbox']}\n", self.SCRIPT)
+        # With the built-in card as Internal Storage (S03y1-media) the inbox is its Firmware folder, the one MTP shows.
+        self.assertIn('\tINBOX=/media/internal/music/Firmware\n', self.SCRIPT)
         mtp = (ROOT / 'initramfs/y1-mtp/etc/init.d/S45y1-mtp').read_text()
-        self.assertIn(f"[ -f {config['inbox']}/system.img ] && /etc/init.d/S41y2-connectivity firmware", mtp)
+        self.assertIn(f"MUSIC={config['inbox'].removesuffix('/Firmware')}\n", mtp)
+        self.assertIn('[ -f "$MUSIC/Firmware/system.img" ] && /etc/init.d/S41y2-connectivity firmware', mtp)
         self.assertIn(' firmware) firmware;;', self.SCRIPT)
 
     def test_the_service_daemon_is_left_to_s42(self):

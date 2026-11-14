@@ -1,7 +1,8 @@
 # Innioasis Y1 initramfs (usr/gen_init_cpio list, built into the kernel by kernel/config/y1-production.config):
 # PID1 (y1-init) and the Y1 overrides PID1 installs over the Y2 root (/y1-system): the system's inittab, rcS/rcK
 # and syslogd defaults (initramfs/y1-system), reborn-boot-services starting reborn-splash (initramfs/y1-splash),
-# and each service with its list entry: Y2DATA at /data (initramfs/y1-data), the power daemon with the Y1 battery
+# and each service with its list entry: Y2DATA at /data and the built-in card as Internal
+# Storage at /media/internal (initramfs/y1-data), the power daemon with the Y1 battery
 # profile and policy (initramfs/y1-power), USB networking and SSH (initramfs/y1-network), Reborn and its audio
 # profile for the Y1 card (initramfs/y1-reborn), MTP (initramfs/y1-mtp), Bluetooth and Wi-Fi (initramfs/
 # y1-bluetooth: S41y2-connectivity, the radio firmware set) and the service daemon in its network and update parts
@@ -36,6 +37,7 @@ file /y1-system/etc/init.d/S90y1-reborn /project/initramfs/y1-reborn/etc/init.d/
 dir /y1-system/etc/y2linux 0755 0 0
 file /y1-system/etc/y2linux/audio-enabled.json /project/initramfs/y1-reborn/etc/y2linux/audio-enabled.json 0644 0 0
 file /y1-system/etc/init.d/S03y1-data /project/initramfs/y1-data/etc/init.d/S03y1-data 0755 0 0
+file /y1-system/etc/init.d/S03y1-media /project/initramfs/y1-data/etc/init.d/S03y1-media 0755 0 0
 file /y1-system/etc/y2linux/battery-profile.json /project/initramfs/y1-power/etc/y2linux/battery-profile.json 0644 0 0
 file /y1-system/etc/y2linux/power-policy.json /project/initramfs/y1-power/etc/y2linux/power-policy.json 0644 0 0
 file /y1-system/etc/y2linux/radio-firmware.json /project/initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json 0644 0 0

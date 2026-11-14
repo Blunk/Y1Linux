@@ -4,7 +4,8 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **B0 done, B1 PASS, B2 PASS** (2026-11-05, owner-approved; [B2 run](#9-b2-run--pass--2026-11-05)); B3 (music) next. The owner chose milestone B after D2. Today `/data` is a 64 MiB
+Status: **B0 done, B1 PASS, B2 PASS** (2026-11-05, owner-approved; [B2 run](#9-b2-run--pass--2026-11-05)); B3 (music) next.
+**B4** (the built-in card as Internal Storage, 2026-11-14): built, not yet run on the player ([§10](#10-b4--the-built-in-card-as-internal-storage--2026-11-14)). The owner chose milestone B after D2. Today `/data` is a 64 MiB
 ext4 image in RAM (`S90y1-reborn data`, run early by `S03y1-data`): Reborn's settings and library, the power
 daemon's journals and the SSH host keys are lost at every boot, and there is nowhere to keep music. Each stage
 has its own admission; B1 is the only destructive write.
@@ -34,7 +35,8 @@ Offline (agent notes `out/y1-data-notes.md`; read-only reads of the private back
   read-only (`BLKROSET`). A writable USRDATA loop needs `mmcblk0` writable, which a loop's size limit does not
   bound for other writers.
 - **`mmcblk1`** is a built-in 116 GiB FAT32 card with the owner's files (stock's music storage). Reborn's
-  `/media/sd` is tied to the Y2's controllers; mounting the card read-only under `/data/music` is a later option.
+  `/media/sd` is tied to the Y2's controllers. The card sits inside the case, so the owner cannot swap it: since B4
+  it is the Y1's **Internal Storage** at `/media/internal` (read-write), never an SD card ([§10](#10-b4--the-built-in-card-as-internal-storage--2026-11-14)).
 - `S02y2-media` (can format the stock FAT) and `S42y2-readiness` (MTP, raw MISC write) stay off.
 
 ## 2. Design
@@ -63,6 +65,7 @@ Offline (agent notes `out/y1-data-notes.md`; read-only reads of the private back
 | **B1** | Flash the seed image to USRDATA with mtkclient; read back; digests of the neighbouring partitions before and after | USRDATA only, exactly `0x80000000` bytes at scatter `0x4d540000` |
 | **B2** | New BOOTIMG: the guard, the PID1 mount, the data script. Tests: a file and the SSH host key survive a reboot; `e2fsck -p` returns 0/1 after a pulled cable on battery; a raw write outside USRDATA is refused | the Y2DATA filesystem through the loop |
 | **B3** | Music over `scp`/`sftp`, Reborn scans and plays it after a reboot | files in `/data/music` |
+| **B4** | The built-in card as Internal Storage: `S03y1-media` mounts it at `/media/internal`, Reborn and MTP use `/media/internal/music` | the owner's FAT on `mmcblk1` (files only, never formatted) |
 
 ## 4. Risks
 
@@ -80,6 +83,7 @@ preloader and mtkclient are untouched; USRDATA can be written back from the back
 | B1 | **Write USRDATA** | the seed image, by the owner with mtkclient, USRDATA only, read-back checked |
 | B2 | **Mount Y2DATA** | the loop over USRDATA only, behind a kernel guard refusing every other eMMC write; no mkfs on the device |
 | B3 | **Copy music** | files into `/data/music` over the USB network |
+| B4 | **Card read-write** | `mmcblk1` and its FAT partition only, mounted `vfat` with `errors=remount-ro`; the eMMC stays behind its guard; no mkfs, no fsck repair |
 
 ## 6. B0 — 2026-11-05
 
@@ -147,3 +151,30 @@ read-only loop: `LABEL="Y2DATA" UUID="79314c69-…0102" TYPE="ext4"`, `e2fsck -n
   through the power daemon: SSH with strict host-key checking connected without a change, the marker from the
   previous boot was there, `e2fsck` found the filesystem clean (34 files): the shutdown unmounted it.
 - Not run: a hard reset during writes (the ext4 journal and `e2fsck -p` cover it; offered to the owner).
+
+## 10. B4 — the built-in card as Internal Storage — 2026-11-14
+
+Owner's request: the card is inside the case and cannot be changed by the owner, so it must not show as an SD card
+but as Internal Storage, as the Y2's Y2Media partition does.
+
+- **`S03y1-media`** (`initramfs/y1-data/etc/init.d/`, after `S03y1-data`, before connectivity, MTP and Reborn):
+  only a card on MSDC1 (`11130000.mmc`) with a FAT filesystem (its first partition, or the whole card without a
+  partition table). It clears PID1's `BLKROSET` on `mmcblk1` and that partition only, mounts it
+  `vfat rw,nosuid,nodev,noexec,noatime,fmask=0077,dmask=0077,utf8,shortname=mixed,errors=remount-ro` at
+  `/media/internal`, creates `music` (FAT ignores case: stock's `Music` folder is that folder) and writes
+  `/run/y2/internal-media.json` as the Y2's platform does for Y2Media: `Ready` with this boot's ID, the mount ID
+  and the device ID. Reborn's `internal_music_directory()` then takes `/media/internal/music` as Internal Storage
+  with no Reborn change. On any failure the record says `Unavailable` with a reason and Internal Storage stays
+  `/data/music`; stop syncs and unmounts (read-only remount if busy).
+- **MTP** (`S45y1-mtp`): the one storage is **Internal Storage** = `/media/internal/music` when the record names
+  this boot and the current mount, else **Music** = `/data/music` as before.
+- **Radio firmware** (`S41y2-connectivity`): the Firmware folder it judges follows the storage MTP shows; the
+  platform's import already looks in `/media/internal/music/Firmware` when Internal Storage is ready.
+- **Platform** (`y2p-core/src/volume.rs`, in Y2ROOT): on the Y1, `/media/internal` is Ready on MSDC1 with no fixed
+  UUID (the owner's FAT serial), so Settings → Storage shows the card's size and free space instead of Y2DATA's.
+- **Not done**: no FAT check at boot (a 116 GiB check on every start; `errors=remount-ro` instead). Music already in
+  `/data/music` is not moved; it leaves the library while the card is Internal Storage, and stays on Y2DATA.
+- **Tests**: `tests/test_y1_media.py` (order, install, the record, refusal of another controller or filesystem, MTP's
+  choice); the Y1 volume test covers the card. To run on the player: the kernel log's `y1-media: … mounted at
+  /media/internal as Internal Storage`, MTP's "Internal Storage", Settings → Storage with the card's size, a copied
+  song scanned and played after a reboot.
