@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Innioasis Y1 (MT6572) CONSYS owner, Bluetooth only (docs/planning/Y1-BLUETOOTH-PLAN.md B2):
+/* Innioasis Y1 (MT6572) CONSYS owner (docs/planning/Y1-BLUETOOTH-PLAN.md B2; FM: Y1-FM-PLAN.md):
  * the Y2's kernel/platform/connectivity/core.c lifecycle (runtime PM, function references,
  * bounded recovery, root-only factory hand-off and activation) with the MT6572 power-on decoded
  * from stock in B1 (out/y1-bluetooth-b1-notes.md §1, §6). Separate from the Y2's core.c because
@@ -312,21 +312,36 @@ static int runtime_suspend(struct device *dev)
 	mutex_unlock(&c->lifecycle);
 	return ret;
 }
-/* The PA rail of a function: VCN33_BT (rail 2) or VCN33_WIFI (rail 3), each with its ON_CTRL bit. */
-static unsigned function_rail(unsigned function)
+/* The PA rail of a function: VCN33_BT (rail 2) or VCN33_WIFI (rail 3), each with its ON_CTRL bit. FM has
+ * none: without co-clock stock's wmt_func_fm_on sends only the function command, VCN28 being the TCXO rail
+ * that is on in hardware mode while the chip is (docs/planning/Y1-FM-PLAN.md; the Y2 switches VCN28 for FM). */
+static int function_rail(unsigned function)
 {
-	return function==Y2_CONN_BT ? 2 : 3;
+	return function==Y2_CONN_BT ? 2 : function==Y2_CONN_WIFI ? 3 : -1;
 }
-/* MediaTek's MT6572 switches Wi-Fi by its probe alone (y1-conn-policy.h); Bluetooth by WMT. */
+static int function_rail_set(struct y2_conn *c, unsigned function, bool enable)
+{
+	int rail=function_rail(function);
+	return rail<0 ? 0 : y2_conn_rail(c,rail,enable);
+}
+static bool function_known(unsigned function)
+{
+	return function==Y2_CONN_BT || function==Y2_CONN_WIFI || function==Y2_CONN_FM;
+}
+/* MediaTek's MT6572 switches Wi-Fi by its probe alone (y1-conn-policy.h); Bluetooth and FM by WMT, FM
+ * then with its I2S pins (y1_wmt_fm_audio). */
 static int function_switch(struct y2_conn *c, unsigned function, bool enable)
 {
+	int ret;
 	if (function==Y2_CONN_WIFI && !Y1_CONN_WIFI_WMT_FUNCTION) return 0;
-	return y2_wmt_function(c,function,enable);
+	ret=y2_wmt_function(c,function,enable);
+	if (!ret && function==Y2_CONN_FM && enable) ret=y1_wmt_fm_audio(c);
+	return ret;
 }
 int y2_conn_get(struct y2_conn *c, unsigned function)
 {
 	int ret;
-	if (function!=Y2_CONN_BT && function!=Y2_CONN_WIFI) return -EINVAL;
+	if (!function_known(function)) return -EINVAL;
 	if (!READ_ONCE(c->activated) || READ_ONCE(c->recovering) || c->removing) return -EHOSTDOWN;
 	ret=pm_runtime_resume_and_get(c->dev);
 	if (ret<0) { y2_conn_failed(c,ret); return ret; }
@@ -336,9 +351,9 @@ int y2_conn_get(struct y2_conn *c, unsigned function)
 		if (ret) { WRITE_ONCE(c->failure,ret); goto unused; }
 	}
 	if (c->functions & BIT(function)) { ret=0; goto unused; }
-	ret=c->failure ? c->failure : y2_conn_rail(c,function_rail(function),true);
+	ret=c->failure ? c->failure : function_rail_set(c,function,true);
 	if (!ret) ret=function_switch(c,function,true);
-	if (ret) { y2_conn_rail(c,function_rail(function),false); goto unused; }
+	if (ret) { function_rail_set(c,function,false); goto unused; }
 	c->functions |= BIT(function); c->wanted |= BIT(function);
 	mutex_unlock(&c->lifecycle);
 	return 0;
@@ -349,12 +364,12 @@ unused:
 int y2_conn_put(struct y2_conn *c, unsigned function)
 {
 	int ret=0, rail;
-	if (function!=Y2_CONN_BT && function!=Y2_CONN_WIFI) return -EINVAL;
+	if (!function_known(function)) return -EINVAL;
 	mutex_lock(&c->lifecycle);
 	c->wanted &= ~BIT(function);
 	if (!(c->functions & BIT(function))) { mutex_unlock(&c->lifecycle); return 0; }
 	if (!c->failure && c->powered) ret=function_switch(c,function,false);
-	rail=y2_conn_rail(c,function_rail(function),false);
+	rail=function_rail_set(c,function,false);
 	if (!ret) ret=rail;
 	c->functions &= ~BIT(function);
 	mutex_unlock(&c->lifecycle);
@@ -406,6 +421,7 @@ void y2_conn_hci_error(struct y2_conn *c)
 	if (c->hci_recovery_pending) c->hci_recovery_pending=false;
 	else {
 		WRITE_ONCE(c->failure,-EIO); complete_all(&c->response); wake_up_all(&c->tx_wait);
+		y2_fm_lost(c);
 		recover_locked(c);
 	}
 	mutex_unlock(&c->recovery_lock);
@@ -418,6 +434,7 @@ void y2_conn_failed(struct y2_conn *c, int error)
 		dev_crit(c->dev,"connectivity failure %d from %pS\n",error,__builtin_return_address(0));
 	}
 	complete_all(&c->response); wake_up_all(&c->tx_wait);
+	y2_fm_lost(c);
 	if (READ_ONCE(c->activated) && !READ_ONCE(c->removing) && !READ_ONCE(c->recovering))
 		schedule_work(&c->recovery_work);
 }
@@ -750,12 +767,14 @@ static int probe(struct platform_device *pdev)
 		if (!ret) dev_info(dev,"bring-up wmt: ready (bring_up runs one attempt, power_off aborts)\n");
 		return ret;
 	}
+	/* The FM tuner's sysfs group (the Y2's fm.c), in the full driver only. */
+	ret=y2_fm_probe(pdev,c); if (ret) return ret;
 	pm_runtime_set_suspended(dev); pm_runtime_set_autosuspend_delay(dev,1000);
 	pm_suspend_ignore_children(dev,true);
 	pm_runtime_use_autosuspend(dev); pm_runtime_enable(dev);
 	ret=devm_device_add_group(dev,&group);
 	if (ret) { pm_runtime_disable(dev); return ret; }
-	dev_info(dev,"MT6572 connectivity owner ready (Bluetooth%s); radio awaits the factory record\n",
+	dev_info(dev,"MT6572 connectivity owner ready (Bluetooth%s, FM); radio awaits the factory record\n",
 		 IS_ENABLED(CONFIG_BT_INNIOASIS_Y1_WIFI) &&
 		 platform_get_resource_byname(pdev,IORESOURCE_MEM,"wifi") ? ", Wi-Fi" : "");
 	return 0;
@@ -763,6 +782,7 @@ static int probe(struct platform_device *pdev)
 static void shutdown(struct platform_device *pdev)
 {
 	struct y2_conn *c=platform_get_drvdata(pdev);
+	y2_fm_shutdown(c);
 	c->removing=true;
 	if (c->mode==Y1_MODE_WMT) { WRITE_ONCE(c->abort,true); y2_conn_failed(c,-ESHUTDOWN); }
 	cancel_work_sync(&c->recovery_work);

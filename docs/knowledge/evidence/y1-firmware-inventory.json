@@ -64,6 +64,34 @@
       "selected_for_release": false,
       "redistribution_permission_established": false,
       "device_specific_calibration": false
+    },
+    {
+      "filename": "mt6627_fm_v1_patch.bin",
+      "bytes": 1028,
+      "sha256": "ba35c74d26660729caf83b41a567e700f633b6c99384dfa6cbb3c17ceb767e26",
+      "source": "Y1 stock system:/etc/firmware/mt6627/mt6627_fm_v1_patch.bin (public Innioasis Y1 3.0.2 rom.zip, 2026-11-14)",
+      "cross_check": "byte-identical to the Y2 v3.2.0 FM package's /etc/firmware/mt6627/mt6627_fm_v1_patch.bin (tests/test_fm.py); /etc/fmr/mt6627_fm_cust.cfg identical as well (d6457a1c…, not taken)",
+      "redistribution": "not established; not selected for distribution",
+      "function": "MT6627 FM DSP patch (v1, the only non-empty one; v2-v5 are empty or 2 bytes); downloaded at every FM power-up by kernel/platform/connectivity/fm.c",
+      "proposed_install_path": "/data/firmware/mt6572/mt6627_fm_v1_patch.bin",
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false,
+      "fm_tuner": true
+    },
+    {
+      "filename": "mt6627_fm_v1_coeff.bin",
+      "bytes": 1092,
+      "sha256": "d32f4a16b35f950ed1a57f2ae88f77ac4b5674d5c4210b65f6fe7912901fd8db",
+      "source": "Y1 stock system:/etc/firmware/mt6627/mt6627_fm_v1_coeff.bin (public Innioasis Y1 3.0.2 rom.zip, 2026-11-14)",
+      "cross_check": "byte-identical to the Y2 v3.2.0 FM package's /etc/firmware/mt6627/mt6627_fm_v1_coeff.bin (tests/test_fm.py); /etc/fmr/mt6627_fm_cust.cfg identical as well (d6457a1c…, not taken)",
+      "redistribution": "not established; not selected for distribution",
+      "function": "MT6627 FM coefficient table (v1); downloaded with the patch",
+      "proposed_install_path": "/data/firmware/mt6572/mt6627_fm_v1_coeff.bin",
+      "selected_for_release": false,
+      "redistribution_permission_established": false,
+      "device_specific_calibration": false,
+      "fm_tuner": true
     }
   ],
   "provisioning_policy": "Owner-supplied/extracted files only (tools/connectivity/provision.py --profile y1; the optional Wi-Fi firmware from the owner's Y2 package, WIFI.defaults from --stock-custom-nvram); no boot-time downloads; never in the repository",

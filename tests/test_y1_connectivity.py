@@ -74,12 +74,13 @@ class Y1ConnectivityFacts(unittest.TestCase):
     def test_the_y2_sources_are_shared_unchanged_and_pinned(self):
         manifest = json.loads((ROOT / 'kernel/patches-y1/manifest.json').read_text())
         added = {a['path']: a['source'] for a in manifest['added'] if a['path'].startswith('drivers/bluetooth/')}
-        shared = {'btif.c', 'hci.c', 'firmware.c'}
+        # The FM tuner (docs/planning/Y1-FM-PLAN.md): the Y2's stp.c with its FM channel and fm.c, unchanged.
+        shared = {'btif.c', 'stp.c', 'hci.c', 'firmware.c', 'fm.c'}
         for name in shared:
             self.assertEqual(added['drivers/bluetooth/y1-conn-' + name], 'kernel/platform/connectivity/' + name)
-        self.assertEqual(added['drivers/bluetooth/protocol.h'], 'kernel/platform/connectivity/protocol.h')
-        # stp.c stays at the Y1's reviewed copy: the Y2's now carries FM channel code the Y1's conn.h lacks.
-        for own in ('core.c', 'wmt.c', 'stp.c'):
+        for header in ('protocol.h', 'fm-protocol.h'):
+            self.assertEqual(added['drivers/bluetooth/' + header], 'kernel/platform/connectivity/' + header)
+        for own in ('core.c', 'wmt.c'):
             self.assertEqual(added['drivers/bluetooth/y1-conn-' + own], 'kernel/y1/connectivity/' + own)
         self.assertEqual(added['drivers/bluetooth/conn.h'], 'kernel/y1/connectivity/conn.h')
         # No Y2 modem or SPM code in the Y1 driver; the Y2's Wi-Fi subtree is not copied either: the Y1 builds
@@ -426,9 +427,11 @@ int main(void){
         run_c(MODEL + r"""
 static bool pmic_allowed(unsigned reg,unsigned mask){return (reg==0x416 && mask==BIT(5)) || (reg==0x418 && mask==BIT(14));}
 #define Y2_CONN_BT 0
+#define Y2_CONN_FM 1
 #define Y2_CONN_WIFI 3
 static unsigned switched[8],nswitched;
 static int y2_wmt_function(struct y2_conn *c,unsigned f,bool e){(void)c;switched[nswitched++]=f<<1|e;return 0;}
+static int y1_wmt_fm_audio(struct y2_conn *c){(void)c;switched[nswitched++]=0xf;return 0;}
 """ + '\n'.join(function(core, name) for name in ('y2_conn_rail', 'function_rail', 'function_switch')) + r"""
 int main(void){
  struct y2_conn c;
@@ -910,7 +913,8 @@ int main(void){
             .replace('int y2_conn_put(', 'static int y2_conn_put(')
         hci = (ROOT / 'kernel/platform/connectivity/hci.c').read_text()
         body = '\n'.join(function(core, n) for n in ('sleep_then_off', 'runtime_resume', 'runtime_suspend',
-                                                     'function_rail', 'function_switch', 'y2_conn_get', 'y2_conn_put'))
+                                                     'function_rail', 'function_rail_set', 'function_known',
+                                                     'function_switch', 'y2_conn_get', 'y2_conn_put'))
         body += '\n'.join(function(hci, n) for n in ('open', 'flush', 'close'))
         run_c(r"""
 #include <assert.h>
@@ -919,6 +923,7 @@ int main(void){
 #include <string.h>
 #define BIT(n) (1u<<(n))
 #define Y2_CONN_BT 0
+#define Y2_CONN_FM 1
 #define Y2_CONN_WIFI 3
 #define Y1_CONN_WIFI_WMT_FUNCTION 0
 #define READ_ONCE(x) (x)
@@ -930,7 +935,7 @@ struct y2_conn {struct device *dev; int lifecycle,stp_lock,hci_work,hci_tx; void
  unsigned functions,wanted; int failure;};
 struct hci_dev {struct y2_conn *c;};
 static struct y2_conn conn; static struct device dev;
-enum {POWER_ON,PA_ON,FUNC_ON,FUNC_OFF,PA_OFF,SLEEP,POWER_OFF};
+enum {POWER_ON,PA_ON,FUNC_ON,FUNC_OFF,PA_OFF,SLEEP,POWER_OFF,FM_AUDIO};
 static unsigned log_[32],n;
 static void rec(unsigned e){assert(n<32);log_[n++]=e;}
 static void mutex_lock(int *m){assert(!*m);*m=1;}
@@ -944,7 +949,8 @@ static int power_on(struct y2_conn *c){rec(POWER_ON);c->powered=c->dma_active=c-
 static int power_off(struct y2_conn *c){rec(POWER_OFF);c->powered=c->dma_active=c->full_stp=false;return 0;}
 static int y1_wmt_sleep(struct y2_conn *c){assert(c->powered && c->dma_active);rec(SLEEP);return 0;}
 static int y2_conn_rail(struct y2_conn *c,unsigned rail,bool on){(void)c;assert(rail==2);rec(on?PA_ON:PA_OFF);return 0;}
-static int y2_wmt_function(struct y2_conn *c,unsigned f,bool on){(void)c;assert(f==Y2_CONN_BT);rec(on?FUNC_ON:FUNC_OFF);return 0;}
+static int y2_wmt_function(struct y2_conn *c,unsigned f,bool on){(void)c;assert(f==Y2_CONN_BT||f==Y2_CONN_FM);rec(on?FUNC_ON:FUNC_OFF);return 0;}
+static int y1_wmt_fm_audio(struct y2_conn *c){(void)c;rec(FM_AUDIO);return 0;}
 static void y2_conn_failed(struct y2_conn *c,int e){c->failure=e;}
 static int runtime_resume(struct device *d);
 static int runtime_suspend(struct device *d);
@@ -964,6 +970,13 @@ int main(void){
  /* A failed transport powers off without the sleep command. */
  n=0; assert(!open(&h)); conn.failure=-EIO; conn.hci_open=false;
  assert(!close(&h) && log_[n-1]==POWER_OFF && log_[n-2]==PA_OFF);
+ /* The FM tuner (Y1-FM-PLAN.md): the WMT function and then its I2S pins, never a rail (VCN28 is the
+  * chip's TCXO rail); off is the function command alone, as stock. */
+ n=0; conn.failure=0; assert(!y2_conn_get(&conn,Y2_CONN_FM) && conn.functions==BIT(Y2_CONN_FM));
+ assert(!y2_conn_put(&conn,Y2_CONN_FM) && !conn.functions && !conn.powered);
+ static const unsigned fm[]={POWER_ON,FUNC_ON,FM_AUDIO,FUNC_OFF,SLEEP,POWER_OFF};
+ assert(n==6 && !memcmp(log_,fm,sizeof(fm)));
+ assert(y2_conn_get(&conn,2)==-EINVAL && y2_conn_put(&conn,4)==-EINVAL);
  /* Not activated (no factory record): hci never powers anything. */
  n=0; conn.failure=0; conn.activated=false; assert(open(&h)==-EHOSTDOWN && !n);
 }
@@ -1206,8 +1219,11 @@ class Y1RecordB7(unittest.TestCase):
         config = json.loads((ROOT / 'initramfs/y1-bluetooth/etc/y2linux/radio-firmware.json').read_text())
         # The import is the Y1's own system.img: the optional Wi-Fi firmware comes from the Y2 package (W6).
         wanted = {f['filename']: (f['bytes'], f['sha256']) for f in INVENTORY['files']
-                  if f['filename'] != 'modem_1_2g_n.img' and not f.get('optional')}
+                  if f['filename'] != 'modem_1_2g_n.img' and not f.get('optional') and not f.get('fm_tuner')}
         self.assertEqual({f['name']: (f['size'], f['sha256']) for f in config['files']}, wanted)
+        # The FM tuner's pair is not in the set: y2-platform takes it from either package (radiofw/fm.rs).
+        self.assertEqual(sorted(f['filename'] for f in INVENTORY['files'] if f.get('fm_tuner')),
+                         ['mt6627_fm_v1_coeff.bin', 'mt6627_fm_v1_patch.bin'])
         header = (Y1 / 'conn.h').read_text()
         self.assertIn('#define Y2_CONN_FW "mt6572/"', header)
         self.assertEqual(config['target'], '/data/firmware/mt6572')

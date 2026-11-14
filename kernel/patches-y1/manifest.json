@@ -220,7 +220,7 @@
     {
       "path": "drivers/bluetooth/Makefile",
       "base_sha256": "3029941aefe5ca9b5f588c27a785910490c8b2c0bd825f2ca145d48278468218",
-      "result_sha256": "55a2e0e2626fd52eb70824b92e5636eb6fd793a0791b8af5604a0df084665bea",
+      "result_sha256": "63e4e0e5b4068f294ac6e54ed68abca0cdd8045a2f3b56cfaaa57630ab2d6faa",
       "patch": "0037-innioasis-y1-bluetooth-makefile.patch"
     },
     {
@@ -411,7 +411,7 @@
     {
       "path": "sound/soc/mediatek/y1-mt6572-afe.c",
       "source": "kernel/y1/mt6572-afe.c",
-      "sha256": "452d444fb249f717e790a37df1027cbda48c42fd9e5b624b0b87c85bd5a071af"
+      "sha256": "86e2ad87fb27e0a3abc45d23ed5217ad1360cbd62c646bac3486891587529ebf"
     },
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",
@@ -441,7 +441,7 @@
     {
       "path": "drivers/bluetooth/conn.h",
       "source": "kernel/y1/connectivity/conn.h",
-      "sha256": "9c402199b68e3f6bfe242ee1a2944553dd0debd1dffa6bc343a8043d2fb9c2b8"
+      "sha256": "47890b7e0b076d068ba586f196126ad8b0018449c1d8916f268e3de09e335e5a"
     },
     {
       "path": "drivers/bluetooth/y1-conn-policy.h",
@@ -456,12 +456,12 @@
     {
       "path": "drivers/bluetooth/y1-conn-core.c",
       "source": "kernel/y1/connectivity/core.c",
-      "sha256": "9931342d4dcb51876db3ce37a9f497d87a22abdb4f3580a4687b9beab3ea99dc"
+      "sha256": "1561683021045c3eeec73f0ffa601e4412dc0684c5d0ccd46c713f9875b04363"
     },
     {
       "path": "drivers/bluetooth/y1-conn-wmt.c",
       "source": "kernel/y1/connectivity/wmt.c",
-      "sha256": "e051398cf8aed8d13756ba0e7eeb191e42224687c8fda3d61f7f8cce766a6d40"
+      "sha256": "9956f0d228bbdab54f3d987317446495dbbe07ca6655e01476e90b8e2b4e843a"
     },
     {
       "path": "drivers/bluetooth/y1-conn-firmware.c",
@@ -475,13 +475,23 @@
     },
     {
       "path": "drivers/bluetooth/y1-conn-stp.c",
-      "source": "kernel/y1/connectivity/stp.c",
-      "sha256": "1ffd29ad29bfe645b3dc969e2d803ee57d76e5a1a4cd478f86b0c21b81dc13f2"
+      "source": "kernel/platform/connectivity/stp.c",
+      "sha256": "1ce2bc13d0518ecd5a1e8fecc2d11fef20545fec14a5fe9e521480bb7a1219d8"
     },
     {
       "path": "drivers/bluetooth/y1-conn-hci.c",
       "source": "kernel/platform/connectivity/hci.c",
       "sha256": "cceda8f75410a022bc265220bcf1347c0ece26fa5bf115a53e9347ca7bd79766"
+    },
+    {
+      "path": "drivers/bluetooth/y1-conn-fm.c",
+      "source": "kernel/platform/connectivity/fm.c",
+      "sha256": "95429b7268b2925ad93db95fc190977261581e5aac499de4546cce915a077412"
+    },
+    {
+      "path": "drivers/bluetooth/fm-protocol.h",
+      "source": "kernel/platform/connectivity/fm-protocol.h",
+      "sha256": "152f1c48fb05d9027fb9913ad7bdbfea121308d91708d27b07dbd77ddbe95fa2"
     }
   ]
 }

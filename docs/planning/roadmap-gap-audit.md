@@ -10371,3 +10371,28 @@ the owner's player before it is published. Known gap kept: the root's `ota` desc
 step under R6's admission; until then the Y1's daily check finds no Y1 manifest at Blunk/Y1Linux and offers
 nothing. Players installed before R6 need one mtkclient write (BOOTIMG, ANDROID, RECOVERY) to reach it
 ([INSTALL](../INSTALL.md#updating)).
+
+## Y1 FM radio: entry audit — 2026-11-14
+
+**Boundary:** a hardware function no Y1 build has switched on (the MT6627 tuner in the MT6572's radio core, the
+AFE's second I2S input and its rate converter) and the Y2's FM product function on the Y1. Owner request
+2026-11-14: port the Y2's FM radio to the `y1` branch. Plan and evidence: [Y1-FM-PLAN.md](Y1-FM-PLAN.md).
+
+**Evidence (date, revision, origin, limits):** the owner's Y1 over USB network 2026-11-14, read-only: kernel
+`6.18.56-y1linux` (data B4 build), `CONSYS chip=6572 HVR=8a01 FVR=8a00`, no `fm` group, no `mt6627_fm_v1_*`
+in `/data/firmware/mt6572`, one ALSA playback device, no `/proc/asound`. Offline: the public Y1 3.0.2 package
+(tuner firmware identical to the Y2's; digital FM audio; the stock FM driver emulated against the Y2's fixture; the
+stock WMT and HAL sequences read out). The owner says nothing yet about reception on this unit.
+
+| Area | State before | Plan / gap |
+| --- | --- | --- |
+| Tuner driver | Y2 only | the Y2's `fm.c` unchanged; the Y1 builds the shared `stp.c` again |
+| Supply | VCN28 on with the chip (TCXO, hardware mode) | no change: stock switches no rail for FM without co-clock |
+| WMT | no FM strap, BT function only | strap `01 05 02 00 02 02` after coex; function 1; the FM I2S pin write after FM on |
+| Audio | DL1 playback only | AFE DAI "FM": the Y2's capture sequence (identical in the Y1 HAL), `hw:0,1` |
+| Firmware | five Y1 files | the pair, optional, from either package's `system.img` |
+| Reborn | FM code, Y2 paths | Y1 firmware directory; capture without `/proc/asound` |
+| Device checks | NOT_RUN | OWED: Y1-FM-PLAN.md §3 |
+
+**Gate decision:** source work and an owner test build; the tuner's first power-up on the owner's Y1 is part of
+that test. Not a release authorization.

@@ -21,7 +21,8 @@
  *   clocked from WHPLL at 500.5 MHz as stock, no OPP table, no MFG reset.
  * - Audio: the MT6572 AFE (DL1 -> ADDA), the MT6323 codec and the AW87559 speaker amplifier on I2C0, fed from the
  *   MT6323's HPOUT, in a simple card named as Reborn expects ("Y2Audio", pins "Headphone" and "Speaker"); the
- *   headphone jack (GPIO135, EINT0) on the codec, reported as the card's jack "Headphone".
+ *   headphone jack (GPIO135, EINT0) on the codec, reported as the card's jack "Headphone"; the FM tuner's I2S
+ *   capture as the card's second device (docs/planning/Y1-FM-PLAN.md).
  * - Connectivity: the core's memory reserved (0x80000000, 1 MiB, no-map), the MT6572 connectivity owner with its
  *   supplies VCN18, VCN28 and the PA supplies VCN33_BT/VCN33_WIFI (none always-on or boot-on): hci0 once userspace
  *   hands it the 32-byte BT_Addr record and activates it; with the Wi-Fi record handed over before activation,
@@ -125,6 +126,14 @@
 		interrupts = <GIC_SPI 64 IRQ_TYPE_LEVEL_LOW>;
 		clocks = <&topckgen CLK_TOP_AUDIO>;
 		clock-names = "audio";
+		/* 0: DL1 -> ADDA playback; 1: the FM tuner's I2S capture (docs/planning/Y1-FM-PLAN.md). */
+		#sound-dai-cells = <1>;
+	};
+
+	/* The FM capture link's codec side: the I2S comes from the radio core inside the SoC, so there is no
+	 * codec to control; the generic capture-only stub stands in (no controls, no power). */
+	fm_capture: fm-capture-codec {
+		compatible = "linux,spdif-dir";
 		#sound-dai-cells = <0>;
 	};
 
@@ -136,13 +145,29 @@
 		simple-audio-card,routing = "Headphone", "HPOUT", "PA IN", "HPOUT", "Speaker", "PA OUT";
 		simple-audio-card,pin-switches = "Headphone", "Speaker";
 		simple-audio-card,aux-devs = <&speaker_amp>;
+		#address-cells = <1>;
+		#size-cells = <0>;
 
-		simple-audio-card,cpu {
-			sound-dai = <&afe>;
+		/* hw:0,0 stays the playback device. */
+		simple-audio-card,dai-link@0 {
+			reg = <0>;
+			cpu {
+				sound-dai = <&afe 0>;
+			};
+			codec {
+				sound-dai = <&mt6323_codec>;
+			};
 		};
 
-		simple-audio-card,codec {
-			sound-dai = <&mt6323_codec>;
+		/* hw:0,1, the FM capture: Reborn takes the only capture node (no /proc/asound on the Y1). */
+		simple-audio-card,dai-link@1 {
+			reg = <1>;
+			cpu {
+				sound-dai = <&afe 1>;
+			};
+			codec {
+				sound-dai = <&fm_capture>;
+			};
 		};
 	};
 

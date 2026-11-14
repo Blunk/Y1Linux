@@ -6,7 +6,8 @@
  * B2). The Y2's btif.c, stp.c, hci.c, firmware.c, protocol.h and its wifi/ fullmac
  * (docs/planning/Y1-WIFI-PLAN.md W2) are compiled unchanged against this header (it keeps the Y2's
  * names and include guard), so it carries every field they use; the Y1's own core.c and wmt.c hold
- * what differs. Bluetooth and Wi-Fi; no modem, no RGU reset.
+ * what differs. Bluetooth, Wi-Fi and the FM tuner (the Y2's fm.c unchanged, docs/planning/Y1-FM-PLAN.md);
+ * no modem, no RGU reset.
  */
 #include <linux/clk.h>
 #include <linux/completion.h>
@@ -25,6 +26,7 @@
 #include "y1-conn-policy.h"
 
 #define Y2_CONN_BT 0
+#define Y2_CONN_FM 1
 #define Y2_CONN_WIFI 3
 #define Y2_CONN_WMT 4
 #define Y2_CONN_DMA_SIZE 8192
@@ -37,6 +39,8 @@
 	{Y2_CONN_FW "WIFI_RAM_CODE_MT6582", 160368, {0x4d,0xef,0x37,0x52,0x2e,0x2b,0xfd,0x2d,0x4b,0x78,0xe0,0x1b,0xf9,0xf5,0x67,0xa3,0x7e,0x3f,0x67,0xab,0x3d,0x7b,0x66,0x46,0xff,0xb3,0x17,0xf5,0xb2,0xb4,0x9b,0x82}}, \
 	{Y2_CONN_FW "WMT_SOC.cfg", 82, {0x16,0x1f,0x18,0xb6,0x86,0xe5,0x9a,0x76,0x33,0x68,0xff,0xb1,0xd8,0x22,0x9f,0x15,0x8f,0xa6,0x14,0x93,0xec,0xc3,0xdf,0xf5,0xc6,0xef,0x8c,0x11,0xa7,0xf5,0xf1,0xe0}}, \
 	{Y2_CONN_FW "mt6572_82_patch_e1_0_hdr.bin", 39868, {0x5c,0x13,0xeb,0xad,0x70,0xfb,0xdd,0xc1,0x04,0x10,0xc6,0x75,0xfd,0xce,0x84,0xe8,0x9f,0x5d,0xb9,0xfa,0x13,0x23,0xf9,0xd7,0x87,0xec,0xa3,0xe9,0x6a,0x99,0xbf,0xc1}}, \
+	{Y2_CONN_FW "mt6627_fm_v1_patch.bin", 1028, {0xba,0x35,0xc7,0x4d,0x26,0x66,0x07,0x29,0xca,0xf8,0x3b,0x41,0xa5,0x67,0xe7,0x00,0xf6,0x33,0xb6,0xc9,0x93,0x84,0xdf,0xa6,0xcb,0xb3,0xc1,0x7c,0xeb,0x76,0x7e,0x26}}, \
+	{Y2_CONN_FW "mt6627_fm_v1_coeff.bin", 1092, {0xd3,0x2f,0x4a,0x16,0xb3,0x5f,0x95,0x0e,0xd1,0xa5,0x7f,0x2a,0xe8,0x8f,0x77,0xac,0x4b,0x56,0x74,0xd5,0xc4,0x21,0x0b,0x65,0xf6,0xfe,0x79,0x12,0x90,0x1f,0xd8,0xdb}}, \
 }
 /* The chip whose HVR 8a01/FVR 8a00 controller needs HCI_QUIRK_BROKEN_LOCAL_EXT_FEATURES_PAGE_2 (hci.c): the Y1 (B6: the same HVR 8a01/FVR 8a00 firmware rejects page 2 with status 0x30, seen as -38). */
 #define Y2_CONN_EXT_FEATURES_QUIRK_CHIP 0x6572
@@ -44,6 +48,7 @@
 struct firmware;
 int y2_conn_request_firmware(struct device *dev, const char *name, const struct firmware **fw);
 struct hci_dev;
+struct y2_fm;
 struct y2_stp_frame { unsigned size; unsigned char data[Y2_STP_MAX_PAYLOAD + 6]; };
 struct y2_conn {
 	struct device *dev;
@@ -87,6 +92,7 @@ struct y2_conn {
 	unsigned char bt_factory[Y1_CONN_RECORD_SIZE];
 	unsigned char wifi_factory[Y1_CONN_WIFI_RECORD_SIZE];
 	struct platform_device *wifi;
+	struct y2_fm *fm;
 	/* Bring-up stages (B4/B5): the DT mode, a pending abort, the calibration event seen. */
 	unsigned mode, calibration_size, calibration_status;
 	bool abort;
@@ -108,10 +114,15 @@ int y2_conn_wmt(struct y2_conn *c, const unsigned char *request, unsigned size,
 	       const unsigned char *expected, unsigned expected_size);
 int y1_wmt_boot(struct y2_conn *c);
 int y1_wmt_sleep(struct y2_conn *c);
+int y1_wmt_fm_audio(struct y2_conn *c);
 int y2_wmt_function(struct y2_conn *c, unsigned function, bool enable);
 int y2_conn_rail(struct y2_conn *c, unsigned rail, bool enable);
 int y2_hci_register(struct y2_conn *c);
 void y2_hci_unregister(struct y2_conn *c);
+int y2_fm_probe(struct platform_device *pdev, struct y2_conn *c);
+void y2_fm_receive(struct y2_conn *c, const unsigned char *data, unsigned size);
+void y2_fm_lost(struct y2_conn *c);
+void y2_fm_shutdown(struct y2_conn *c);
 void y2_hci_receive(struct y2_conn *c, const unsigned char *data, unsigned size);
 void y2_conn_hci_error(struct y2_conn *c);
 #endif

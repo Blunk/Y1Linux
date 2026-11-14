@@ -154,6 +154,8 @@ int y1_wmt_boot(struct y2_conn *c)
 	static const unsigned char set[] = {1,4,5,0,3,0xdf,0x0e,0x68,1};
 	static const unsigned char set_reply[] = {2,4,2,0,0,3};
 	static const unsigned char coex[] = {1,0x10,2,0,1,1}, coex_reply[] = {2,0x10,1,0,0};
+	/* Stock's FM strap (init_table_5_1, "configure FM comm"): mode 2, which 6620_launcher hard-codes. */
+	static const unsigned char strap[] = {1,5,2,0,2,2}, strap_reply[] = {2,5,2,0,0,2};
 	int ret = board_config(c);
 	if (ret) return ret;
 	ret = read_version(c, 0x80000008, &c->chip);
@@ -172,9 +174,10 @@ int y1_wmt_boot(struct y2_conn *c)
 	if (!ret) dev_info(c->dev, "WMT full STP mode verified\n");
 	if (!ret) ret = patch(c, Y2_CONN_FW "mt6572_82_patch_e1_0_hdr.bin");
 	if (!ret) ret = calibrate(c);
-	/* No co-clock command (no co_clock_flag) and no FM strap (stock's 01 05 02 00 02 <fm>
-	 * configures only the unused FM interface; added in B5 if the firmware needs it). */
+	/* No co-clock command (no co_clock_flag). Then the FM strap, which stock sends on every chip init
+	 * (mtk_wcn_soc_sw_init, after coex; docs/planning/Y1-FM-PLAN.md). */
 	if (!ret) ret = y2_conn_wmt(c, coex, sizeof(coex), coex_reply, sizeof(coex_reply));
+	if (!ret) ret = y2_conn_wmt(c, strap, sizeof(strap), strap_reply, sizeof(strap_reply));
 	return ret;
 }
 /* Before the B5 power-off: the radio core goes to sleep, so the SPM sleep wait ends. A refused or
@@ -184,10 +187,20 @@ int y1_wmt_sleep(struct y2_conn *c)
 	return y2_conn_wmt(c, y1_conn_wmt_sleep, sizeof(y1_conn_wmt_sleep), y1_conn_wmt_sleep_reply,
 			   sizeof(y1_conn_wmt_sleep_reply));
 }
+/* The FM tuner's audio interface (docs/planning/Y1-FM-PLAN.md): stock's AUDDRV_SET_FM_I2S_GPIO ->
+ * mtk_wcn_cmb_stub_audio_ctrl(COMBO_AUDIO_STATE_2) -> wmt_lib_set_aif(2) -> mtk_wcn_soc_pin_ctrl writes CONSYS
+ * 0x80050078 bits 27:16 = 0x111 (the FM I2S pins), a WMT register write like the patch address above.
+ * Stock's state 0 (FM audio off) writes nothing, so neither does this driver. */
+int y1_wmt_fm_audio(struct y2_conn *c)
+{
+	static const unsigned char request[] = {1,8,16,0,1,1,0,1, 0x78,0,5,0x80, 0,0,0x11,1, 0,0,0xff,0x0f};
+	static const unsigned char reply[] = {2,8,4,0,0,0,0,1};
+	return y2_conn_wmt(c, request, sizeof(request), reply, sizeof(reply));
+}
 int y2_wmt_function(struct y2_conn *c, unsigned function, bool enable)
 {
 	unsigned char request[] = {1,6,2,0,function,enable};
 	static const unsigned char reply[] = {2,6,1,0,0};
-	if (function != Y2_CONN_BT) return -EINVAL;
+	if (function != Y2_CONN_BT && function != Y2_CONN_FM) return -EINVAL;
 	return y2_conn_wmt(c, request, sizeof(request), reply, sizeof(reply));
 }
