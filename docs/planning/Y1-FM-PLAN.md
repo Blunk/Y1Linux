@@ -50,6 +50,16 @@ tuner, while the stock driver's `mt6627_i2s_info_get` reports a static 48000 and
 - **Tests**: `test_y1_connectivity` (shared sources incl. `stp.c` and `fm.c`; FM on = function + audio pins, no
   rail; off = function only), the inventory with the pair (`fm_tuner`), Reborn's capture fallback.
 
+## 2a. Later: `/proc/asound` on the Y1
+
+The Y1 kernel has no `/proc/asound` by accident: `y1-build.sh` runs `allnoconfig` over the fragment, and
+`SND_PROC_FS` (default y, but a visible prompt once `EXPERT=y`) is not named there; the Y2's
+`production.config` sets it. For now Reborn takes the only capture node in `/dev/snd` (§2). Planned (owner,
+2026-11-14), after the FM test: `CONFIG_SND_PROC_FS=y` in `kernel/config/y1-production.config` (about 9 KB),
+and with it Reborn's named lookup must find the Y1's FM link, whose PCM is named after its DAIs
+(`FM-dir-hifi …`, not "Y2 FM Capture"): name the link to match, or let Reborn accept the Y1's name. The
+`/dev/snd` fallback stays for kernels without it.
+
 ## 3. Device checks (owner's Y1; NOT_RUN)
 
 1. Firmware: copy `system.img` of the Y1 3.0.2 or the Y2 3.2.0 package into `Firmware`; the pair appears in
