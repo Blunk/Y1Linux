@@ -151,19 +151,20 @@ Reborn starts and music works. Bluetooth and Wi-Fi wait for the radio firmware.
 
 **Install the radio firmware over USB:**
 
-1. Connect the Y1 to the computer. It appears as a media player (MTP) with one storage, **Music**, which contains
-   a folder **Firmware** with a `README.txt`.
-2. Unpack the Y1 3.0.2 `rom.zip` and **copy its `system.img`** (raw ext4, about 650 MB) into `Music/Firmware`.
+1. Connect the Y1 to the computer. It appears as a media player (MTP) with one storage, **Internal Storage** (the
+   built-in microSD; **Music** on Y2DATA if the card cannot be mounted). Use its folder **Firmware** (create it on
+   Internal Storage if it is not there; on Music it comes with a `README.txt`).
+2. Unpack the Y1 3.0.2 `rom.zip` and **copy its `system.img`** (raw ext4, about 650 MB) into `Firmware` on that storage.
    Copy, don't move: the player deletes its copy afterwards.
 3. Within about 10 s the player checks the file, installs the four Y1 files, deletes the copy and starts
    Bluetooth.
-4. For Wi-Fi: unpack the Y2 v3.2.0 package and copy **its `system.img`** into `Music/Firmware` the same way (about
-   520 MB from Innioasis's zip, about 860 MB from the community `rom_y2.zip`; it needs that much free space in
-   Music). The player keeps only `WIFI_RAM_CODE_MT6582`, deletes the copy and registers Wi-Fi without a restart.
+4. For Wi-Fi: unpack the Y2 v3.2.0 package and copy **its `system.img`** into `Firmware` the same way (about
+   520 MB from Innioasis's zip, about 860 MB from the community `rom_y2.zip`; it needs that much free space on
+   that storage). The player keeps only `WIFI_RAM_CODE_MT6582`, deletes the copy and registers Wi-Fi without a restart.
    The `Firmware` folder disappears once both are installed.
 
 The two copies can go in either order. Reborn's firmware screen still names the Y2 package and a "Firmware
-drive"; on the Y1 the folder is `Music/Firmware`, and its `README.txt` names both packages.
+drive"; on the Y1 the folder is `Firmware` on the MTP storage (on Music its `README.txt` names both packages).
 
 Then switch Wi-Fi on in Reborn and pick your network, or pair a Bluetooth headset. Switch the player off with a
 3 s hold of the centre button.

@@ -41,9 +41,11 @@ static const struct override overrides[] = {
     { "/etc/y2linux/audio-enabled.json", 0644 },
     /* The power daemon with the Y1 battery profile and policy (docs/planning/Y1-POWER-PLAN.md, D2). */
     { "/etc/init.d/S03y1-data", 0755 },
+    /* The built-in microSD as Internal Storage at /media/internal (S03y1-media). */
+    { "/etc/init.d/S03y1-media", 0755 },
     { "/etc/y2linux/battery-profile.json", 0644 },
     { "/etc/y2linux/power-policy.json", 0644 },
-    /* MTP with one storage, /data/music (docs/planning/Y1-MTP-PLAN.md, M2). */
+    /* MTP with one storage, Internal Storage (docs/planning/Y1-MTP-PLAN.md, M2). */
     { "/etc/init.d/S45y1-mtp", 0755 },
     /* Bluetooth: hci0 from the owner's record, then y2-radiod (docs/planning/Y1-BLUETOOTH-PLAN.md, B6). */
     { "/etc/init.d/S41y2-connectivity", 0755 },

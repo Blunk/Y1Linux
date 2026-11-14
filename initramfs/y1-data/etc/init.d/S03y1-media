@@ -1,0 +1,61 @@
+#!/bin/sh
+# Innioasis Y1: the built-in microSD as Internal Storage. The card (mmcblk1 on MSDC1, 11130000.mmc) sits inside the
+# case and the owner cannot reach it, so it is not an SD card: it is the Y1's Internal Storage, as Y2Media is the
+# Y2's. Its FAT is mounted read-write at /media/internal and recorded in /run/y2/internal-media.json as the Y2's
+# platform records Y2Media (Ready, this boot, this mount), so Reborn's Internal Storage and MTP use
+# /media/internal/music (on FAT also the stock player's "Music" folder, in any letter case).
+# PID1 set every disk read-only; only the card and its partition are made writable here, the eMMC stays behind its
+# guard. Nothing is ever formatted. On any failure the record says Unavailable, Internal Storage stays /data/music
+# on Y2DATA and the reason goes to the kernel log.
+PATH_=/media/internal
+MARKER=/run/y2/internal-media.json
+CONTROLLER=11130000.mmc
+OPTIONS=rw,nosuid,nodev,noexec,noatime,fmask=0077,dmask=0077,utf8,shortname=mixed,errors=remount-ro
+
+log() { echo "y1-media: $*" > /dev/kmsg; }
+
+record() {
+	mkdir -p -m 0700 /run/y2 && printf '%s\n' "$1" > "$MARKER.tmp" && mv "$MARKER.tmp" "$MARKER"
+}
+
+unavailable() {
+	log "$1"
+	boot=$(cat /proc/sys/kernel/random/boot_id)
+	record "{\"schema\":1,\"state\":\"Unavailable\",\"reason\":\"$2\",\"path\":\"$PATH_\",\"boot_id\":\"$boot\"}"
+	return 1
+}
+
+# The card's FAT: its first partition, or the whole card when it has no partition table.
+card() {
+	readlink -f /sys/block/mmcblk1 2>/dev/null | grep -q "/$CONTROLLER/" || return 1
+	for dev in /dev/mmcblk1p1 /dev/mmcblk1; do
+		[ -b "$dev" ] && blkid "$dev" | grep -q 'TYPE="vfat"' && { echo "$dev"; return 0; }
+	done
+	return 1
+}
+
+mount_card() {
+	dev=$(card) || { unavailable "no FAT card on $CONTROLLER" no_card; return 1; }
+	blockdev --setrw /dev/mmcblk1 && blockdev --setrw "$dev" ||
+		{ unavailable "$dev cannot be made writable" read_only; return 1; }
+	mkdir -p "$PATH_"
+	mount -t vfat -o "$OPTIONS" "$dev" "$PATH_" || { unavailable "mount of $dev failed" mount_failed; return 1; }
+	mkdir -p "$PATH_/music" || { umount "$PATH_"; unavailable "no music folder" mount_failed; return 1; }
+	set -- $(awk -v p="$PATH_" '$5 == p { print $1, $3 }' /proc/self/mountinfo)
+	[ $# = 2 ] || { umount "$PATH_"; unavailable "$PATH_ not mounted exactly once" not_uniquely_mounted; return 1; }
+	boot=$(cat /proc/sys/kernel/random/boot_id)
+	record "{\"schema\":1,\"state\":\"Ready\",\"reason\":null,\"path\":\"$PATH_\",\"boot_id\":\"$boot\",\"mount_id\":$1,\"device_id\":\"$2\"}"
+	log "$dev mounted at $PATH_ as Internal Storage"
+}
+
+case "$1" in
+	start)
+		printf 'Mounting Internal Storage: '
+		if mount_card; then echo OK; else echo "FAIL, /data/music"; fi
+		;;
+	stop)
+		sync
+		rm -f "$MARKER"
+		grep -q " $PATH_ vfat " /proc/mounts && { umount "$PATH_" || mount -o remount,ro "$PATH_"; }
+		;;
+esac
