@@ -1,6 +1,6 @@
-# Y2Linux | Y1 
+# Y1Linux 
 
-This is an attempt to get the same stack running on an Innioasis Y1 player which is based on slightly different hardware.
+This is an attempt to get the same stack as the upstream Y2linux running on an Innioasis Y1 player which is based on slightly different hardware.
 
 Working so far:
 - Booting
@@ -10,12 +10,13 @@ Working so far:
 - Can run Y2Rebord
 - Wifi if firmware is installed
 - Bluetooth if firmware is installed
+- Locks screen after ~2s center button press
 
 Not yet done
-- No power management (can power of but not go into suspend / auto suspend)
+- OTA firmware update
 
 
-This has all been coded by Clause with a lot of bits and pieces grabbed from MediaTek repositories or reverse engineered from the stock android image
+This has all been coded by Claude with a lot of bits and pieces grabbed from MediaTek repositories or reverse engineered from the stock android image
 
 Some projects for reference:
 
