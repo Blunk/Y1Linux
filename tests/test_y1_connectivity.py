@@ -1145,6 +1145,16 @@ class Y1WifiW3(unittest.TestCase):
         self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-production.list"', lines)
 
 
+class Y1FmProcAsound(unittest.TestCase):
+    """Y1-FM-PLAN.md §2a: /proc/asound on, and the FM link's PCM carries Reborn's capture name."""
+
+    def test_reborn_finds_the_fm_capture_by_name_in_proc_asound(self):
+        text = (ROOT / 'kernel/config/y1-production.config').read_text()
+        self.assertIn('CONFIG_SND_PROC_FS=y', text.splitlines())
+        afe = (ROOT / 'kernel/y1/mt6572-afe.c').read_text()
+        self.assertIn('.name = "Y2 FM Capture", .id = 1,', afe)
+
+
 class Y1WifiW4(unittest.TestCase):
     """W4 (docs/planning/Y1-WIFI-PLAN.md): the Y1-only passive scan in the shared fullmac, the Y2 unchanged."""
 

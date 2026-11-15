@@ -411,7 +411,7 @@
     {
       "path": "sound/soc/mediatek/y1-mt6572-afe.c",
       "source": "kernel/y1/mt6572-afe.c",
-      "sha256": "86e2ad87fb27e0a3abc45d23ed5217ad1360cbd62c646bac3486891587529ebf"
+      "sha256": "7ce40c88097796ea27b1d5af8f6c009347fb5c8683baab5e2a858e5310edb9bc"
     },
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",

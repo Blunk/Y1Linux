@@ -45,20 +45,24 @@ tuner, while the stock driver's `mt6627_i2s_info_get` reports a static 48000 and
 - **Platform** (`radiofw/fm.rs`, `copy.rs`): the pair goes into the image's own firmware directory
   (`/data/firmware/mt6572` on the Y1); a later copy of either package's `system.img` supplies it (the Y1's
   firmware set rejects the Y2's image, so before this a Y2 copy was kept and FM never taken) and is then deleted.
-- **Reborn** (`reborn-platform/src/fm.rs`): the firmware is looked for in the Y2's directory, else the Y1's; with
-  no `/proc/asound` (the Y1's kernel has no `SND_PROC_FS`) the only capture node in `/dev/snd` is the tuner.
+- **Reborn** (`reborn-platform/src/fm.rs`): the firmware is looked for in the Y2's directory and the Y1's; the
+  capture is found by name in `/proc/asound/pcm`, as on the Y2 (§2a; first, without `/proc/asound` on the Y1,
+  the only capture node in `/dev/snd`).
 - **Tests**: `test_y1_connectivity` (shared sources incl. `stp.c` and `fm.c`; FM on = function + audio pins, no
   rail; off = function only), the inventory with the pair (`fm_tuner`), Reborn's capture fallback.
 
-## 2a. Later: `/proc/asound` on the Y1
+## 2a. `/proc/asound` on the Y1 (2026-11-15)
 
-The Y1 kernel has no `/proc/asound` by accident: `y1-build.sh` runs `allnoconfig` over the fragment, and
-`SND_PROC_FS` (default y, but a visible prompt once `EXPERT=y`) is not named there; the Y2's
-`production.config` sets it. For now Reborn takes the only capture node in `/dev/snd` (§2). Planned (owner,
-2026-11-14), after the FM test: `CONFIG_SND_PROC_FS=y` in `kernel/config/y1-production.config` (about 9 KB),
-and with it Reborn's named lookup must find the Y1's FM link, whose PCM is named after its DAIs
-(`FM-dir-hifi …`, not "Y2 FM Capture"): name the link to match, or let Reborn accept the Y1's name. The
-`/dev/snd` fallback stays for kernels without it.
+The Y1 kernel had no `/proc/asound` by accident: `y1-build.sh` runs `allnoconfig` over the fragment, and
+`SND_PROC_FS` (default y, but a visible prompt once `EXPERT=y`) was not named there; the Y2's
+`production.config` sets it. Until then Reborn took the only capture node in `/dev/snd` (Reborn `859ac54`, since
+replaced by `089bc57` without it). Done after the FM test (owner, 2026-11-15): `CONFIG_SND_PROC_FS=y` in
+`kernel/config/y1-production.config`.
+The simple card names a link `<cpu dai>-<codec dai>`, so the AFE's FM DAI is now called "Y2 FM Capture" and
+the PCM reads `00-01: Y2 FM Capture-dir-hifi dir-hifi-1 :  : capture 1`, which Reborn's named lookup finds
+unchanged. Reborn drops the `/dev/snd` fallback (and its `Paths.devices`): a Y1 needs a BOOTIMG with
+`/proc/asound` for FM in a Reborn without it. `test_reborn_finds_the_fm_capture_by_name_in_proc_asound` pins
+the option and the DAI name.
 
 ## 3. Device checks (owner's Y1)
 
@@ -96,7 +100,7 @@ ANDROID and BOOTIMG written with mtkclient, Y2DATA kept.
   owner: the recording "sounds very good": the 32 kHz ASRC words are right on the Y1 (§1, open point settled).
 - **Reborn:** first "needs the tuner firmware": the Y1's Y2DATA still had the Bluetooth bring-up's placeholders in
   `/data/firmware/mt6582` (Y1-BLUETOOTH-PLAN.md, B6), which `/lib/firmware/mediatek/mt6582` links to, and Reborn
-  took the first existing directory. Fixed in Reborn `482e6bb` (ready when either directory holds the pair); on
+  took the first existing directory. Fixed in Reborn `482e6bb`, now part of `089bc57` (ready when either directory holds the pair); on
   the player the placeholders were moved to `/data/b6-placeholders` (the platform never read them; status stayed
   `Ready`). Then FM works in Reborn (owner). Y2ROOT rebuilt with Reborn `482e6bb` (`out/y1-root-fm2`, sha256
   `b62481e3…5b324e`), ANDROID written; FM works there too (owner), and the placeholders were deleted.

@@ -457,7 +457,9 @@ static struct snd_soc_dai_driver y1_afe_dais[] = {
 		.ops = &y1_afe_ops,
 	},
 	{
-		.name = "FM", .id = 1,
+		/* The link and its PCM are named after this DAI: Reborn looks for "Y2 FM Capture" in
+		 * /proc/asound/pcm, as on the Y2. */
+		.name = "Y2 FM Capture", .id = 1,
 		.capture = { .stream_name = "FM Capture", .channels_min = 2, .channels_max = 2,
 			     .rates = SNDRV_PCM_RATE_48000, .formats = SNDRV_PCM_FMTBIT_S16_LE },
 		.ops = &y1_fm_ops,
