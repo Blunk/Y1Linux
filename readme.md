@@ -9,6 +9,7 @@ Working so far:
 - Can read battery level, can charge battery
 - Can run Y2Rebord
 - Wifi if firmware is installed
+- FM Radio if firmware is installed
 - Bluetooth if firmware is installed
 - Locks screen after ~2s center button press
 
