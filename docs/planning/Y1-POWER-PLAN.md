@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 built, not flashed** ([build](#15-baseline-tools-and-d3-build--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -272,3 +272,10 @@ started at 3.63 V, already at the daemon's 2 %, and hit the 3.50 V stop after 0.
 tail). Not usable as a drain baseline; the one number that stands is idle CPU busy at 2.9 % (both cores,
 screen off, Wi-Fi and BT on). The player then ran on until it went flat and cold-booted on replug.
 `start` now refuses below 3.9 V without `--force`. Rerun from a full charge.
+
+D3 on the player (2026-11-15, BOOTIMG `c3af5551…` written with mtkclient, RECOVERY unchanged):
+`y1-cpufreq-check.sh` with a 10-minute soak **PASS**. mtk-cpufreq binds both cores; 598/806/1001 MHz each set,
+read back and decoded from ARMPLL_CON1 (1001 MHz `0x8009A000` at /1, 806 MHz `0x810F8000` and 598 MHz `0x810B8000`
+at /2), mux 1 throughout. A fixed shell loop takes 6.78 / 8.47 / 11.42 s, in proportion to the rate. 1092 governor
+transitions under load, no fault; schedutil settles at 598 MHz when idle. Charging, Wi-Fi, Bluetooth, audio card
+and Reborn as before; the kernel log has only the known boot messages. The drain comparison was dropped (owner).
