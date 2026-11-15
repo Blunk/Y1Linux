@@ -1,6 +1,6 @@
 # Innioasis Y1: FM radio — evidence and plan (2026-11-14)
 
-**Status: source done, hardware NOT_RUN.** The owner asked on 2026-11-14 to port the Y2's FM radio (Beta 9.3.26,
+**Status (2026-11-15): FM plays on the owner's Y1** (§4; Reborn and the platform carry one fix found there). The owner asked on 2026-11-14 to port the Y2's FM radio (Beta 9.3.26,
 [BETA-8-FM-PLAN.md](BETA-8-FM-PLAN.md), [FM-RADIO.md](../FM-RADIO.md)) to the `y1` branch. Audit:
 [Y1 FM entry](roadmap-gap-audit.md#y1-fm-radio-entry-audit--2026-11-14). The Y1 shares the Y2's tuner driver,
 capture sequence and Reborn screens; what differs is the radio core's supply, two WMT commands, the sound card
@@ -60,7 +60,7 @@ and with it Reborn's named lookup must find the Y1's FM link, whose PCM is named
 (`FM-dir-hifi …`, not "Y2 FM Capture"): name the link to match, or let Reborn accept the Y1's name. The
 `/dev/snd` fallback stays for kernels without it.
 
-## 3. Device checks (owner's Y1; NOT_RUN)
+## 3. Device checks (owner's Y1)
 
 1. Firmware: copy `system.img` of the Y1 3.0.2 or the Y2 3.2.0 package into `Firmware`; the pair appears in
    `/data/firmware/mt6572`, the copy is deleted, Bluetooth and Wi-Fi keep running.
@@ -74,3 +74,31 @@ and with it Reborn's named lookup must find the Y1's FM link, whose PCM is named
 
 If the tuner misbehaves where the Y2's newer driver differs (§1, tuner commands), the stock Y1 sequence is the
 fallback.
+
+## 4. On the owner's Y1, 2026-11-15
+
+Images `out/y1-root-fm` (Y2ROOT, sha256 `284b4ce3…368e5d`) and `out/y1-boot-fm` (BOOTIMG `6223f233…5dd60f`),
+ANDROID and BOOTIMG written with mtkclient, Y2DATA kept.
+
+- **Firmware:** the Y1 3.0.2 `system.img` copied into `Internal Storage/Firmware` (over SSH; the owner's
+  Nautilus MTP copy failed); the leftover pass took the pair into `/data/firmware/mt6572` (hashes as §1) and
+  deleted the copy. Run by hand (`y2-platform firmware scan`): with the screen dark the service's maintenance
+  pass comes every 300 s and a leftover needs two passes.
+- **Boot:** the chip booted with the FM strap; Bluetooth and Wi-Fi as before (`functions=0x9`, no transport
+  error): the strap is accepted.
+- **Tuner:** `fm/power` 1: `WMT opcode=06 parameter=01 ok`, `opcode=08 … ok` (the I2S pin write), `FM on:
+  chip=6627 rom=0 patch=0000` (ROM 0: the v1 pair); `functions=0xb`; off again leaves `0x9`.
+- **Signal:** −99 to −103 dBm across the band. The search (soft-mute tune, 100 kHz) takes 7 s and lists 17
+  frequencies, the strongest 102.8 MHz (−74 dBm), 88.5 (−80), 96.9 (−81) (the first-revision Y2 listed one or two
+  probable false hits).
+- **Capture** (`arecord -D hw:0,1`, 48 kHz): exactly 96 000 frames in 2 s; an empty frequency gives flat noise at
+  −43 dBFS (left and right identical); 102.8 MHz gives −17.5 dBFS varying from −16 to −19 per 250 ms, mono. The
+  owner: the recording "sounds very good": the 32 kHz ASRC words are right on the Y1 (§1, open point settled).
+- **Reborn:** first "needs the tuner firmware": the Y1's Y2DATA still had the Bluetooth bring-up's placeholders in
+  `/data/firmware/mt6582` (Y1-BLUETOOTH-PLAN.md, B6), which `/lib/firmware/mediatek/mt6582` links to, and Reborn
+  took the first existing directory. Fixed in Reborn `482e6bb` (ready when either directory holds the pair); on
+  the player the placeholders were moved to `/data/b6-placeholders` (the platform never read them; status stayed
+  `Ready`). Then FM works in Reborn (owner).
+- **Not checked:** FM over Bluetooth by ear, long listening and battery use, the hide switch on the player, the
+  pair from the Y2 package's image on a Y1 (the branch exists; this run used the Y1's image).
+
