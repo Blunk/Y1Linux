@@ -1,0 +1,74 @@
+--- a/arch/arm/mach-mediatek/mediatek.c
++++ b/arch/arm/mach-mediatek/mediatek.c
+@@ -11,10 +11,61 @@
+ #include <linux/of.h>
+ #include <linux/of_clk.h>
+ #include <linux/clocksource.h>
++#include <linux/printk.h>
++#include <asm/arch_timer.h>
+ 
+ 
+ #define GPT6_CON_MT65xx 0x10008060
+ #define GPT_ENABLE      0x31
++#define GPT6_CNT_OFFSET 0x08
++
++/*
++ * MT6572 (Innioasis Y1, docs/planning/Y1-POWER-PLAN.md D4): stock's
++ * setup_syscnt() runs GPT6 free at 13 MHz for the Cortex-A7 system counter,
++ * the same write as above, but LK leaves GPT6 off. Start it, then require the
++ * arch counter to follow GPT6 over about 1 ms; otherwise disable the
++ * arm,armv7-timer node so the GPT stays the only timer, as before.
++ */
++static struct property mt6572_timer_disabled = {
++	.name = "status", .value = "disabled", .length = sizeof("disabled"),
++};
++
++/* udelay is not calibrated yet: GPT6 itself (13 MHz) times the 1 ms window, bounded by a read count. */
++static bool __init mt6572_counter_follows_gpt6(void __iomem *gpt6)
++{
++#ifdef CONFIG_ARM_ARCH_TIMER
++	u32 gpt_start = readl(gpt6 + GPT6_CNT_OFFSET), gpt_delta = 0;
++	u64 cnt_start = __arch_counter_get_cntpct(), cnt_delta;
++	unsigned long reads;
++
++	for (reads = 0; reads < 10000000 && gpt_delta < 13000; reads++)
++		gpt_delta = readl(gpt6 + GPT6_CNT_OFFSET) - gpt_start;
++	cnt_delta = __arch_counter_get_cntpct() - cnt_start;
++	pr_info("mt6572: GPT6 %u ticks, arch counter %llu ticks\n", gpt_delta, cnt_delta);
++	return gpt_delta >= 13000 && cnt_delta >= gpt_delta / 2 && cnt_delta <= (u64)gpt_delta * 2;
++#else
++	return false;
++#endif
++}
++
++static void __init mt6572_timer_init(void)
++{
++	struct device_node *np;
++	void __iomem *gpt6 = ioremap(GPT6_CON_MT65xx, 0x0c);
++
++	if (!gpt6)
++		return;
++	writel(GPT_ENABLE, gpt6);
++	if (!mt6572_counter_follows_gpt6(gpt6)) {
++		np = of_find_compatible_node(NULL, NULL, "arm,armv7-timer");
++		if (np) {
++			of_update_property(np, &mt6572_timer_disabled);
++			of_node_put(np);
++		}
++		pr_warn("mt6572: arch counter not running, arch timer disabled\n");
++	}
++	iounmap(gpt6);
++}
+ 
+ static void __init mediatek_timer_init(void)
+ {
+@@ -32,6 +83,9 @@
+ 		iounmap(gpt_base);
+ 	}
+ 
++	if (of_machine_is_compatible("mediatek,mt6572"))
++		mt6572_timer_init();
++
+ 	of_clk_init(NULL);
+ 	timer_probe();
+ };

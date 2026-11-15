@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 on the owner's Y1, PASS** ([idle plan](#16-idle-states-d4d7--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -63,6 +63,10 @@ image's code or data, not on the device) and of the Y2's tree.
 | **D1** | Power-off on battery, then observed with USB attached | fifteenth boot |
 | **D2** | Battery percentage and low-battery shutdown: the Y2's power daemon with a Y1 profile and policy | sixteenth boot |
 | **D3** | CPU frequency scaling 598/806/1001 MHz at LK's fixed VPROC | seventeenth boot |
+| **D4** | Tick: the Cortex-A7 architected timer, tickless idle, high-resolution timers; the GPT as broadcast | `out/y1-boot-d4` |
+| **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence | planned |
+| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot | planned |
+| **D7** | Suspend: stock's suspend firmware, MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops) | planned |
 
 D1 comes first because D2's low-battery shutdown is worthless without a real power-off. D3 is last and
 riskiest: it reprograms the CPU's own PLL.
@@ -121,8 +125,8 @@ undone by restoring the fourteenth boot).
 
 ## 8. Out of scope
 
-Suspend and SPM deep idle, VPROC scaling and rates above 1001 MHz, the RGU/LK charging-mode path, an RTC
-driver and clock, the Y2DATA partition (milestone B) and the player UI (milestone E).
+VPROC scaling of a running CPU and rates above 1001 MHz (deep idle and suspend are planned in §16, each with its
+own admission), the RGU/LK charging-mode path, an RTC driver and clock, the Y2DATA partition (milestone B) and the player UI (milestone E).
 
 ## 9. Admission
 
@@ -132,6 +136,7 @@ driver and clock, the Y2DATA partition (milestone B) and the player UI (mileston
 | D1 | **Power off the PMIC** | BBPU `0x4300` and `WRTGR` 1 at power-off only, mainline's driver with the Y2's patch 0027; no RTC unlock, no RGU, no other PMIC write |
 | D2 | **Run the power daemon** | Y2 daemon unchanged except a tolerance for missing Y2-only files; Y1 profile and policy in the RAM overlay; shutdown through D1's path only |
 | D3 | **Scale the CPU clock** | 598/806/1001 MHz only, CPU mux and ARMPLL through the fork's driver with the intermediate clock; no VPROC or other PMIC write |
+| D4 | **Tickless idle** | kernel configuration only (arch timer, `NO_HZ_IDLE`, `HIGH_RES_TIMERS`); no register write outside the timers' own drivers; BOOTIMG only |
 
 ## 10. D0 result — 2026-11-05
 
@@ -279,3 +284,78 @@ read back and decoded from ARMPLL_CON1 (1001 MHz `0x8009A000` at /1, 806 MHz `0x
 at /2), mux 1 throughout. A fixed shell loop takes 6.78 / 8.47 / 11.42 s, in proportion to the rate. 1092 governor
 transitions under load, no fault; schedutil settles at 598 MHz when idle. Charging, Wi-Fi, Bluetooth, audio card
 and Reborn as before; the kernel log has only the known boot messages. The drain comparison was dropped (owner).
+
+## 16. Idle states, D4–D7 — 2026-11-15
+
+The owner chose idle states over VPROC scaling for D4 onward. Stock runs 598, 806 and 1001 MHz at 1150 mV on
+every speed bin, so a lower running VPROC has no vendor basis (and the Y2 forbids unmeasured undervolting);
+stock's power saving is in idle and sleep.
+
+**Evidence (MediaTek's 3.4.5 GPL drop, `drsami/mt6572_kernel` `c4b775c`, `mediatek/platform/mt6572/kernel/core/`;
+read, not built):**
+
+- `mt_idle.c` tries MCDI, then deep idle (dpidle), then WFI. MCDI/SODI is compiled out (`SPM_MCDI_FUNC`
+  commented, `spm_mcdi_init` not registered), so stock uses **WFI and dpidle only**.
+- dpidle needs **exactly one online CPU** (CPU1 hotplugged out), a clock mask that blocks on the UARTs, USB,
+  APDMA, I2C, PWM, display/camera/MDP CGs and others (MSDC, thermal and AUXADC excluded), and at least
+  54 500 13-MHz ticks (about 4.2 ms) to the next timer. It moves AUD_INTBUS to 26 MHz, enables the PWRAP's
+  clock, arms GPT4 as the wake timer (the arch timer stops), clones the GIC into CIRQ, loads the 493-word
+  `spm_pcm_dpidle` firmware and powers CPU0 down in DORMANT mode (L1 flushed, L2 retained).
+- The dpidle firmware selects PWRAP DVFS slot 2 (`AP_DVFS_CON_SET` `0x10006604`), **VPROC 1.05 V** (`0x220` =
+  `0x38`), on entry and slot 1 (1.15 V) on exit. Stock programs the slots in `mt_cpufreq_pdrv_probe`: 0 =
+  1.25 V, 1 = 1.15 V, 2 = 1.05 V, 6/7 = `TOP_CKPDN0` set/clear.
+- Suspend uses the 576-word `spm_pcm_suspend` (CPU and infra off, 26 MHz off); VPROC then falls to **0.85 V** by
+  the MT6323's own sleep mode (`0x222` `VPROC_VOSEL_SLEEP` `0x18`, `0x230[8]` `VSLEEP_EN`, `0x216[1]`,
+  `0x120[4]` `SRCLKEN_HW_MODE`), not by DVFS.
+- CPU1 power-off: `spm_mtcmos_ctrl_cpu1` through `FC1_PWR_CON` (`0x10006218`) with `CPU_FC1_L1_PDN` (`+0x264`),
+  status bit 11 in `PWR_STATUS`/`PWR_STATUS_S` (`+0x60c`/`+0x610`); power-up through `BOOT_SLV_CFG`/`ADDR`
+  (`0x10001400`).
+- SPM: base `0x10006000`, key `0x0b16 << 16`, IRQs SPI 72/73; load and kick in `spm_init_pcm`/`spm_kick_pcm`.
+
+**Measured on D3 (old tick):** idle with the screen off wakes CPU0 100 times a second (GPT `timer@10008000`)
+and CPU1 100 times through broadcast IPIs, plus about 55 IPIs and 11 MUSB interrupts a second with USB
+attached. `CONFIG_ARM_ARCH_TIMER` was off, inherited from the Y2's first-boot fragment with no Y1 reason; the
+fork dtsi already has the `arm,armv7-timer` node at 13 MHz.
+
+**Stages:**
+
+- **D4 — tick.** Arch timer, `NO_HZ_IDLE`, `HIGH_RES_TIMERS` (as the Y2's production fragment); the GPT stays
+  registered as the broadcast device D6 will need. Configuration only. Test: boots; `current_clocksource` and
+  `/proc/timer_list` show `arch_sys_counter` and per-CPU `arch_sys_timer`; idle interrupt rate well below
+  100/s per CPU; `sleep 10` takes 10 s against the host; audio, Wi-Fi, Bluetooth, charging and cpufreq as on D3.
+  Build `out/y1-boot-d4` (Y2ROOT `out/y1-root-asound`), BOOTIMG sha256
+  `8d310738e8e5af54284ce119e7fcc4b9d3c3bfd1efa181bc8e86fd1ee7c6a5dd`. The fragment's old
+  `# CONFIG_HIGH_RES_TIMERS is not set` (kept only because the periodic tick was the qualified state) is gone;
+  flash BOOTIMG only, as for D3.
+- **D4 run (2026-11-15): boot loop.** After the logo the preloader enumerates, the kernel's USB gadget never
+  does, and the watchdog restarts the player: an early hang. D3's BOOTIMG was written back. Cause (INFERRED, no
+  console): the arch counter does not run. Mainline's `mediatek_timer_init` enables GPT6 to ungate the arch
+  timer only on MT6589/MT7623/MT8135/MT8127, and the Y2 needed `kernel/platform/local-timer.c` (stock's
+  `mt_gpt_init`/`ca7_timer` contract with a counter check and a GPT fallback) for the same reason. D4 needs the
+  Y1's stock GPT6/arch-timer preparation and a checked fallback before it can run again.
+- **D4 fix (0043).** Stock's `mt_gpt.c` defines `CONFIG_HAVE_SYSCNT` "used for CA7 system counter":
+  `setup_syscnt()` runs GPT6 (`0x10008060`) free at 13 MHz, divider 1 (`CON` `0x31`, `CLK` `0`), exactly
+  mainline's `GPT6_CON_MT65xx` write, whose SoC list lacks the MT6572; LK leaves GPT6 at `0` (read on D3).
+  Overlay 0043 on `arch/arm/mach-mediatek/mediatek.c` does that write for `mediatek,mt6572` and then requires
+  the arch counter to advance within a factor of two of GPT6 over 13 000 GPT6 ticks (about 1 ms, timed by GPT6
+  since `udelay` is not calibrated yet); otherwise it sets the `arm,armv7-timer` node's status to `disabled` and
+  the GPT stays the only timer. mainline's GPT driver uses only GPT1/GPT2.
+- **D4a run** (arch timer, periodic tick; BOOTIMG `31c24586…`): boots; `mt6572: GPT6 13001 ticks, arch counter
+  13000 ticks`; clocksource `arch_sys_counter`; per-CPU `arch_timer` interrupts, broadcast IPIs 0;
+  `sleep 30` = 30.02 s on the player's uptime.
+- **D4b run** (plus `NO_HZ_IDLE`, `HIGH_RES_TIMERS`; build `out/y1-boot-d4b`, BOOTIMG sha256
+  `ce0d4d1c300040aa86c648f448aace8abf372b4a945bae176aae841f5d5c2bc4`): **PASS**. `hres_active` 1 on both CPUs;
+  `y1-cpufreq-check.sh` PASS (loop 6.80 / 8.46 / 11.46 s); `sleep 60` = 60.01 s; charging, Wi-Fi, Bluetooth,
+  audio card and Reborn as before; no lockup or clocksource warning. Screen off, USB attached and charging,
+  2 min after boot: CPU0 102 and CPU1 46 timer interrupts/s (D3: 100 + 100 broadcast). CPU0 keeps a high rate
+  because of its wakers, not the tick: the charger's worker (`kworker/u11:0-y2-charger`) about 75 context
+  switches/s from its 1 s poll, `S45y1-mtp`'s 1 s shell loop about 17/s (some 15 forks per round), the power
+  daemon about 11/s. Those are separate work (drivers and userspace), not D4.
+- **D5 — CPU1 power-off.** `HOTPLUG_CPU` with the stock `FC1_PWR_CON` sequence (a `smp_operations` cpu_kill /
+  boot path in the MT6572 platform code) and a policy that takes CPU1 offline when idle. Prerequisite for D6.
+- **D6 — deep idle.** A cpuidle state on CPU0 with stock's entry conditions (one CPU online, the clock
+  mask through CCF, residency), mainline `cpu_pm`/`cpu_suspend` for the context instead of stock's
+  `mt_dormant.c`, the dpidle firmware as data, CIRQ, GPT wake, and the PWRAP DVFS slots 1/2 with readback.
+  New admission needed: SPM, PWRAP DVFS slot and `AP_DVFS_CON_SET` writes.
+- **D7 — suspend.** The suspend firmware and the MT6323 sleep-mode registers above; only after D6.
+
