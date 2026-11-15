@@ -98,7 +98,8 @@ ANDROID and BOOTIMG written with mtkclient, Y2DATA kept.
   `/data/firmware/mt6582` (Y1-BLUETOOTH-PLAN.md, B6), which `/lib/firmware/mediatek/mt6582` links to, and Reborn
   took the first existing directory. Fixed in Reborn `482e6bb` (ready when either directory holds the pair); on
   the player the placeholders were moved to `/data/b6-placeholders` (the platform never read them; status stayed
-  `Ready`). Then FM works in Reborn (owner).
+  `Ready`). Then FM works in Reborn (owner). Y2ROOT rebuilt with Reborn `482e6bb` (`out/y1-root-fm2`, sha256
+  `b62481e3…5b324e`), ANDROID written; FM works there too (owner), and the placeholders were deleted.
 - **Not checked:** FM over Bluetooth by ear, long listening and battery use, the hide switch on the player, the
   pair from the Y2 package's image on a Y1 (the branch exists; this run used the Y1's image).
 
