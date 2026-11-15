@@ -4,7 +4,7 @@
  * evidence in docs/planning/Y1-*-PLAN.md.
  *
  * - Clocks, pins, the PMIC wrapper and its charger-block write policy, UART0 at 921600 baud, both CPUs (their
- *   enable-method in mt6572-fork.dtsi).
+ *   enable-method in mt6572-fork.dtsi), scaled to 598, 806 or 1001 MHz at LK's fixed 1.15 V.
  * - Storage: the eMMC (writes only inside the write guard's windows: Y2DATA and the update's images) and the
  *   microSD card; the two card supplies are fixed descriptions, not PMIC regulators.
  * - Input: the APT32F wheel on I2C1, its zones on their own input device "Y2 navigation buttons" (play/pause,
@@ -484,4 +484,53 @@
 	/delete-property/ resets;
 	assigned-clocks = <&topckgen CLK_TOP_MFG_MUX_SEL>, <&topckgen CLK_TOP_MFG_SEL>;
 	assigned-clock-parents = <&topckgen CLK_TOP_MFG_PRE_500M>, <&topckgen CLK_TOP_MFG_MUX_SEL>;
+};
+
+/*
+ * CPU frequency scaling (docs/planning/Y1-POWER-PLAN.md, D3): 598, 806 and 1001 MHz, which stock runs at 1.15 V
+ * on every speed bin. VPROC is the 1.15 V LK leaves (D0: VOSEL 0x48 = 1150 mV); "vproc" is a description with
+ * no hardware behind it, so no PMIC register is written. Each change parks the CPUs on the 26 MHz crystal (the
+ * mux's parent 0; mpll_d2's rate depends on the DRAM type and is unproven), relocks ARMPLL and switches back.
+ * Not boot-on: the packaging check refuses regulator-boot-on; always-on keeps the description enabled.
+ */
+/ {
+	vproc: regulator-vproc {
+		compatible = "regulator-fixed";
+		regulator-name = "vproc";
+		regulator-min-microvolt = <1150000>;
+		regulator-max-microvolt = <1150000>;
+		regulator-always-on;
+	};
+
+	y1_cpu_opp_table: opp-table-y1-cpu {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-598000000 {
+			opp-hz = /bits/ 64 <598000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-806000000 {
+			opp-hz = /bits/ 64 <806000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-1001000000 {
+			opp-hz = /bits/ 64 <1001000000>;
+			opp-microvolt = <1150000>;
+		};
+	};
+};
+
+&cpu0 {
+	clocks = <&infracfg CLK_INFRA_CPUSEL>, <&uart_clk>;
+	operating-points-v2 = <&y1_cpu_opp_table>;
+	proc-supply = <&vproc>;
+};
+
+&cpu1 {
+	clocks = <&infracfg CLK_INFRA_CPUSEL>, <&uart_clk>;
+	operating-points-v2 = <&y1_cpu_opp_table>;
+	proc-supply = <&vproc>;
 };

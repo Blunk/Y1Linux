@@ -57,9 +57,25 @@ static const struct mtk_pll_div_table armpll_div_table[] = {
     { /* sentinel */ }
 };
 
+/*
+ * Innioasis Y1 (docs/planning/Y1-POWER-PLAN.md, D3): ARMPLL's own post-divider
+ * steps. clk-pll picks /1 above the second row, so 1001 MHz stays at /1 with
+ * the VCO at 1001 MHz as LK and stock leave it (the shared table above would
+ * relock it at /2 with a 2002 MHz VCO, beyond the 1800 MHz ceiling); 806 and
+ * 598 MHz use /2 (VCO 1612 and 1196 MHz), as stock's formula does.
+ */
+static const struct mtk_pll_div_table y1_armpll_div_table[] = {
+    { .div = 0, .freq = 1800 * MHZ },
+    { .div = 1, .freq = 1000 * MHZ },
+    { .div = 2, .freq = 520 * MHZ },
+    { .div = 3, .freq = 260 * MHZ },
+    { .div = 4, .freq = 130 * MHZ },
+    { /* sentinel */ }
+};
+
 static const struct mtk_pll_data apmixedsys_plls[] = {
 	PLL_DIV(CLK_APMIXED_ARMPLL, "armpll", ARMPLL_OFFSET, 0x00000011, 0,
-		PLL_AO, 1000 * MHZ, 1800 * MHZ, armpll_div_table),
+		PLL_AO, 1000 * MHZ, 1800 * MHZ, y1_armpll_div_table),
 
 	PLL_FREQ(CLK_APMIXED_MAINPLL, "mainpll", MAINPLL_OFFSET, 0x00000011,
 	    CON0_RST_BAR, PLL_AO | HAVE_RST_BAR, 1000 * MHZ, 1800 * MHZ),

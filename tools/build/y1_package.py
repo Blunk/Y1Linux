@@ -112,8 +112,10 @@ WINDOWS = {
 FORBIDDEN = ['simple-framebuffer', 'iommus = ', 'regulator-boot-on', 'chip-id', 'innioasis,bring-up']
 # UART0, I2C0, I2C1, mmc0, mmc1, USB and its PHY, DSI, BLS and the connectivity core.
 ENABLED = 10
-# The PMIC's VGP1, VUSB, VCN18, VCN28 and the PA supplies, and the two fixed card-rail descriptions.
-REGULATORS = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";', 'regulator-name = "vgp1";',
+# The PMIC's VGP1, VUSB, VCN18, VCN28 and the PA supplies, the two fixed card-rail descriptions and the fixed
+# 1.15 V VPROC description cpufreq needs (docs/planning/Y1-POWER-PLAN.md D3; no PMIC register behind it).
+REGULATORS = ['regulator-name = "emmc-vcc";', 'regulator-name = "sd-vcc";', 'regulator-name = "vproc";',
+              'regulator-name = "vgp1";',
               'regulator-name = "vusb";', 'regulator-name = "vcn18";', 'regulator-name = "vcn28";',
               'regulator-name = "vcn33-bt";', 'regulator-name = "vcn33-wifi";']
 

@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); D3 not admitted. The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 built, not flashed** ([build](#15-baseline-tools-and-d3-build--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -233,3 +233,42 @@ are on the "service" page that the Y2 opens with its power key, absent on the Y1
 - **Restart 3** (the fix installed live): acknowledgement `Ready` 3.1 s after the request; the steps followed at
   once. Rebuild `out/y1-twentieth-boot-2`, BOOTIMG sha256
   `e2621cf1199142292da82b9edf12cab68b288916700a66a3279c06c270d13236` (`0x33a800` bytes).
+
+## 15. Baseline tools and D3 build — 2026-11-15
+
+Owner-approved ("do the baseline script and D3 build").
+
+- **Drain baseline** (before D3 is flashed, so the two can be compared): `tools/development/y1-power-baseline.py
+  start <label>` copies `tools/development/y1-power-log.sh` to `/data/power-baseline/` and starts it detached; it
+  waits for the USB cable to be pulled, samples every 60 s (BAT0 voltage, the daemon's filtered voltage and
+  percentage, the charger's unvalidated sense-resistor estimate, backlight, `/proc/stat`, cpu0 rate, wlan0) and
+  stops when the cable returns, at 3.50 V or after the hour limit. `report` fetches the TSV and prints the
+  voltage and percentage slopes, CPU busy share and screen-on share. Reads only; the one write is the TSV.
+  Dry run on the owner's Y1 (fake USB flag, `/tmp`): every column filled.
+- **Kernel**: `kernel/patches-y1/0042-mt6572-cpufreq.patch` adds an `mediatek,mt6572` entry to mainline's
+  `mediatek-cpufreq` (1.15 V ceiling, no SRAM rail, no CCI); the fragment gains `CPU_FREQ`, `CPU_FREQ_STAT`, the
+  schedutil default and the performance/powersave/userspace governors; `CPUFREQ_DT` stays off.
+- **Deviations from §6**: (1) the intermediate parent is the **26 MHz crystal** (`cpu_mux` parent 0), not the fork's
+  `mpll_d2`: MAINPLL's rate depends on the DRAM type and was never read on the Y1, so its half could exceed
+  1001 MHz. (2) ARMPLL gets its own post-divider table (`clk-mt6572-apmixedsys.c`, `y1_armpll_div_table`): with the
+  shared table clk-pll would relock 1001 MHz at /2 with a 2002 MHz VCO; now 1001 MHz is /1 (PCW `0x9a000`, LK's
+  value), 806 and 598 MHz /2 (VCO 1612/1196 MHz, PCW `0xf8000`/`0xb8000`, exact). WHPLL (GPU) keeps the shared
+  table. (3) the fork's OPP table (with `opp-supported-hw` but no speed-bin reader, which would drop every OPP) is
+  not used: `y1_cpu_opp_table` lists 598/806/1001 MHz at 1.15 V. (4) VPROC is a `regulator-fixed` "vproc" at
+  1.15 V (always-on, not boot-on: the packaging check forbids it), admitted in `y1_package.REGULATORS`.
+- **RECOVERY** carries the same tree (the packaging invariant: it differs only in bootargs and write windows). The
+  D3 test writes **BOOTIMG only**, so the installed RECOVERY stays the fallback at LK's fixed rate.
+- Build `out/y1-boot-d3` (Y2ROOT `out/y1-root-asound`), BOOTIMG sha256
+  `c3af5551b9e2e0ee17fca391b071ba1b896a2c2e986a89a5d97539f6180fe5b8`, RECOVERY
+  `bc50a248b661ca6a75b246b68ff0f1fab4cea2a94976b7feec719dcf580f6ab3`. Not flashed.
+- **Test** (`tools/development/y1-cpufreq-check.sh`, over SSH): driver `mtk-cpufreq` on policy0 with CPUs 0–1; the
+  three rates set with `userspace`, each read back from sysfs and decoded from `ARMPLL_CON1` with the mux on
+  ARMPLL, a fixed shell loop timed at each; optional soak (both cores busy, governor alternating, 10 minutes);
+  ends on schedutil. Then charging, display, audio, Wi-Fi and SSH as usual, and a drain run with the same label
+  as the baseline.
+
+First idle run (old kernel, 2026-11-15, `out/power-baseline/idle-screenoff-wifi-on-bt-on-20261115-125559.tsv`):
+started at 3.63 V, already at the daemon's 2 %, and hit the 3.50 V stop after 0.72 h (-190 mV/h in the cell's
+tail). Not usable as a drain baseline; the one number that stands is idle CPU busy at 2.9 % (both cores,
+screen off, Wi-Fi and BT on). The player then ran on until it went flat and cold-booted on replug.
+`start` now refuses below 3.9 V without `--force`. Rerun from a full charge.
