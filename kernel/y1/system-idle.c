@@ -103,6 +103,11 @@ void y1_system_idle_lease(unsigned bit, bool on)
 		atomic_andnot(bit, &leases);
 	}
 }
+/* Deep idle's entry condition (deep-idle.c, D6c): the screen dark and no AFE stream. Read in the idle path. */
+bool y1_system_idle_quiet(void)
+{
+	return y2_backlight_dark() && !atomic_read(&leases);
+}
 /* Busy per-mille of the online capacity since the previous sample. */
 static unsigned sample_busy(void)
 {

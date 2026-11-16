@@ -729,3 +729,98 @@ clocks of the mask stay on, each with enable count 0, kept only by `clk_ignore_u
   no VBUS. It came back up on Wi-Fi after 9 minutes, booted without VBUS (`VBUS gone` at 0.96 s), and logged no
   panic or watchdog line. Its output was lost to buffering. The repeat over Wi-Fi passed with no restart, so the
   check did not cause it. The cause is unknown, so charging was not checked on this boot.
+
+**D6c build (2026-11-16).** `kernel/y1/deep-idle.c` gains a cpuidle driver for CPU0 (`y1_idle`, menu governor,
+`CONFIG_CPU_IDLE`):
+- **States:** state 0 is WFI. State 1 is `DPIDLE`, with `CPUIDLE_FLAG_TIMER_STOP | CPUIDLE_FLAG_OFF`, a 5 ms
+  target residency and 300 µs exit latency. It is disabled until
+  `/sys/devices/system/cpu/cpu0/cpuidle/state1/disable` is set to 0.
+- **Firmware:** `kernel/y1/dpidle-pcm.h` holds stock's 493 words unchanged.
+
+The state 1 path is stock's `spm_go_to_dpidle` with `cpu_pdn` = 0:
+- **Admission:** refuses unless all of these hold:
+  - CPU0 is the only CPU online and FC1 is off in both power-status copies;
+  - the D6b slots are ready;
+  - the screen is dark and no AFE stream runs (`y1_system_idle_quiet`, D6a);
+  - every bit of stock's four clock masks is gated and `pmic_wrap` is on;
+  - the next timer event is at least 54 500 GPT ticks away.
+- **Interrupts:** the enabled SPIs are saved, and an enabled one already pending refuses entry. The others are
+  masked and only the SPM's (GIC 104) stays enabled.
+- **CIRQ:** cloned from the saved enables. Stock clones after masking, which leaves only the SPM channel latching.
+- **PCM:** armed and kicked as stock (UART sleep request, R0/R7 sync, the four vectors, `AP_STANBY_CON`
+  `0x1b0010`, wake sources without SYSPWREQ, no PCM timer or WDT).
+- **Before WFI:** `AUD_INTBUS` goes to clk26m, and GPT4 is set one-shot at 13 MHz.
+- **After WFI:**
+  - the wake status is read;
+  - GPT4 is stopped, its enable cleared and its status acked before the GIC is unmasked (all GPTs share one
+    line and timer-mediatek acks only GPT1);
+  - the PCM is cleaned as stock (without the modem's CCCI workaround);
+  - the CIRQ is flushed into the GIC's pending bits, and the GIC enables are restored and read back.
+- **Latch (`dpidle_broken`, with `dpidle_stage`):** set by any of these:
+  - a readback mismatch when arming, cleaning or restoring the CIRQ or GIC;
+  - a PCM assert (`REG_DATA_INI` ≠ 0);
+  - a DVFS selector other than slot 1 after wake;
+  - 16 UART timeouts in a row.
+- **Counters** (`/sys/module/y1_deep_idle/parameters/`):
+  - `dpidle_entries`, `_normal`, `_aborts`, `_unknown`, `_gpt_wakes`;
+  - `_uart_acks`, `_uart_timeouts`;
+  - `_refusals` (cpu, slots, quiet, clocks, timer, pending, uart, broken);
+  - the last wake event (R12), event status, R13 and DVFS register;
+  - the SPM registers and GPT4 as found at boot.
+- **GPT4:** on the B5 image it reads CON `0x31` (free-running, IRQ off), LK's timer, which stock's
+  `mt_gpt_init` resets. The driver resets it in the same way. It refuses to register the state if GPT4's
+  interrupt is enabled or it runs in a mode other than free-run.
+- **Radios:** with Wi-Fi up, CTRL1 reads `0xd8efeefb` (APDMA and BTIF on, B2), so the state cannot enter while
+  an SSH session over Wi-Fi is open. The tests therefore run as a script on the player
+  (`tools/development/y1-dpidle-run.sh`). It does the following and writes its log to `/data/logs`, read
+  afterwards:
+  - switches both radios off through Reborn and enables the state;
+  - waits with the screen dark, comparing the monotonic clock with the PMIC RTC;
+  - restores the state and the radios.
+- **SPM at boot (B5 image):** no PCM program (`IM_LEN` `0xff`, `IM_PTR` 0), `CLK_CON` `0xa0000000`, `PCM_CON1`
+  `0xc00`, `AP_DVFS_CON` `0x80000001`, R13 `0x081008fb` (UART sleep acknowledge already set).
+
+Build `out/y1-boot-d6c`: BOOTIMG `057679ae6727d85139ca1bbdfdbb617af7d2a566b8c500f44baa715dafd95afa`, 49 warnings as
+before.
+
+**D6c run 1 (2026-11-16, build `057679ae…`): no deep idle; fix found.**
+- **Boot:** `y1_idle` registers with the menu governor, `DPIDLE` starts disabled, the slots are ready, and GPT4
+  reads `0x31` at boot and 0 after the reset.
+- **Smoke test, cable in:** 1425 refusals in 30 s, all for the CPU condition, with no entry.
+- **Unattended run** (12 min, cable out, both radios off, screen dark):
+  - from the first minute, CPU1 was parked, every clock condition was met and CTRL1 read `0xd8effeff`;
+  - 4.85 million entries took 341 s in total, about 70 µs each;
+  - every one ended with event status 0 (`unknown`), and no GPT4 wake;
+  - the UART acknowledged every time;
+  - no latch, and the DVFS selector stayed at slot 1 (`0x80000001`).
+- **Timekeeping:** the player's uptime advanced 851.31 s against the host's 851.30 s.
+- **Cause:** the GIC showed IRQ 104 (SPM, SPI 72) pending while the SPM's ISR status read 0. Stock requests
+  that line `IRQF_TRIGGER_LOW`, which sets its sysirq polarity-invert bit (`0x10200108` bit 8). No Linux
+  driver requests it on the Y1, so the idle line read as asserted and WFI returned at once.
+  - Setting the bit by hand cleared the pending state, and it stayed clear.
+  - `deep-idle.c` now sets the bit while armed and restores it with the GIC enables (read back).
+  - The FSM status (`dpidle_last_fsm`) is now recorded too.
+- **Fixed build:** `out/y1-boot-d6c2`, BOOTIMG `de2bb31ddfb42afdd60a6f75b91f641d592cbdbea28f79040a91eeb914cc4e6f`.
+
+**D6c run 2 (2026-11-16, build `de2bb31d…`): enters and wakes safely; every exit reports a sleep abort.**
+Same unattended run (12 min, cable out from minute 1, both radios off, screen dark).
+- **Entries:** 8658, with 381 s in the state (about 44 ms per entry), out of about 520 s with the cable out.
+  - Refusals: 2896 for clocks (USB still in), 5644 for the CPU condition (before CPU1 parked), 1 for an
+    enabled interrupt pending.
+  - No latch; UART acknowledged 8658 of 8658.
+  - The DVFS selector after every wake was slot 1 (`0x80000001`).
+- **Wake record:** every exit had event status `0xd0010000` (`PCM_EVENT_ABORT`, so `dpidle_aborts`, not
+  `_normal`).
+  - R12 (wake events) `0x40000810`: GPT, 26M_WAKE, AP_WAKE.
+  - R13 `0xe81208f9`, FSM `0x48490`.
+  - GPT4 never fired first: the broadcast GPT1, armed for the same event, wakes the SPM.
+- **Timekeeping:** the player's uptime advanced 1349.86 s against the host's 1349.92 s, within SSH latency.
+- **Health checks after the run:** cpufreq check PASS. Reborn, `bluetoothd`, `wpa_supplicant`, the audio card,
+  Wi-Fi and charging were all fine.
+- **Open:**
+  - **Abort status:** whether the firmware lowers VPROC to slot 2 (and lets 26 MHz sleep) before it reports
+    the abort is not shown. Stock runs this firmware with `cpu_pdn` = 1, and with the CPU's dormant power
+    kept (`CC_DISABLE_DORM_PWR`) the abort status may be its normal outcome. INFERRED.
+  - **Power:** a drain comparison with D3's screen-off run (`y1-power-baseline.py`) answers whether D6c saves
+    anything.
+  - **Rest of the test list:** the 1 h soak, the button wake and the ping test are still to do.

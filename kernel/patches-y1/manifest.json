@@ -262,7 +262,7 @@
     {
       "path": "drivers/soc/mediatek/Kconfig",
       "base_sha256": "7e85e245ec98934226170f7d151df13dc5a3fe49240b009ab20f02b0c2400dcc",
-      "result_sha256": "31ed94b7d674ea1ac31193a17627a5af0fa34ef55ba251c580cd6a1c2961546a",
+      "result_sha256": "413c3ba31d9da10284c4d9f8bc71968dceef017377a993383ba42d9c8c8e598a",
       "patch": "0045-innioasis-y1-idle-kconfig.patch"
     },
     {
@@ -442,7 +442,7 @@
     {
       "path": "drivers/video/backlight/system-idle.h",
       "source": "kernel/platform/system-idle.h",
-      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
+      "sha256": "997d11bf70834f3cb043665eee116763d58b3874dd3e7f239fec22173d30c83b"
     },
     {
       "path": "sound/soc/mediatek/y1-mt6572-afe.c",
@@ -532,12 +532,12 @@
     {
       "path": "drivers/soc/mediatek/y1-system-idle.c",
       "source": "kernel/y1/system-idle.c",
-      "sha256": "ffa17e47716a0441982334cf12179365fd74ce2561993babd111c7312c491b39"
+      "sha256": "b618ad77323803610de6a724521de4d1d57efdabc3f6b5afb1bbe9c76ec4280d"
     },
     {
       "path": "drivers/soc/mediatek/system-idle.h",
       "source": "kernel/platform/system-idle.h",
-      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
+      "sha256": "997d11bf70834f3cb043665eee116763d58b3874dd3e7f239fec22173d30c83b"
     },
     {
       "path": "drivers/soc/mediatek/system-idle-policy.h",
@@ -547,12 +547,17 @@
     {
       "path": "sound/soc/mediatek/system-idle.h",
       "source": "kernel/platform/system-idle.h",
-      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
+      "sha256": "997d11bf70834f3cb043665eee116763d58b3874dd3e7f239fec22173d30c83b"
+    },
+    {
+      "path": "drivers/soc/mediatek/dpidle-pcm.h",
+      "source": "kernel/y1/dpidle-pcm.h",
+      "sha256": "1cac2e6ed746bf469489e6d5e925fcbdb91eeb5b2f58bab7cf749f49fe98b951"
     },
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "4f599dc4c1ac19a282c5c935bb4fd761c95821c8e6a4a2c1464fe6d62fbc5cfb"
+      "sha256": "3b235d2060f2ca84231486fc31ccd0752b5741c4798de2d8a0d12be4881439a1"
     }
   ]
 }

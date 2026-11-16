@@ -1,6 +1,6 @@
 --- a/drivers/soc/mediatek/Kconfig
 +++ b/drivers/soc/mediatek/Kconfig
-@@ -89,4 +89,20 @@
+@@ -89,4 +89,21 @@
  	  information about the SoC to the userspace including the
  	  manufacturer name, marketing name and soc name.
  
@@ -14,10 +14,11 @@
 +
 +config INNIOASIS_Y1_DEEP_IDLE
 +	bool "Innioasis Y1 (MT6572) deep idle"
-+	depends on INNIOASIS_Y1_IDLE && MTK_PMIC_WRAP && MFD_MT6397
++	depends on INNIOASIS_Y1_IDLE && MTK_PMIC_WRAP && MFD_MT6397 && CPU_IDLE
 +	help
 +	  Stock's PMIC wrapper DVFS slot table and deep idle on CPU0
-+	  (docs/planning/Y1-POWER-PLAN.md section 17). The idle states start
-+	  disabled and are enabled through sysfs.
++	  (docs/planning/Y1-POWER-PLAN.md section 17): a cpuidle driver whose
++	  deep state runs stock's SPM firmware. The deep state starts disabled
++	  and is enabled through sysfs.
 +
  endmenu

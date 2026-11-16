@@ -21,6 +21,7 @@ static inline int y2_system_idle_restore(void)
 /* Y1 AFE stream lease (bit 0 playback, bit 1 FM/capture); callable from atomic context. */
 #if IS_ENABLED(CONFIG_INNIOASIS_Y1_IDLE)
 void y1_system_idle_lease(unsigned bit, bool on);
+bool y1_system_idle_quiet(void);
 #else
 static inline void y1_system_idle_lease(unsigned bit, bool on)
 {
