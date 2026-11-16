@@ -7,7 +7,11 @@
  * itself requests only slot 1 (1.15 V, today's voltage), as stock's spm_dvfs_ctrl_volt: AP_DVFS_CON_SET
  * low three bits, then the wrapper's acknowledge in bit 31; VOSEL_ON and the PMIC's own NI_VPROC_VOSEL
  * must then read 0x48. Slot 2 (1.05 V) is left to stock's deep-idle firmware (D6c/D6d). Any mismatch
- * leaves deep idle off for this boot. */
+ * leaves deep idle off for this boot.
+ * Blocker B1: stock's deep idle requires the SEJ clock (CTRL1 bit 21) gated; LK leaves it on, nothing in Linux
+ * uses it and clk_ignore_unused keeps it on, so it is taken once and released, which gates it. */
+#include <dt-bindings/clock/mediatek,mt6572-clk.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/mfd/mt6397/core.h>
@@ -158,10 +162,28 @@ out:
 		pr_info("y1-deep-idle: DVFS slots ready, slot 1 acknowledged after %u polls, VPROC %#x/%#x\n",
 			slot_ack_polls, slot_vosel, slot_actual);
 }
+static void __init y1_deep_idle_release_sej(void)
+{
+	struct of_phandle_args spec = { .args_count = 1, .args = { CLK_TOP_SEJ } };
+	struct clk *sej;
+	spec.np = of_find_compatible_node(NULL, NULL, "mediatek,mt6572-topckgen");
+	if (!spec.np)
+		return;
+	sej = of_clk_get_from_provider(&spec);
+	of_node_put(spec.np);
+	if (IS_ERR(sej)) {
+		pr_warn("y1-deep-idle: SEJ clock: %ld\n", PTR_ERR(sej));
+		return;
+	}
+	if (!clk_prepare_enable(sej))
+		clk_disable_unprepare(sej);
+	clk_put(sej);
+}
 static int __init y1_deep_idle_init(void)
 {
 	if (!of_machine_is_compatible("innioasis,y1"))
 		return -ENODEV;
+	y1_deep_idle_release_sej();
 	schedule_delayed_work(&slots_work, 0);
 	return 0;
 }

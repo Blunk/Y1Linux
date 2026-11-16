@@ -562,3 +562,58 @@ for up to 10 s. Build `out/y1-boot-d6b`, BOOTIMG sha256 `d10a6732cb8e8e7f8a33a04
   today's value. The request is therefore shown to do no harm, not shown to have been performed. D6c's
   wake path, slot 2 then slot 1, is the first observable voltage change.
 
+**D6c blockers (2026-11-16).** Stock's deep idle requires every clock in its condition mask gated
+(`CLK_GATING_CTRL0` `0x10000020` mask `0x000F002F`, `CTRL1` `0x10000024` mask `0x8021FEFD`; gate bit set = off).
+
+On the Y1 with the screen dark, read over 60 s, six of those clocks stayed on. Each is listed with what
+held it (debugfs `clk_summary`) and where it is handled:
+- MFG_MM (CTRL0 bit 2): the MFG power domain, which the `mfgcfg` syscon keeps on (no runtime PM) while the
+  GPU itself is suspended. Step B3.
+- APDMA (CTRL1 bit 2) and BTIF (bit 12): the connectivity driver, while the radio chip is powered. Step B2.
+- UART0 (bit 10): the serial console. Step B1.
+- USB (bit 13): musb with the cable attached. The deep-idle tests run with USB unplugged.
+- SEJ (bit 21): no user; LK leaves it on and `clk_ignore_unused` keeps it on. Step B1.
+
+The owner chose to clear the blockers before D6c and keep stock's mask unchanged, so nothing loses
+function: each owner gates its clock only while idle.
+
+**B1 (no serial console, SEJ off).**
+- Both images' bootargs drop `earlycon console=ttyS0,921600n8`; the packager's rule that RECOVERY differs
+  only in `y2.recovery=1` and the windows stays. `stdout-path` remains and is unused, because `console=tty0`
+  is on the command line.
+- PID1's text goes to `/dev/kmsg` (`dmesg`) instead of `ttyS0`; the user shell stays on the USB serial port.
+- `deep-idle.c` takes the SEJ clock once and releases it.
+
+Build `out/y1-boot-b1`, BOOTIMG sha256 `bdbafd7f1221318310f12f77af1f11172b63019e96fb52522ccf037f1eb974eb`.
+
+**B1 run (2026-11-16): PASS.**
+- `/proc/consoles` lists `tty0` only, and `ttyS0` is runtime-suspended.
+- `uart0` and `sej` have enable count 0, and CTRL1 now reads `0xd8efcefb` (bits 10 and 21 set). The CTRL1
+  blockers left are APDMA, BTIF and USB.
+- PID1's lines appear in `dmesg`.
+- cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and charging fine.
+- `aplay` found the PCM held open by Reborn, with no stream running; this is unrelated to B1.
+
+**B3 (MFG domain off while the GPU is suspended).**
+- `clk-mt6572-mfg.c` sets `need_runtime_pm`, as mainline's mt8183 mfgcfg does. The clock core then powers
+  the domain around every access to the MFG gates, `clk_summary` included.
+- With that alone the domain stayed on. The power controller's `sync_state` was pending on `1000e000.smi`,
+  `10203000.iommu` and `14010000.larb`, which have no driver on the Y1 (`CONFIG_MTK_SMI` and
+  `CONFIG_MTK_IOMMU` off), and genpd keeps every domain on until `sync_state` runs.
+- The Y1 DTS therefore disables those three nodes; their `iommus` references were already deleted. MFG is
+  the only domain genpd registers on the Y1, so nothing else changes.
+
+Build `out/y1-boot-b3`, BOOTIMG sha256 `22c514cff7382c9e1b164a4db4d5651d4569a49d2f222cf671b58eec2f311ec0`.
+
+**B3 run (2026-11-16): PASS.**
+- **Domain off:** genpd shows `mfg` `off-0` with both devices suspended; `PWR_STATUS` reads `0x3fef` (bit 4
+  off), and CTRL0 reads `0xffcfff7f`, so MFG_MM is gated and no CTRL0 blocker is left.
+- **Power cycles:** 10 runtime on/off cycles of the GPU each read the Mali GP version `0x0b070101` while on,
+  and the domain went off after each.
+- **Real GPU work:** a Reborn restart ran GPU jobs on the domain that had been off (GP/PP interrupts 95 to
+  139), with no Lima error or MMU fault, and the domain went off again afterwards.
+- **Screen wakes:** five wakes rendered without the GPU, as before.
+- **Health checks:** cpufreq check PASS; Wi-Fi, `bluetoothd` and charging fine; no kernel warning.
+
+**Blockers left:** CTRL1 APDMA and BTIF (radio link, B2) and USB (cable).
+

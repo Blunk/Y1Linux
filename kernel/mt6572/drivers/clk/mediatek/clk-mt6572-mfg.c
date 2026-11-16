@@ -22,9 +22,13 @@ static const struct mtk_gate mfg_clks[] = {
 	GATE_MFG(CLK_MFG_BG3D, "mfg_bg3d", "mfg_sel", 0),
 };
 
+/* Runtime PM, as mainline's mt8183 mfgcfg: the clock core powers the MFG domain around every access to these
+ * gates, so the domain (and its mfg_mm clock) can go off while the GPU is suspended instead of being held on by
+ * this provider (docs/planning/Y1-POWER-PLAN.md D6, blocker B3). */
 static const struct mtk_clk_desc mfg_desc = {
 	.clks = mfg_clks,
 	.num_clks = ARRAY_SIZE(mfg_clks),
+	.need_runtime_pm = true,
 };
 
 static const struct of_device_id of_match_clk_mt6572_mfg[] = {

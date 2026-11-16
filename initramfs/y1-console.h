@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-only
  * Innioasis Y1 PID1 quiet boot (docs/planning/Y1-BOOT-SPLASH-PLAN.md), as on the Y2: PID1's routine text goes
- * to the serial console (ttyS0) only and the screen stays dark until reborn-splash (started by
+ * to the kernel log (/dev/kmsg, dmesg) only and the screen stays dark until reborn-splash (started by
  * reborn-boot-services, as on the Y2) and then Reborn take it. The screen gets PID1's text back for the
  * charge-only mode and whenever the Y2 system does not start.
  */
-/* PID1's standard output and error from now on: the screen (/dev/tty0) or the serial console (/dev/ttyS0). */
+/* PID1's standard output and error from now on: the screen (/dev/tty0) or the kernel log (/dev/kmsg); no serial
+ * console, so UART0's clock can stop (docs/planning/Y1-POWER-PLAN.md D6, blocker B1). */
 static void console_to(const char *path)
 {
     long fd = call5(SYS_OPEN, (long)path, O_WRONLY | O_NOCTTY, 0, 0, 0);

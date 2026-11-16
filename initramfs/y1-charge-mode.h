@@ -151,6 +151,6 @@ static void charge_gate(void)
     charge_screen_close();
     (void)graphics;
     set_brightness(brightness);
-    console_to("/dev/ttyS0");
+    console_to("/dev/kmsg");
     put("charge: "); put_volts(uv); put(", starting the system\n"); send(SCREEN | USB);
 }

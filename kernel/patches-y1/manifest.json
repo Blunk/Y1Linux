@@ -286,7 +286,7 @@
     {
       "path": "drivers/clk/mediatek/clk-mt6572-mfg.c",
       "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mfg.c",
-      "sha256": "2f6452bf5a83ac2c91e2469d23ce57c725378dc2f125c48838075a20ff30670d"
+      "sha256": "6923a74363874dc4463658ce9c035efc3640b598b2055e23e1b077c70b740617"
     },
     {
       "path": "drivers/clk/mediatek/clk-mt6572-mm.c",
@@ -546,7 +546,7 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "23a4202a47892dd6dd7e73cd344e701791c37437cc6bf9f79bb1b6787a8786c4"
+      "sha256": "c46030f85caed101c3855ac5ff18b83bd422c493ca139acf9b2e45c40df1d2ab"
     }
   ]
 }

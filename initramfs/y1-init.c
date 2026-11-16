@@ -104,7 +104,7 @@ static int is_selftest(long *stack)
 
 static void observe(void)
 {
-    console_to("/dev/ttyS0"); /* a quiet screen until the splash; the list carries the node */
+    console_to("/dev/kmsg"); /* a quiet screen until the splash, the text in dmesg; the list carries the node */
     say("\ny1-init: Linux reached userspace on the Innioasis Y1.\n");
     /* Left to the kernel's boot handler, as on the Y2: the Y2's init never feeds it. */
     long watchdog = -1;

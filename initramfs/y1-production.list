@@ -7,13 +7,14 @@
 # profile for the Y1 card (initramfs/y1-reborn), MTP (initramfs/y1-mtp), Bluetooth and Wi-Fi (initramfs/
 # y1-bluetooth: S41y2-connectivity, the radio firmware set) and the service daemon in its network and update parts
 # (initramfs/y1-update: S42y2-readiness, its policy).
-# /dev/ttyS0 carries PID1's text. The authorised SSH key is the public half of out/y1-ssh/id_ed25519 (made per
+# /dev/kmsg carries PID1's text (no serial console, Y1-POWER-PLAN.md D6). The authorised SSH key is the public half of out/y1-ssh/id_ed25519 (made per
 # checkout, not committed): create it with
 #   ssh-keygen -t ed25519 -N "" -C y1linux-dev -f out/y1-ssh/id_ed25519
 dir /dev 0755 0 0
 nod /dev/console 0600 0 0 c 5 1
 nod /dev/tty0 0620 0 0 c 4 0
 nod /dev/ttyS0 0600 0 0 c 4 64
+nod /dev/kmsg 0600 0 0 c 1 11
 nod /dev/watchdog 0600 0 0 c 10 130
 dir /proc 0755 0 0
 dir /sys 0755 0 0
