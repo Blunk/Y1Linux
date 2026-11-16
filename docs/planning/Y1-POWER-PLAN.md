@@ -629,3 +629,61 @@ switches Bluetooth back on and Wi-Fi is held until rfkill. So deep idle (D6c) ca
 off in Reborn, the screen is dark and USB is unplugged. Deep idle with radios on would need MediaTek's STP
 power-saving protocol, which is not in the GPL drop. It is out of scope.
 
+
+**B4 (USB clock off without a cable), 2026-11-16.** The plan above assumed that unplugging the cable frees the
+USB clock. The source says it does not:
+- CTRL1 bit 13 is `CLK_TOP_USB` (`clk-mt6572-topckgen.c`). Mainline's MUSB glue (`drivers/usb/musb/mediatek.c`)
+  enables it in probe and releases it only on remove.
+- The Y1's T-PHY forces a valid session (0015, the Y2-style fix for a PHY that does not sense VBUS), so the
+  controller never sees a disconnect and MUSB's own runtime PM never suspends either.
+
+So with stock's mask, deep idle could never enter on the Y1, cable or not. Stock clears this the way B4 does:
+on the charger's disconnect, `mt_usb_disconnect` puts the PHY in its save-current state and gates the USB
+clock, and `mt_usb_connect` reverses it.
+
+- **VBUS source:** the charger's `y2-usb-presence` supply (`ONLINE` = CHRDET, from its interrupt and its 1 s
+  poll). The Y1 DTS names it on `&usb` with `innioasis,vbus-supply-name`; without the property the glue
+  behaves as today (the Y2 does not use this glue).
+- **Cable out:** the glue's work item calls `phy_power_off`. The T-PHY already clears `RG_VBUSVALID`/`AVALID`
+  and sets `RG_SESSEND`; 0015 now also clears its forced `RG_BVALID`, so the forced session ends and the
+  gadget gets a real disconnect. The glue then drops its runtime-PM vote. When MUSB autosuspends (500 ms
+  after its session ends), the glue's `runtime_suspend` gates the three USB clocks.
+- **Cable in:** the glue takes its vote (`runtime_resume` turns the clocks on before any register access),
+  then `phy_power_on` forces the session again, which is today's boot path.
+- **Boot:** the glue holds its vote at probe, as today. If the supply reads offline, the first evaluation
+  releases it. A boot with the cable in is unchanged.
+- **Not changed:** the recovery image uses the same kernel and DTB. Its USB path is the same as a boot with
+  the cable in, and a replug uses the path tested here.
+
+**Tests:**
+- **Read first (cable in, then out, over Wi-Fi):** CTRL1 bit 13 and `clk_summary` `usb` before the build, to
+  confirm the clock stays on today.
+- **Cable out:** within 2 s `usb` has enable count 0, CTRL1 bit 13 is set, musb is `suspended` in
+  `/sys/devices/…/power/runtime_status`, and the kernel log shows the gadget disconnect.
+- **Cable in:** the USB link (10.42.0.1), SSH, MTP and the charger's "configured" 450 mA return. Repeat 20
+  plug cycles.
+- **Boot without the cable:** the clock is off. Then plug in: everything returns.
+- **Health checks:** cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and charging fine.
+
+Build `out/y1-boot-b4usb` (Y2ROOT `out/y1-root-asound`; overlays 0015 and 0047, the `&usb` property), BOOTIMG
+sha256 `e9ab1d74708e3df6e02ed4034264b25312e3804ac25e63fbe41c604a7137ced5`. Flash BOOTIMG only, as for B1/B3.
+
+**B4 run (2026-11-16): PASS.**
+- **Before B4 (B3 image, cable in):** `usb` enable count 2 (`11100000.usb`), CTRL1 `0xd8efcefb` (bit 13 clear),
+  glue and musb `active`.
+- **Flash:** mtkclient after `poweroff` over SSH, then `mtk.py reset` from DA mode. On that first start the PMIC
+  read no charger until 15.96 s (`pmic at boot: 0x000=0001`). The glue followed it (clocks off at 0.57 s, on at
+  15.96 s) and `usb0` came up. A normal reboot with the cable in read CHRDET at 0.75 s and logged no VBUS change,
+  so this is the DA reset, not B4.
+- **Plug cycles (five, sampled each second over Wi-Fi):** each unplug gave `VBUS gone`, then within about 1 s
+  `usb` enable count 0, CTRL1 bit 13 set (`0xd8efeefb`), glue and musb `suspended`. Each replug restored count 2,
+  `active`, the host's `usb0`, SSH and MTP (`umtprd`), and `y1-usb-input` online at 500 mA (configured by
+  the PC) with the charger charging.
+- **Boot without the cable (reboot over Wi-Fi):** `VBUS gone` at 0.72 s, `usb` enable count 0, CTRL1
+  `0xd8e9eefb`, glue and musb `suspended`.
+  Plugging in then gave `VBUS present`, `usb0`, SSH, MTP and 500 mA, as after a cycle.
+- **Health checks:** cpufreq check PASS (1 min soak); Reborn, `bluetoothd`, `wpa_supplicant` and the audio card
+  fine; no kernel warning.
+
+**Blockers left: none in stock's mask** once both radios are off in Reborn, the screen is dark and the cable is
+out. D6c is next.

@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V). D6 blocker B4 (0047: with innioasis,vbus-supply-name the MUSB glue follows that charger supply: without VBUS the PHY is powered off, which 0015 now makes end the forced session, and the glue's runtime PM gates the USB clocks once MUSB suspends).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -88,7 +88,7 @@
     {
       "path": "drivers/phy/mediatek/phy-mtk-tphy.c",
       "base_sha256": "c57efe8f40fdaf6572805a0546d3fceef8c4028c402405a3f61264955d90051b",
-      "result_sha256": "44cab8c9e3c6c27dd7b64df471f2964e66e916e4751728c6367bd2931672e445",
+      "result_sha256": "6e21264ad9e348a8a7fd3a4f0530f47b0756240813bc4ec822272037532a14c0",
       "patch": "0015-mtk-tphy-force-session-valid.patch"
     },
     {
@@ -270,6 +270,12 @@
       "base_sha256": "a7a4e5f6da219caffbc95d549d83811473e2fb012f0ee3eb5219da95df1ee0ac",
       "result_sha256": "25e0f00427573f813478b51e7b333d1bf7ba3d70e229010eece7c72c748f98ae",
       "patch": "0046-innioasis-y1-idle-makefile.patch"
+    },
+    {
+      "path": "drivers/usb/musb/mediatek.c",
+      "base_sha256": "33502cc67a3853560a26439fb93a81e034fdd519cb89ffb2dd0e9c2d069137f2",
+      "result_sha256": "95e3c9c8d70a8b2e60f5f4adbb7163742013b7c1f34e4edd787a516c08a3bb04",
+      "patch": "0047-mtk-musb-vbus-clock-gate.patch"
     }
   ],
   "added": [

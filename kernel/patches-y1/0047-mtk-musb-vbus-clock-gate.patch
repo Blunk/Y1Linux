@@ -1,0 +1,236 @@
+--- a/drivers/usb/musb/mediatek.c
++++ b/drivers/usb/musb/mediatek.c
+@@ -13,6 +13,8 @@
+ #include <linux/of.h>
+ #include <linux/of_platform.h>
+ #include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
++#include <linux/power_supply.h>
+ #include <linux/usb/role.h>
+ #include <linux/usb/usb_phy_generic.h>
+ #include "musb_core.h"
+@@ -50,6 +52,18 @@
+ 	struct clk_bulk_data clks[MTK_MUSB_CLKS_NUM];
+ 	enum usb_role role;
+ 	struct usb_role_switch *role_sw;
++	/*
++	 * Innioasis Y1 (docs/planning/Y1-POWER-PLAN.md, D6 blocker B4): the T-PHY forces a valid session, so
++	 * VBUS comes from the charger's supply named by innioasis,vbus-supply-name. Without VBUS the PHY is
++	 * powered off (the session ends) and the glue's runtime-PM vote is dropped; its runtime_suspend
++	 * gates the clocks once MUSB has suspended, as the vendor kernel's mt_usb_disconnect does.
++	 */
++	const char *vbus_supply;
++	struct notifier_block vbus_nb;
++	struct work_struct vbus_work;
++	struct mutex vbus_lock;
++	bool vbus_vote;		/* the glue's runtime-PM reference is held and the PHY is on */
++	bool vbus_ready;	/* mtk_musb_init has powered the PHY on */
+ };
+ 
+ static int mtk_musb_clks_get(struct mtk_glue *glue)
+@@ -252,6 +266,102 @@
+ 	return 0;
+ }
+ 
++/* ONLINE of the VBUS supply: 1 or 0, or negative while unknown (not registered yet, unreadable). */
++static int mtk_musb_vbus_online(struct mtk_glue *glue)
++{
++	struct power_supply *psy = power_supply_get_by_name(glue->vbus_supply);
++	union power_supply_propval val;
++	int ret;
++
++	if (!psy)
++		return -ENODEV;
++	ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val);
++	power_supply_put(psy);
++	return ret ? ret : !!val.intval;
++}
++
++static void mtk_musb_vbus_connect(struct mtk_glue *glue)
++{
++	int ret = pm_runtime_resume_and_get(glue->dev);
++
++	if (ret) {
++		dev_err(glue->dev, "VBUS present: clocks not enabled: %d\n", ret);
++		return;
++	}
++	ret = phy_power_on(glue->phy);
++	if (ret) {
++		pm_runtime_put(glue->dev);
++		dev_err(glue->dev, "VBUS present: PHY not powered on: %d\n", ret);
++		return;
++	}
++	glue->vbus_vote = true;
++	dev_info(glue->dev, "VBUS present: USB clocks on, session forced\n");
++}
++
++static void mtk_musb_vbus_disconnect(struct mtk_glue *glue)
++{
++	phy_power_off(glue->phy);
++	glue->vbus_vote = false;
++	pm_runtime_put(glue->dev);
++	dev_info(glue->dev, "VBUS gone: session ended, USB clocks off once MUSB suspends\n");
++}
++
++static void mtk_musb_vbus_work(struct work_struct *work)
++{
++	struct mtk_glue *glue = container_of(work, struct mtk_glue, vbus_work);
++	int online = mtk_musb_vbus_online(glue);
++
++	if (online < 0)
++		return;
++	mutex_lock(&glue->vbus_lock);
++	if (glue->vbus_ready && online != glue->vbus_vote) {
++		if (online)
++			mtk_musb_vbus_connect(glue);
++		else
++			mtk_musb_vbus_disconnect(glue);
++		/* MUSB's session check (and so its runtime-PM reference) runs from irq_work; a wall
++		 * charger or a cable pulled before enumeration raises no interrupt that would queue it. */
++		schedule_delayed_work(&glue->musb->irq_work, msecs_to_jiffies(100));
++	}
++	mutex_unlock(&glue->vbus_lock);
++}
++
++static int mtk_musb_vbus_notify(struct notifier_block *nb, unsigned long event, void *data)
++{
++	struct mtk_glue *glue = container_of(nb, struct mtk_glue, vbus_nb);
++	struct power_supply *psy = data;
++
++	if (event == PSY_EVENT_PROP_CHANGED && !strcmp(psy->desc->name, glue->vbus_supply))
++		schedule_work(&glue->vbus_work);
++	return NOTIFY_OK;
++}
++
++static void mtk_musb_vbus_start(struct mtk_glue *glue)
++{
++	int ret;
++
++	mutex_lock(&glue->vbus_lock);
++	glue->vbus_ready = true;
++	mutex_unlock(&glue->vbus_lock);
++	glue->vbus_nb.notifier_call = mtk_musb_vbus_notify;
++	ret = power_supply_reg_notifier(&glue->vbus_nb);
++	if (ret)
++		dev_err(glue->dev, "VBUS supply %s not followed: %d\n", glue->vbus_supply, ret);
++	schedule_work(&glue->vbus_work);
++}
++
++/* Back to the state mtk_musb_exit expects: the vote held and the PHY on. */
++static void mtk_musb_vbus_stop(struct mtk_glue *glue)
++{
++	power_supply_unreg_notifier(&glue->vbus_nb);
++	cancel_work_sync(&glue->vbus_work);
++	mutex_lock(&glue->vbus_lock);
++	glue->vbus_ready = false;
++	if (!glue->vbus_vote)
++		mtk_musb_vbus_connect(glue);
++	mutex_unlock(&glue->vbus_lock);
++}
++
+ static int mtk_musb_init(struct musb *musb)
+ {
+ 	struct device *dev = musb->controller;
+@@ -290,6 +400,8 @@
+ #endif
+ 	musb_writel(musb->mregs, USB_L1INTM, TX_INT_STATUS | RX_INT_STATUS |
+ 		    USBCOM_INT_STATUS | DMA_INT_STATUS);
++	if (glue->vbus_supply)
++		mtk_musb_vbus_start(glue);
+ 	return 0;
+ 
+ err_phy_power_on:
+@@ -336,10 +448,14 @@
+ 	struct device *dev = musb->controller;
+ 	struct mtk_glue *glue = dev_get_drvdata(dev->parent);
+ 
++	if (glue->vbus_supply)
++		mtk_musb_vbus_stop(glue);
+ 	mtk_otg_switch_exit(glue);
+ 	phy_power_off(glue->phy);
+ 	phy_exit(glue->phy);
+-	clk_bulk_disable_unprepare(MTK_MUSB_CLKS_NUM, glue->clks);
++	/* With a VBUS supply the clocks follow the glue's runtime PM. */
++	if (!glue->vbus_supply)
++		clk_bulk_disable_unprepare(MTK_MUSB_CLKS_NUM, glue->clks);
+ 
+ 	pm_runtime_put_sync(dev);
+ 	pm_runtime_disable(dev);
+@@ -411,6 +527,10 @@
+ 		return -ENOMEM;
+ 
+ 	glue->dev = dev;
++	of_property_read_string(np, "innioasis,vbus-supply-name", &glue->vbus_supply);
++	mutex_init(&glue->vbus_lock);
++	INIT_WORK(&glue->vbus_work, mtk_musb_vbus_work);
++	glue->vbus_vote = true;
+ 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+ 	if (!pdata)
+ 		return -ENOMEM;
+@@ -470,12 +590,17 @@
+ 
+ 	platform_set_drvdata(pdev, glue);
+ 	pm_runtime_enable(dev);
+-	pm_runtime_get_sync(dev);
+-
+-	ret = clk_bulk_prepare_enable(MTK_MUSB_CLKS_NUM, glue->clks);
+-	if (ret)
++	ret = pm_runtime_get_sync(dev);
++	if (ret < 0)
+ 		goto err_enable_clk;
+ 
++	/* With a VBUS supply, runtime_resume has just enabled them. */
++	if (!glue->vbus_supply) {
++		ret = clk_bulk_prepare_enable(MTK_MUSB_CLKS_NUM, glue->clks);
++		if (ret)
++			goto err_enable_clk;
++	}
++
+ 	pinfo = mtk_dev_info;
+ 	pinfo.parent = dev;
+ 	pinfo.res = pdev->resource;
+@@ -495,7 +620,8 @@
+ 	return 0;
+ 
+ err_device_register:
+-	clk_bulk_disable_unprepare(MTK_MUSB_CLKS_NUM, glue->clks);
++	if (!glue->vbus_supply)
++		clk_bulk_disable_unprepare(MTK_MUSB_CLKS_NUM, glue->clks);
+ err_enable_clk:
+ 	pm_runtime_put_sync(dev);
+ 	pm_runtime_disable(dev);
+@@ -513,6 +639,26 @@
+ 	usb_phy_generic_unregister(usb_phy);
+ }
+ 
++static int mtk_musb_runtime_suspend(struct device *dev)
++{
++	struct mtk_glue *glue = dev_get_drvdata(dev);
++
++	if (glue->vbus_supply)
++		clk_bulk_disable_unprepare(MTK_MUSB_CLKS_NUM, glue->clks);
++	return 0;
++}
++
++static int mtk_musb_runtime_resume(struct device *dev)
++{
++	struct mtk_glue *glue = dev_get_drvdata(dev);
++
++	return glue->vbus_supply ? clk_bulk_prepare_enable(MTK_MUSB_CLKS_NUM, glue->clks) : 0;
++}
++
++static const struct dev_pm_ops mtk_musb_pm_ops = {
++	RUNTIME_PM_OPS(mtk_musb_runtime_suspend, mtk_musb_runtime_resume, NULL)
++};
++
+ #ifdef CONFIG_OF
+ static const struct of_device_id mtk_musb_match[] = {
+ 	{.compatible = "mediatek,mtk-musb",},
+@@ -526,6 +672,7 @@
+ 	.remove = mtk_musb_remove,
+ 	.driver = {
+ 		   .name = "musb-mtk",
++		   .pm = pm_ptr(&mtk_musb_pm_ops),
+ 		   .of_match_table = of_match_ptr(mtk_musb_match),
+ 	},
+ };

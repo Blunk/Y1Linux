@@ -38,7 +38,19 @@
  	dev_dbg(tphy->dev, "%s(%d)\n", __func__, index);
  }
  
-@@ -1133,6 +1147,7 @@
+@@ -900,6 +914,11 @@
+ 
+ 	mtk_phy_set_bits(com + U3P_U2PHYDTM1, P2C_RG_SESSEND);
+ 
++	/* The forced session ends with the cable (the glue powers the PHY off when the charger loses VBUS),
++	 * as the vendor kernel's usb_phy_savecurrent does; the force bits stay, so the controller sees no VBUS. */
++	if (instance->force_session_valid)
++		mtk_phy_clear_bits(com + U3P_U2PHYDTM1, P2C_RG_BVALID);
++
+ 	if (tphy->pdata->avoid_rx_sen_degradation && index) {
+ 		mtk_phy_clear_bits(com + U3P_U2PHYDTM0, P2C_RG_SUSPENDM | P2C_FORCE_SUSPENDM);
+ 
+@@ -1133,6 +1152,7 @@
  		return;
  
  	instance->bc12_en = device_property_read_bool(dev, "mediatek,bc12");

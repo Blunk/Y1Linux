@@ -466,6 +466,9 @@
 &usb {
 	status = "okay";
 	dr_mode = "peripheral";
+	/* VBUS is the charger's CHRDET (the PHY's session is forced): without it the glue powers the PHY
+	 * off and gates the USB clocks (patches-y1 0047, Y1-POWER-PLAN.md D6 blocker B4). */
+	innioasis,vbus-supply-name = "y2-usb-presence";
 };
 
 &u2phy0 {
