@@ -617,3 +617,15 @@ Build `out/y1-boot-b3`, BOOTIMG sha256 `22c514cff7382c9e1b164a4db4d5651d4569a49d
 
 **Blockers left:** CTRL1 APDMA and BTIF (radio link, B2) and USB (cable).
 
+**B2 (radio link clocks): no change needed (2026-11-16).** The connectivity owner holds BTIF and APDMA while the
+radio chip is powered, and powers the chip off once no function (BT, Wi-Fi, FM) is held.
+
+On the player, with Reborn's settings: Bluetooth off released BT (functions `0x9` to `0x8`), and Wi-Fi off
+soft-blocked `y2-wifi` (functions `0x0`). The chip powered off 1 s later (`powered=0`), and CTRL1 read
+`0xd8efdeff`: BTIF and APDMA gated, USB the only blocker left. Both radios came back on (`0x9`, no error).
+
+`bluetoothctl power off` and `ip link set wlan0 down` alone do not release anything, because the platform
+switches Bluetooth back on and Wi-Fi is held until rfkill. So deep idle (D6c) can enter when both radios are
+off in Reborn, the screen is dark and USB is unplugged. Deep idle with radios on would need MediaTek's STP
+power-saving protocol, which is not in the GPL drop. It is out of scope.
+
