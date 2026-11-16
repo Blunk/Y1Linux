@@ -687,3 +687,45 @@ sha256 `e9ab1d74708e3df6e02ed4034264b25312e3804ac25e63fbe41c604a7137ced5`. Flash
 
 **Blockers left: none in stock's mask** once both radios are off in Reborn, the screen is dark and the cable is
 out. D6c is next.
+
+**B5 (MMSYS clocks), 2026-11-16, owner's choice before D6c.** Stock's mask (`mt_idle.c` `dpidle_condition_mask`,
+`drsami/mt6572_kernel` `c4b775c`) also covers MMSYS: `MMSYS_CG_CON0` `0x14000100` mask `0x003fffff` and
+`CON1` `0x14000110` mask `0x7f` (gate bit set = off). Its CTRL1 mask is `0x80a9fefd`: the plan's
+`0x8021fefd` plus the reserved bits 19 and 23, which already read gated.
+
+Read on the player (B4 image, screen dark, DRM CRTC `active=0`): CON0 `0xffff7f90`, CON1 `0xffffffef`. Eight
+clocks of the mask stay on, each with enable count 0, kept only by `clk_ignore_unused` as LK left them:
+- **Not used by the Y1's display path** (OVL → RDMA → COLOR → BLS → DSI): DISP_WDMA, CMDQ, SMI_CMDQ,
+  MDP_BLS_26M, and the DBI engine (CON1 bit 4, which had no CCF gate). `deep-idle.c` takes each once and
+  releases it, as SEJ in B1, and counts them in `unused_released`. `clk-mt6572-mm.c` gains the stock gate
+  `CLK_MM_DISP_DBI_ENGINE` (24).
+- **Used by the live display but owned by no driver:** SMI common and LARB0 (OVL's framebuffer fetch; their
+  nodes have no driver since B3), and DISP_BLS (between COLOR and DSI). Gating them would stop scan-out.
+  The Y1 DTS lists them after OVL's own clock, and 0019 enables them with OVL's clock and disables them
+  with it. So they run whenever the CRTC does and are off while it is disabled.
+
+**Tests:**
+- **Screen dark:** CON0 and CON1 read every mask bit gated, and `unused_released` = 6 (SEJ and the five).
+- **Screen on:** the picture returns at every wake, 20 times (dark through Reborn's timeout, lit through
+  `rebornctl action screen_wake`; `bl_power` alone only switches the backlight and leaves the CRTC running).
+  The clocks of the three path blocks show enable count 1 while lit and 0 while dark.
+- **Health checks:** cpufreq check PASS; Reborn, Wi-Fi, `bluetoothd`, the audio card and charging fine.
+
+**B5 run (2026-11-16): PASS.**
+- **Flash:** mtkclient after `poweroff`. `mtk.py reset` left the player in DA (`0e8d:2001`) until a replug.
+- **Boot:** `unused_released` = 6, OVL bound, D6b slots ready as before. Lit: CON0 `0xffdffe4c`, CON1
+  `0xfffffffc`; `mm_smi_common`, `mm_smi_larb0` and `mm_disp_bls` each have enable count 1 and are owned by
+  `ovl@14007000`.
+- **Dark (Reborn's timeout, CRTC `active=0`):** CON0 and CON1 read `0xffffffff`, so every mask bit is gated, and
+  the three path clocks are at 0.
+- **20 wake cycles** (`rebornctl action screen_wake`, then Reborn's timeout, which went dark after 29 s each
+  time):
+  - lit: CRTC `active=1`, 44 to 45 OVL frame interrupts per second, `bl_power` 0, path clocks 1;
+  - dark: CON0 and CON1 `0xffffffff`, path clocks 0;
+  - 0 failures.
+- **Health checks:** the cpufreq check passed with a 1-minute soak, run over Wi-Fi. Reborn, `bluetoothd`,
+  `wpa_supplicant` and the Y2Audio card were all running.
+- **Open:** the first run of the cpufreq check, over USB, ended with the player restarted and the cable showing
+  no VBUS. It came back up on Wi-Fi after 9 minutes, booted without VBUS (`VBUS gone` at 0.96 s), and logged no
+  panic or watchdog line. Its output was lost to buffering. The repeat over Wi-Fi passed with no restart, so the
+  check did not cause it. The cause is unknown, so charging was not checked on this boot.

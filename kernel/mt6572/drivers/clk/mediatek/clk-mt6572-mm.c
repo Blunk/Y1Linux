@@ -55,6 +55,8 @@ static const struct mtk_gate mm_clks[] = {
 
 	GATE_MM1(CLK_MM_DSI_ENGINE, "dsi_engine", "mm_smi_src", 0),
 	GATE_MM1(CLK_MM_DSI_DIGITAL, "dsi_digital", "mm_smi_src", 1),
+	/* Stock DISP_DBI_ENGINE_SW_CG (MMSYS_CG_CON1 bit 4): LK leaves it on, the Y1 has no DBI panel. */
+	GATE_MM1(CLK_MM_DISP_DBI_ENGINE, "mm_disp_dbi_engine", "mm_smi_src", 4),
 };
 
 static const struct mtk_clk_desc mm_desc = {

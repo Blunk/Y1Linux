@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V). D6 blocker B4 (0047: with innioasis,vbus-supply-name the MUSB glue follows that charger supply: without VBUS the PHY is powered off, which 0015 now makes end the forced session, and the glue's runtime PM gates the USB clocks once MUSB suspends).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V). D6 blocker B4 (0047: with innioasis,vbus-supply-name the MUSB glue follows that charger supply: without VBUS the PHY is powered off, which 0015 now makes end the forced session, and the glue's runtime PM gates the USB clocks once MUSB suspends). D6 blocker B5 (0019: clocks after OVL's own in its node are the display path's driverless blocks, SMI common, LARB0 and BLS, enabled and disabled with OVL).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -112,7 +112,7 @@
     {
       "path": "drivers/gpu/drm/mediatek/mtk_disp_ovl.c",
       "base_sha256": "405ee251d3f328a00074158d2cf9664c934de40a5b47c7a5b018a8deeb6b233d",
-      "result_sha256": "37ad9bd653ecb5319fa0b7e36e3d25a657aa4af125465ac249eecfcc61517d57",
+      "result_sha256": "fa3eb34509edd8caad58c24bc2faf968579bbe46b96b362588e0d5aba378661a",
       "patch": "0019-mt6572-disp-ovl.patch"
     },
     {
@@ -297,7 +297,7 @@
     {
       "path": "drivers/clk/mediatek/clk-mt6572-mm.c",
       "source": "kernel/mt6572/drivers/clk/mediatek/clk-mt6572-mm.c",
-      "sha256": "0cdcdb1f24381f248fa881fb78fe2c7c82cfafb9ab257031d74a81e61134d300"
+      "sha256": "d70daabe702d6600ba78b929231e0264a72dcfba5567277d74236eae2f183eff"
     },
     {
       "path": "drivers/clk/mediatek/clk-mt6572-topckgen.c",
@@ -317,7 +317,7 @@
     {
       "path": "include/dt-bindings/clock/mediatek,mt6572-clk.h",
       "source": "kernel/mt6572/include/dt-bindings/clock/mediatek,mt6572-clk.h",
-      "sha256": "7d2a17ec31a3947b4bf905f3038724e0daaa6d91e65db86707c3b27701b438e0"
+      "sha256": "c40f7a5f2d9abff327c05b45bd3936a763ca463a6538321e87f2d9ebea2c1a9c"
     },
     {
       "path": "include/dt-bindings/reset/mediatek,mt6572-resets.h",
@@ -552,7 +552,7 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "c46030f85caed101c3855ac5ff18b83bd422c493ca139acf9b2e45c40df1d2ab"
+      "sha256": "4f599dc4c1ac19a282c5c935bb4fd761c95821c8e6a4a2c1464fe6d62fbc5cfb"
     }
   ]
 }

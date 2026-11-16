@@ -9,7 +9,10 @@
  * must then read 0x48. Slot 2 (1.05 V) is left to stock's deep-idle firmware (D6c/D6d). Any mismatch
  * leaves deep idle off for this boot.
  * Blocker B1: stock's deep idle requires the SEJ clock (CTRL1 bit 21) gated; LK leaves it on, nothing in Linux
- * uses it and clk_ignore_unused keeps it on, so it is taken once and released, which gates it. */
+ * uses it and clk_ignore_unused keeps it on, so it is taken once and released, which gates it.
+ * Blocker B5: the same for the MMSYS clocks of stock's mask that LK leaves on and the Y1's display path
+ * (OVL, RDMA, COLOR, BLS, DSI) does not use: DISP_WDMA, CMDQ and its SMI interface, MDP_BLS_26M and the DBI
+ * engine. The path's own driverless clocks (SMI common, LARB0, BLS) now follow OVL (patches-y1 0019). */
 #include <dt-bindings/clock/mediatek,mt6572-clk.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -162,28 +165,46 @@ out:
 		pr_info("y1-deep-idle: DVFS slots ready, slot 1 acknowledged after %u polls, VPROC %#x/%#x\n",
 			slot_ack_polls, slot_vosel, slot_actual);
 }
-static void __init y1_deep_idle_release_sej(void)
+static const struct { const char *provider; unsigned id; } y1_unused_clocks[] = {
+	{ "mediatek,mt6572-topckgen", CLK_TOP_SEJ },
+	{ "mediatek,mt6572-mmsys", CLK_MM_DISP_WDMA },
+	{ "mediatek,mt6572-mmsys", CLK_MM_CMDQ },
+	{ "mediatek,mt6572-mmsys", CLK_MM_SMI_CMDQ },
+	{ "mediatek,mt6572-mmsys", CLK_MM_DISP_MDP_BLS_26M },
+	{ "mediatek,mt6572-mmsys", CLK_MM_DISP_DBI_ENGINE },
+};
+static unsigned unused_released;
+module_param(unused_released, uint, 0400);
+/* Taken once and released: the clock core then gates a clock LK left on that no driver claims. */
+static void __init y1_deep_idle_release_unused(void)
 {
-	struct of_phandle_args spec = { .args_count = 1, .args = { CLK_TOP_SEJ } };
-	struct clk *sej;
-	spec.np = of_find_compatible_node(NULL, NULL, "mediatek,mt6572-topckgen");
-	if (!spec.np)
-		return;
-	sej = of_clk_get_from_provider(&spec);
-	of_node_put(spec.np);
-	if (IS_ERR(sej)) {
-		pr_warn("y1-deep-idle: SEJ clock: %ld\n", PTR_ERR(sej));
-		return;
+	struct of_phandle_args spec = { .args_count = 1 };
+	struct clk *clk;
+	unsigned n;
+	for (n = 0; n < ARRAY_SIZE(y1_unused_clocks); n++) {
+		spec.np = of_find_compatible_node(NULL, NULL, y1_unused_clocks[n].provider);
+		if (!spec.np)
+			continue;
+		spec.args[0] = y1_unused_clocks[n].id;
+		clk = of_clk_get_from_provider(&spec);
+		of_node_put(spec.np);
+		if (IS_ERR(clk)) {
+			pr_warn("y1-deep-idle: unused clock %s/%u: %ld\n", y1_unused_clocks[n].provider,
+				y1_unused_clocks[n].id, PTR_ERR(clk));
+			continue;
+		}
+		if (!clk_prepare_enable(clk)) {
+			clk_disable_unprepare(clk);
+			unused_released++;
+		}
+		clk_put(clk);
 	}
-	if (!clk_prepare_enable(sej))
-		clk_disable_unprepare(sej);
-	clk_put(sej);
 }
 static int __init y1_deep_idle_init(void)
 {
 	if (!of_machine_is_compatible("innioasis,y1"))
 		return -ENODEV;
-	y1_deep_idle_release_sej();
+	y1_deep_idle_release_unused();
 	schedule_delayed_work(&slots_work, 0);
 	return 0;
 }

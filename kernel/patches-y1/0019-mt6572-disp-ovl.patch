@@ -1,6 +1,54 @@
 --- a/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
 +++ b/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
-@@ -671,6 +671,19 @@
+@@ -160,6 +160,13 @@
+ struct mtk_disp_ovl {
+ 	struct drm_crtc			*crtc;
+ 	struct clk			*clk;
++	/*
++	 * Innioasis Y1: every clock of the node, OVL's own first. The others are blocks of the display path
++	 * that have no driver (SMI common and LARB0 for OVL's fetch, BLS between COLOR and DSI); they run
++	 * whenever OVL does, so they are off while the CRTC is (docs/planning/Y1-POWER-PLAN.md, D6 blocker B5).
++	 */
++	struct clk_bulk_data		*clks;
++	int				num_clks;
+ 	void __iomem			*regs;
+ 	struct cmdq_client_reg		cmdq_reg;
+ 	const struct mtk_disp_ovl_data	*data;
+@@ -246,14 +253,22 @@
+ int mtk_ovl_clk_enable(struct device *dev)
+ {
+ 	struct mtk_disp_ovl *ovl = dev_get_drvdata(dev);
++	int ret = clk_prepare_enable(ovl->clk);
+ 
+-	return clk_prepare_enable(ovl->clk);
++	if (ret || ovl->num_clks < 2)
++		return ret;
++	ret = clk_bulk_prepare_enable(ovl->num_clks - 1, ovl->clks + 1);
++	if (ret)
++		clk_disable_unprepare(ovl->clk);
++	return ret;
+ }
+ 
+ void mtk_ovl_clk_disable(struct device *dev)
+ {
+ 	struct mtk_disp_ovl *ovl = dev_get_drvdata(dev);
+ 
++	if (ovl->num_clks > 1)
++		clk_bulk_disable_unprepare(ovl->num_clks - 1, ovl->clks + 1);
+ 	clk_disable_unprepare(ovl->clk);
+ }
+ 
+@@ -626,6 +641,9 @@
+ 	if (IS_ERR(priv->clk))
+ 		return dev_err_probe(dev, PTR_ERR(priv->clk),
+ 				     "failed to get ovl clk\n");
++	priv->num_clks = devm_clk_bulk_get_all(dev, &priv->clks);
++	if (priv->num_clks < 0)
++		return dev_err_probe(dev, priv->num_clks, "failed to get the path clocks\n");
+ 
+ 	priv->regs = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(priv->regs))
+@@ -671,6 +689,19 @@
  	.num_formats = ARRAY_SIZE(mt8173_formats),
  };
  
@@ -20,7 +68,7 @@
  static const struct mtk_disp_ovl_data mt8173_ovl_driver_data = {
  	.addr = DISP_REG_OVL_ADDR_MT8173,
  	.gmc_bits = 8,
-@@ -742,6 +755,8 @@
+@@ -742,6 +773,8 @@
  static const struct of_device_id mtk_disp_ovl_driver_dt_match[] = {
  	{ .compatible = "mediatek,mt2701-disp-ovl",
  	  .data = &mt2701_ovl_driver_data},

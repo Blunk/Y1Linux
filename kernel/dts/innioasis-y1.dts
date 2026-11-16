@@ -411,6 +411,11 @@
 /* Display stage B: physical scan-out, as LK; no IOMMU driver is built. */
 &ovl {
 	/delete-property/ iommus;
+	/* After OVL's own clock: the path's driverless blocks, on only while OVL runs (patches-y1 0019,
+	 * Y1-POWER-PLAN.md D6 blocker B5). OVL fetches through SMI common and LARB0; BLS sits between
+	 * COLOR and DSI. LK left them on and nothing owned them, which kept deep idle out. */
+	clocks = <&mmsys CLK_MM_DISP_OVL>, <&mmsys CLK_MM_SMI_COMMON>, <&mmsys CLK_MM_SMI_LARB0>,
+		 <&mmsys CLK_MM_DISP_BLS>;
 };
 
 &rdma0 {
