@@ -5,12 +5,8 @@
  * Maximum never exceeds the lowest inherited duty; no guessed current ceiling.
  * innioasis,isink-mask selects the sinks (default all four, the Y2; the Y1 lights its
  * panel from ISINK0 and ISINK1, docs/planning/Y1-BACKLIGHT-PLAN.md).
- * innioasis,screen-off-offline-cpu (the Y1, docs/planning/Y1-POWER-PLAN.md D5) names a CPU taken offline
- * while the screen is dark and brought back when it lights; without it nothing changes (the Y2).
  */
 #include <linux/backlight.h>
-#include <linux/cpu.h>
-#include <linux/workqueue.h>
 #include "system-idle.h"
 #include <linux/mfd/mt6397/core.h>
 #include <linux/module.h>
@@ -18,7 +14,7 @@
 #include <linux/property.h>
 #include <linux/regmap.h>
 static bool screen_dark;
-#if IS_ENABLED(CONFIG_Y2_POWER) /* read by the Y2 idle and suspend code only */
+#if IS_ENABLED(CONFIG_Y2_POWER) || IS_ENABLED(CONFIG_INNIOASIS_Y1_IDLE) /* read by the Y2/Y1 idle code only */
 bool y2_backlight_dark(void) { return READ_ONCE(screen_dark); }
 #endif
 struct y2_bl {
@@ -27,30 +23,7 @@ struct y2_bl {
 	unsigned ceiling;
 	unsigned mask;  /* enable bits in 0x356, one per ISINK */
 	unsigned first; /* lowest selected ISINK, reported by get_brightness */
-	int offline_cpu; /* -1: none */
-	struct work_struct cpu_work;
 };
-/* Follows the latest screen state, so a quick dark/light pair converges. A CPU the user set by hand is
- * left as it is until the next change of the screen; errors (already offline, last CPU) are not fatal. */
-static void y2_bl_cpu_work(struct work_struct *work)
-{
-#ifdef CONFIG_HOTPLUG_CPU
-	struct y2_bl *b = container_of(work, struct y2_bl, cpu_work);
-	bool dark = READ_ONCE(screen_dark);
-	int ret = 0;
-	if (dark && cpu_online(b->offline_cpu))
-		ret = remove_cpu(b->offline_cpu);
-	else if (!dark && !cpu_online(b->offline_cpu))
-		ret = add_cpu(b->offline_cpu);
-	if (ret)
-		pr_warn_ratelimited("y2-backlight: CPU%d %s failed: %d\n", b->offline_cpu,
-				    dark ? "offline" : "online", ret);
-#endif
-}
-static void y2_bl_cancel_cpu_work(void *data)
-{
-	cancel_work_sync(data);
-}
 static int y2_bl_update(struct backlight_device *bl)
 {
 	struct y2_bl *b = bl_get_data(bl);
@@ -96,11 +69,7 @@ rollback:
 	if (regmap_update_bits(b->map, 0x356, b->mask, en & b->mask))
 		dev_err(&bl->dev, "backlight restore failed; remain dark\n");
 out:
-	if (!ret && READ_ONCE(screen_dark) != !level) {
-		WRITE_ONCE(screen_dark, !level);
-		if (b->offline_cpu >= 0)
-			queue_work(system_unbound_wq, &b->cpu_work);
-	}
+	if (!ret) WRITE_ONCE(screen_dark, !level);
 	mutex_unlock(&b->lock);
 	return ret;
 }
@@ -146,16 +115,6 @@ static int y2_bl_probe(struct platform_device *pdev)
 	if (!b->mask || b->mask & ~15U)
 		return dev_err_probe(dev, -EINVAL, "ISINK mask %#x\n", b->mask);
 	b->first = __ffs(b->mask);
-	b->offline_cpu = -1;
-	if (!device_property_read_u32(dev, "innioasis,screen-off-offline-cpu", &v)) {
-		if (!IS_ENABLED(CONFIG_HOTPLUG_CPU) || !v || v >= nr_cpu_ids)
-			return dev_err_probe(dev, -EINVAL, "screen-off CPU %u not hotpluggable\n", v);
-		b->offline_cpu = v;
-		INIT_WORK(&b->cpu_work, y2_bl_cpu_work);
-		ret = devm_add_action(dev, y2_bl_cancel_cpu_work, &b->cpu_work);
-		if (ret)
-			return ret;
-	}
 	ret = regmap_read(b->map, 0x356, &en);
 	if (ret)
 		return ret;

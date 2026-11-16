@@ -21,6 +21,7 @@
 #include <linux/regmap.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
+#include "system-idle.h"
 
 #define AUDIO_TOP_CON0		0x000
 #define AFE_DAC_CON0		0x010
@@ -106,6 +107,7 @@ static void y1_afe_stop(struct y1_afe *afe)
 	regmap_update_bits(afe->regmap, AFE_DAC_CON0, DL1_ON, 0);
 	regmap_write(afe->regmap, AFE_IRQ_CLR, IRQ1);
 	afe->running = false;
+	y1_system_idle_lease(BIT(0), false);
 }
 
 /* Called with the lock held, or before the IRQ exists. */
@@ -115,6 +117,7 @@ static void y1_capture_stop(struct y1_afe *afe)
 	regmap_update_bits(afe->regmap, AFE_DAC_CON0, AWB_ON, 0);
 	regmap_write(afe->regmap, AFE_IRQ_CLR, IRQ2);
 	afe->capturing = false;
+	y1_system_idle_lease(BIT(1), false);
 }
 
 /* AFE_ON while any stream holds it (stock SetAfeEnable keeps it on while another block runs). */
@@ -271,10 +274,13 @@ static int y1_afe_trigger(struct snd_pcm_substream *substream, int cmd, struct s
 		if (!ret) ret = regmap_write(afe->regmap, AFE_IRQ_CLR, IRQ1);
 		if (!ret) ret = regmap_update_bits(afe->regmap, AFE_DAC_CON0, DL1_ON, DL1_ON);
 		if (!ret) ret = regmap_update_bits(afe->regmap, AFE_IRQ_CON, IRQ1, IRQ1);
-		if (ret)
+		if (ret) {
 			y1_afe_stop(afe);
-		else
+		} else {
 			afe->running = true;
+			/* Y1-POWER-PLAN.md D6a: a running stream keeps both CPUs (and deep idle off). */
+			y1_system_idle_lease(BIT(0), true);
+		}
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
@@ -428,10 +434,12 @@ static int y1_fm_trigger(struct snd_pcm_substream *substream, int cmd, struct sn
 		if (!ret) ret = regmap_write(afe->regmap, AFE_IRQ_CLR, IRQ2);
 		if (!ret) ret = regmap_update_bits(afe->regmap, AFE_DAC_CON0, AWB_ON, AWB_ON);
 		if (!ret) ret = regmap_update_bits(afe->regmap, AFE_IRQ_CON, IRQ2, IRQ2);
-		if (ret)
+		if (ret) {
 			y1_capture_stop(afe);
-		else
+		} else {
 			afe->capturing = true;
+			y1_system_idle_lease(BIT(1), true);
+		}
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:

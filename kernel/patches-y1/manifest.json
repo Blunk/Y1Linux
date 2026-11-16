@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -258,6 +258,18 @@
       "base_sha256": "437c79de149466434a7bd3ab0a5210196a43f75f151d896d0e3871c1d37c7145",
       "result_sha256": "99b94ba3c2f7cfdf8a3216bf4862e5f956e7e98e3ac1e5d2832fb4c745b7f43a",
       "patch": "0044-mt6572-cpu1-hotplug.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/Kconfig",
+      "base_sha256": "7e85e245ec98934226170f7d151df13dc5a3fe49240b009ab20f02b0c2400dcc",
+      "result_sha256": "31ed94b7d674ea1ac31193a17627a5af0fa34ef55ba251c580cd6a1c2961546a",
+      "patch": "0045-innioasis-y1-idle-kconfig.patch"
+    },
+    {
+      "path": "drivers/soc/mediatek/Makefile",
+      "base_sha256": "a7a4e5f6da219caffbc95d549d83811473e2fb012f0ee3eb5219da95df1ee0ac",
+      "result_sha256": "25e0f00427573f813478b51e7b333d1bf7ba3d70e229010eece7c72c748f98ae",
+      "patch": "0046-innioasis-y1-idle-makefile.patch"
     }
   ],
   "added": [
@@ -419,17 +431,17 @@
     {
       "path": "drivers/video/backlight/innioasis-mt6323-backlight.c",
       "source": "kernel/platform/backlight.c",
-      "sha256": "b333a2ba7de0f3ff9c0fe073bc23f50c02424cd086ad2dcecabeea1102d6d6b4"
+      "sha256": "4d870f69b56ce7cd1a6ba60834ac0813a2a311574d1d968b95ed313f2fab5ab5"
     },
     {
       "path": "drivers/video/backlight/system-idle.h",
       "source": "kernel/platform/system-idle.h",
-      "sha256": "09ab5a7750b89f8cf35d185153f929d59159b8eabb589dc30f322694d4c8a767"
+      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
     },
     {
       "path": "sound/soc/mediatek/y1-mt6572-afe.c",
       "source": "kernel/y1/mt6572-afe.c",
-      "sha256": "7ce40c88097796ea27b1d5af8f6c009347fb5c8683baab5e2a858e5310edb9bc"
+      "sha256": "aca7891b3227414e8b8e89718c14956faea73b6004d2f0049e19ee6dc02a2d63"
     },
     {
       "path": "sound/soc/mediatek/y1-mt6323-codec.c",
@@ -510,6 +522,31 @@
       "path": "drivers/bluetooth/fm-protocol.h",
       "source": "kernel/platform/connectivity/fm-protocol.h",
       "sha256": "152f1c48fb05d9027fb9913ad7bdbfea121308d91708d27b07dbd77ddbe95fa2"
+    },
+    {
+      "path": "drivers/soc/mediatek/y1-system-idle.c",
+      "source": "kernel/y1/system-idle.c",
+      "sha256": "ffa17e47716a0441982334cf12179365fd74ce2561993babd111c7312c491b39"
+    },
+    {
+      "path": "drivers/soc/mediatek/system-idle.h",
+      "source": "kernel/platform/system-idle.h",
+      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
+    },
+    {
+      "path": "drivers/soc/mediatek/system-idle-policy.h",
+      "source": "kernel/platform/system-idle-policy.h",
+      "sha256": "622a61fb0f0a5d09052db471c0e0bb24db6925325745bbd0c88774509255f9ac"
+    },
+    {
+      "path": "sound/soc/mediatek/system-idle.h",
+      "source": "kernel/platform/system-idle.h",
+      "sha256": "3f35ba47b25c6136ac1495cda40cb1e6660e9bf9c0f2ddc37f96653932c4a661"
+    },
+    {
+      "path": "drivers/soc/mediatek/y1-deep-idle.c",
+      "source": "kernel/y1/deep-idle.c",
+      "sha256": "23a4202a47892dd6dd7e73cd344e701791c37437cc6bf9f79bb1b6787a8786c4"
     }
   ]
 }

@@ -65,7 +65,7 @@ image's code or data, not on the device) and of the Y2's tree.
 | **D3** | CPU frequency scaling 598/806/1001 MHz at LK's fixed VPROC | seventeenth boot |
 | **D4** | Tick: the Cortex-A7 architected timer, tickless idle, high-resolution timers; the GPT as broadcast | `out/y1-boot-d4` |
 | **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence; CPU1 off while the screen is dark | `out/y1-boot-d5b` |
-| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot | planned |
+| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot; the Y2's coordinator (§17) | admitted, D6a–D6d |
 | **D7** | Suspend: stock's suspend firmware, MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops) | planned |
 
 D1 comes first because D2's low-battery shutdown is worthless without a real power-off. D3 is last and
@@ -137,6 +137,8 @@ own admission), the RGU/LK charging-mode path, an RTC driver and clock, the Y2DA
 | D2 | **Run the power daemon** | Y2 daemon unchanged except a tolerance for missing Y2-only files; Y1 profile and policy in the RAM overlay; shutdown through D1's path only |
 | D3 | **Scale the CPU clock** | 598/806/1001 MHz only, CPU mux and ARMPLL through the fork's driver with the intermediate clock; no VPROC or other PMIC write |
 | D4 | **Tickless idle** | kernel configuration only (arch timer, `NO_HZ_IDLE`, `HIGH_RES_TIMERS`); no register write outside the timers' own drivers; BOOTIMG only |
+| D5 | **Power CPU1 off** | stock's `FC1_PWR_CON`/`CPU_FC1_L1_PDN` sequence and `BOOT_SLV_CFG`/`ADDR` (§16); CPU1 only, every poll bounded |
+| D6 | **Deep idle on CPU0** | §17, D6a–D6d as bounded there; admitted by the owner 2026-11-16 |
 
 ## 10. D0 result — 2026-11-05
 
@@ -387,4 +389,176 @@ fork dtsi already has the `arm,armv7-timer` node at 13 MHz.
   window, playback/scan/transfer leases, input and display restore, escalating hold) to the Y1 and retires the
   D5b backlight hook. Its Y2-only inputs (`y2_cpu_safe`, CCF reclaim, local timer, boot mode) need Y1 owners.
 - **D7 — suspend.** The suspend firmware and the MT6323 sleep-mode registers above; only after D6.
+
+## 17. D6 admission — 2026-11-16
+
+**Status: admitted by the owner (2026-11-16), all four steps D6a–D6d, within the bounds below.**
+The owner decided (§16) that D6 ports the Y2's coordinator. D6 is split so that each step adds one kind of
+write, and the risky parts start disabled.
+
+**Read on the player (D5b, 2026-11-16, reads only):**
+
+- PWRAP DVFS slots `0x1000f0e4`–`0x1000f120` (`DVFS_ADR0`/`WDATA0` … `ADR7`/`WDATA7`): **all 0**. LK does not
+  program them and mainline has no owner, so D6 must write them before the SPM may request a voltage.
+- `SPM_AP_DVFS_CON_SET` `0x10006604` = `0x80000007`: slot 7 is selected, with every slot empty.
+- SPM `POWERON_CONFIG_SET` `0x10006000` = `1`; PCM not loaded; `PWR_STATUS`/`_S` `0x3fff` (CPU1 on).
+- GPT4 (`0x10008040`) `CON` = `0x31`, counting (`0x3996f3e3`). Mainline's GPT driver uses GPT1/GPT2 only, so GPT4
+  was started before Linux (INFERRED: LK). Stock's dpidle takes GPT4 as its one-shot wake timer.
+- `CA7_CACHE_CONFIG` `0x10200000` = `0x20`. Stock sets bit 4 (keep L2 on reset) for dormant and clears it
+  afterwards.
+- No cpuidle driver is registered; idle is the architecture's plain WFI.
+
+**Stock values D6 uses** (`drsami/mt6572_kernel` `c4b775c`):
+
+- `mt_cpufreq_pdrv_probe`, the live table (the `ptpod` alternative is commented out):
+  - `ADR0`–`ADR5` = `0x220` (`VPROC_VOSEL_ON`); `ADR6`/`ADR7` = `TOP_CKPDN0` set/clear.
+  - `WDATA0` = `0x58` (1.25 V), `WDATA1` = `0x48` (1.15 V), `WDATA2` = `0x38` (1.05 V, "for spm firmware"),
+    `WDATA3`–`5` = 1.15 V plus the speed-bin variation, `WDATA6`/`7` = `0x2`.
+- dpidle (`mt_spm_dpidle.c`, `mt_idle.c`):
+  - The 493-word `spm_pcm_dpidle` firmware, `pwrlevel` 0 (UART sleep handshake on), `infra_pdn` false,
+    `lock_infra_dcm`, and the wake sources KP, GPT, EINT, CCIF, USB_CD/PDN, AFE, SYSPWREQ, MD/CONN WDT,
+    CONN and THERM.
+  - `AUD_INTBUS` is moved to 26 MHz and `PMIC_SW_CG_AP` enabled ("SPM need PMIC wrapper clock").
+  - GPT4 is set one-shot to the next timer; the minimum is 54 500 13-MHz ticks.
+  - The GIC is cloned into CIRQ.
+  - CPU0 enters `DORMANT_MODE` with `BOOT_SLV_CFG` = `0x13800001` and `BOOT_SLV_ADDR` = the resume entry.
+  - `CA7_CACHE_CONFIG` bit 4 is set.
+- The firmware selects slot 2 on entry and slot 1 on exit (§16). Stock's own PWRAP stress test checks each
+  request by reading `0x220` back (`0x38`, then `0x48`).
+
+**What is ported from the Y2:**
+- `system-idle-policy.h`, the pure decision logic, is ported unchanged.
+- `system-idle.c`'s sampling and park/restore loop is ported with Y1 inputs: the backlight's `screen_dark`, a
+  playback lease from the ALSA PCM state, and no Y2 boot or CPU-safety modes. It replaces the D5b backlight
+  hook.
+- The ordering and fallbacks of `idle.c` and `spm.c`'s `y2_spm_dormant_idle`: `cpu_pm_enter`,
+  `cpu_cluster_pm_enter`, `cpu_suspend`, the readback of every arm write, restore on every path, and a
+  `broken` latch.
+- The MT6582 constants (479-word firmware, event vectors, `CON` bits) are **not** reused. Every MT6572 value
+  comes from the stock files above.
+
+| Step | What | Writes (beyond D5) | Starts |
+| --- | --- | --- | --- |
+| **D6a** | Coordinator port: CPU1 parks after the Y2's 30 s quiet window with the screen dark and no playback; input, display or load restores it | none (Linux hotplug through D5's path) | enabled |
+| **D6b** | Program the PWRAP DVFS slots with stock's table; prove the handshake with **slot 1 only** (1.15 V, today's voltage) | `DVFS_ADR0`–`7`/`WDATA0`–`7` once at boot; `AP_DVFS_CON_SET` low 3 bits = 1 | enabled (one request at boot) |
+| **D6c** | cpuidle state 1 on CPU0: dpidle firmware with `cpu_pdn` = 0 (CPU0 keeps its state in WFI; the firmware lowers VPROC to 1.05 V and raises it on wake) | SPM PCM load/kick/clean as stock; GPT4 one-shot; CIRQ; `AUD_INTBUS` mux; `PMIC_SW_CG_AP` | **disabled**; enabled by hand through sysfs |
+| **D6d** | The same with `cpu_pdn` = 1: CPU0 dormant, L2 retained, resume through the boot ROM | `BOOT_SLV_CFG`/`ADDR` for CPU0, `CA7_CACHE_CONFIG` bit 4 | **disabled**; enabled by hand through sysfs |
+
+**Bounds:**
+
+- **PWRAP slots:**
+  - Only stock's table, compiled in as constants.
+  - Each `ADR`/`WDATA` is written and read back before any request. A mismatch leaves deep idle off for the
+    boot.
+  - Only slots 1 and 2 may be selected at all.
+  - Linux itself only ever requests slot 1, which is today's 1.15 V, and checks `0x220` reads `0x48`.
+  - Slot 2 (1.05 V) is requested only by stock's firmware while CPU0 is idle.
+  - No direct PMIC write to `0x220`, no other VPROC value, no VCORE slot use.
+- **Entry conditions:** stock's, enforced in C.
+  - CPU0 is the only CPU online (D6a).
+  - The screen is dark and nothing is playing.
+  - cpufreq at or below 1001 MHz, at 1.15 V.
+  - At least 54 500 GPT ticks to the next timer.
+  - Stock's clock-mask blockers (UARTs, USB, APDMA, I2C, PWM, display/MDP and others) are read from the CG
+    registers as reads.
+- **USB:** with the gadget connected, the USB clock blocks entry exactly as in stock. The D6c/D6d tests
+  therefore run over Wi-Fi SSH with USB unplugged.
+- **Failure latch:** any arm readback mismatch, a non-zero PCM debug register, a CIRQ or timer restore fault,
+  or a resume through the wrong path sets `broken`. The CPU then stays in plain WFI until reboot.
+- **GPT4:** taken by the idle driver only after a check at probe that no Linux driver owns it; its prior
+  `CON`/`CLK` are recorded and restored on remove.
+- **Off by default:** D6c and D6d start disabled. A hang or reset reboots into the same image with deep idle
+  off, so recovery needs no reflash. The RGU watchdog already resets a hung player (§7).
+
+**Risks:**
+
+- **A wrong slot address could write another PMIC register.**
+  - Guarded by the constant table and readback.
+  - Slot 7's `TOP_CKPDN0_CLR` with data `0x2` is stock's own value.
+- **Resuming at 1.05 V and 1001 MHz could crash CPU0** if the exit request did not complete.
+  - Stock's firmware waits for the PWRAP acknowledge.
+  - D6c tests this with the CPU powered, before D6d powers it off.
+  - INFERRED until the D6c run.
+- **The UART sleep handshake** (`pwrlevel` 0) is the step that broke the Y2's C3 at first.
+  - The Y1 has no console on UART, but the SPM still asks.
+  - D6c records the acknowledge count.
+- **The arch timer stops in dormant.**
+  - The state carries `CPUIDLE_FLAG_TIMER_STOP`, so the GPT broadcast from D4 takes over.
+
+**Tests:**
+
+- **D6a:**
+  - CPU1 parks within about 35 s of the screen going dark.
+  - Input, display wake or a playback start restores it before acknowledging.
+  - Reborn's timeout drives it.
+  - D5's health checks pass.
+- **D6b:**
+  - The boot log shows all 16 slot readbacks matching and the slot 1 request reading `0x220` = `0x48`.
+  - `AP_DVFS_CON_SET` reads `…1`.
+- **D6c, then D6d, each over Wi-Fi with USB unplugged:**
+  - **Enable through sysfs:**
+    - entries and residency rise;
+    - wake reasons are recorded;
+    - the restore-failure count stays 0.
+  - **Timing:** `sleep 60` takes 60 s against the host.
+  - **Workload:**
+    - Wi-Fi ping holds over 10 min;
+    - a button press wakes the screen;
+    - charging state still updates on replug.
+  - **After the run:** the cpufreq check passes.
+  - **Soak:** 1 h screen-off with no `broken`.
+- **Drain (all steps):** after D6d, `y1-power-baseline.py` from 3.9 V or more, compared with D3's screen-off
+  run.
+
+**D6a build.** `kernel/y1/system-idle.c` (added as `drivers/soc/mediatek/y1-system-idle.c`,
+`CONFIG_INNIOASIS_Y1_IDLE`, overlays 0045/0046): the Y2's coordinator with the Y2's unchanged
+`system-idle-policy.h`. Its inputs are:
+- the backlight's dark state;
+- a stream lease from the Y1 AFE's trigger (bit 0 playback, bit 1 FM/capture), which is atomic: setting it
+  queues a restore;
+- input events;
+- cpufreq transitions.
+
+Two inputs are fixed: the Y2's timer handoff is 1, since D4's arch timer and GPT broadcast need none, and the
+Y2's boot and CPU-safety modes do not exist on the Y1. The D5b backlight hook and its DTS property are gone,
+and `backlight.c` is back to its pre-D5 code except that `y2_backlight_dark` is also built for the Y1. The
+Y2's `system-idle.h` gains the Y1 symbol and the lease stub, so the Y2 build is unchanged. The policy's
+constants are the Y2's: 400 milli-cores quiet is 20 % of the Y1's two cores. Build `out/y1-boot-d6a`,
+BOOTIMG sha256 `0da782fafffdf1ba242107d0b7d9a4f12ba6719dbe1604973128f2c2b98d180a`.
+
+**D6a run (2026-11-16): PASS.**
+- **Parking:** with the screen dark, CPU1 parked after a 31 s quiet window (`FC1_PWR_CON` `0x32`,
+  `PWR_STATUS` `0x37ff`).
+- **Screen on:** `bl_power` 0 restored CPU1 before the backlight write.
+- **Re-parking:** dark again, CPU1 parked after the 60 s hold plus 30 s quiet (93 s).
+- **Playback:** `aplay` restored CPU1 at once (`leases=0x1`) and held it online for 45 s of dark playback;
+  the lease cleared on stop.
+- **Button:** a button press restored CPU1. The input and display paths were not separated within the
+  watcher's 50 ms.
+- **Health checks:** cpufreq check PASS; Reborn, `bluetoothd`, the audio card and charging fine; no kernel
+  warning.
+- **USB:** the cable was off the host for part of the run, which went over Wi-Fi.
+
+**D6b build.** `kernel/y1/deep-idle.c` (added as `drivers/soc/mediatek/y1-deep-idle.c`,
+`CONFIG_INNIOASIS_Y1_DEEP_IDLE`): it writes stock's slot table and reads it back, then requests slot 1 as
+stock's `spm_dvfs_ctrl_volt` does and reads `VOSEL_ON` `0x220` and `NI_VPROC_VOSEL` `0x224` back. Two
+preconditions come first: `VOSEL_ON` must already read `0x48`, and the wrapper's arbiter must have
+`DVFSINF` (bit 4) enabled; it reads `0x7f` on the Y1, like the Y2's implemented mask.
+
+The first image ran from `late_initcall` before the PMIC wrapper's deferred probe (MT6323 at 0.683 s, the
+call at 0.678 s). It stopped at stage `pmic` and wrote nothing (slots 0, selector `0x80000007`
+unchanged), as the guard intends. The table is now written from a work item that retries every 200 ms
+for up to 10 s. Build `out/y1-boot-d6b`, BOOTIMG sha256 `d10a6732cb8e8e7f8a33a04e28b39636578ce8652a63c7af47be3252974b9e69`.
+
+**D6b run (2026-11-16): PASS.**
+- **Boot log:** `DVFS slots ready, slot 1 acknowledged after 0 polls, VPROC 0x48/0x48` at 0.55 s, on the
+  first try.
+- **Slot readback:** `0x1000f0e4`–`0x1000f120` hold `0x220/0x58`, `0x220/0x48`, `0x220/0x38`, then
+  `0x220/0x48` for slots 3–5, `0x104/0x2` and `0x106/0x2`.
+- **Selector:** `AP_DVFS_CON_SET` reads `0x80000001`.
+- **Health checks:** cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and `aplay` fine; charging; no kernel
+  warning.
+- **Limit:** the acknowledge bit was already set from LK and read set on the first poll, and 1.15 V is
+  today's value. The request is therefore shown to do no harm, not shown to have been performed. D6c's
+  wake path, slot 2 then slot 1, is the first observable voltage change.
 

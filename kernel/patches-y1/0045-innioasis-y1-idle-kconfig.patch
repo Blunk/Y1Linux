@@ -1,0 +1,23 @@
+--- a/drivers/soc/mediatek/Kconfig
++++ b/drivers/soc/mediatek/Kconfig
+@@ -89,4 +89,20 @@
+ 	  information about the SoC to the userspace including the
+ 	  manufacturer name, marketing name and soc name.
+ 
++config INNIOASIS_Y1_IDLE
++	bool "Innioasis Y1 (MT6572) core parking"
++	depends on ARCH_MEDIATEK && HOTPLUG_CPU && CPU_FREQ && INPUT && NO_HZ_COMMON
++	help
++	  The Y2's idle coordinator with Y1 inputs: CPU1 goes offline after a
++	  sustained quiet window while the screen is dark and no audio stream
++	  runs, and comes back on input, a lit screen, an audio start or load.
++
++config INNIOASIS_Y1_DEEP_IDLE
++	bool "Innioasis Y1 (MT6572) deep idle"
++	depends on INNIOASIS_Y1_IDLE && MTK_PMIC_WRAP && MFD_MT6397
++	help
++	  Stock's PMIC wrapper DVFS slot table and deep idle on CPU0
++	  (docs/planning/Y1-POWER-PLAN.md section 17). The idle states start
++	  disabled and are enabled through sysfs.
++
+ endmenu
