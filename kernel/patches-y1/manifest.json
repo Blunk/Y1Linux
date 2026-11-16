@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -252,6 +252,12 @@
       "base_sha256": "5fef5712eb9b6729519b4e45898ea25b1b7a0bbd914dabecfc46f3f3de624ea5",
       "result_sha256": "219acbf17f571e4438bb802b7961b3cddc26d292004f8cf982f1c535e0eb86aa",
       "patch": "0043-mt6572-arch-timer-gpt6.patch"
+    },
+    {
+      "path": "arch/arm/mach-mediatek/platsmp.c",
+      "base_sha256": "437c79de149466434a7bd3ab0a5210196a43f75f151d896d0e3871c1d37c7145",
+      "result_sha256": "99b94ba3c2f7cfdf8a3216bf4862e5f956e7e98e3ac1e5d2832fb4c745b7f43a",
+      "patch": "0044-mt6572-cpu1-hotplug.patch"
     }
   ],
   "added": [
@@ -413,7 +419,7 @@
     {
       "path": "drivers/video/backlight/innioasis-mt6323-backlight.c",
       "source": "kernel/platform/backlight.c",
-      "sha256": "f51dfac5c98c1857008fe6a5adf21dd8164b60203721667216f561ee89b8b9a3"
+      "sha256": "b333a2ba7de0f3ff9c0fe073bc23f50c02424cd086ad2dcecabeea1102d6d6b4"
     },
     {
       "path": "drivers/video/backlight/system-idle.h",

@@ -248,6 +248,8 @@
 		panel_backlight: backlight {
 			compatible = "innioasis,y2-backlight";
 			innioasis,isink-mask = <0x3>;
+			/* D5 (Y1-POWER-PLAN.md): CPU1 powered off while the screen is dark. */
+			innioasis,screen-off-offline-cpu = <1>;
 		};
 
 		/* Power-off only: BBPU 0x4300 and WRTGR 1 at power-off (no RTC driver). */

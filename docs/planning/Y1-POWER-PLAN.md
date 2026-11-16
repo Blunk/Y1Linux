@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 on the owner's Y1, PASS** ([idle plan](#16-idle-states-d4d7--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -64,7 +64,7 @@ image's code or data, not on the device) and of the Y2's tree.
 | **D2** | Battery percentage and low-battery shutdown: the Y2's power daemon with a Y1 profile and policy | sixteenth boot |
 | **D3** | CPU frequency scaling 598/806/1001 MHz at LK's fixed VPROC | seventeenth boot |
 | **D4** | Tick: the Cortex-A7 architected timer, tickless idle, high-resolution timers; the GPT as broadcast | `out/y1-boot-d4` |
-| **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence | planned |
+| **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence; CPU1 off while the screen is dark | `out/y1-boot-d5b` |
 | **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot | planned |
 | **D7** | Suspend: stock's suspend firmware, MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops) | planned |
 
@@ -351,11 +351,40 @@ fork dtsi already has the `arm,armv7-timer` node at 13 MHz.
   because of its wakers, not the tick: the charger's worker (`kworker/u11:0-y2-charger`) about 75 context
   switches/s from its 1 s poll, `S45y1-mtp`'s 1 s shell loop about 17/s (some 15 forks per round), the power
   daemon about 11/s. Those are separate work (drivers and userspace), not D4.
+- **D5 build (0044).** Overlay on `arch/arm/mach-mediatek/platsmp.c`, `CONFIG_HOTPLUG_CPU`. `cpu_die` on CPU1:
+  stock's `cpu_enter_lowpower` as mainline's `v7_exit_coherency_flush(louis)` (SCTLR.C off, L1 clean and
+  invalidate, ACTLR.SMP off), the flush called through a register because clang's assembler rejects the macro's
+  `bl` here ("unsupported relocation type"); disassembly checked: no stack access between C off and the WFI
+  loop. `cpu_kill` on CPU0: stock's `spm_mtcmos_ctrl_cpu1(STA_POWER_DOWN)` (APMCU1 WFI in `SLEEP_TIMER_STA`,
+  then CLK_DIS, SRAM_CKISO, ISO, SRAM_ISOINT_B off, RST_B off, `CPU_FC1_L1_PDN` with ACK, PWR_ON, PWR_ON_S, FC1
+  off in both status registers). Online again: `BOOT_SLV_CFG` `0x13800001`, `BOOT_SLV_ADDR` = the kernel's
+  secondary entry, then the power-on sequence; the boot ROM jumps in. Every poll is bounded (10 ms); a CPU1
+  left in an unknown state is not booted again. Build `out/y1-boot-d5`, BOOTIMG sha256
+  `527271ac81747c28dcecf3751ad0cd21057f1395181b80efb33d8c8bea67209b`.
+- **D5 run (2026-11-15): PASS for the mechanism.** Offline: `FC1_PWR_CON` `0x4d` -> `0x32`, `PWR_STATUS` and
+  `PWR_STATUS_S` `0x3fff` -> `0x37ff` (bit 11 off), `CPU_FC1_L1_PDN` `0x101`; online restores `0x4d`/`0x3fff`/`0`.
+  200 idle cycles in 23.6 s and 100 cycles with both CPUs spinning while the userspace governor stepped
+  598/1001/806 MHz every 0.3 s: 0 failures, no kernel message. One minute with CPU1 off: Wi-Fi pings, Reborn
+  runs, CPU0 112 timer interrupts/s. Afterwards cpufreq check PASS, charging, Bluetooth and the audio card as
+  before. The policy was open at this point.
+- **D5b policy (owner's choice: the screen-off rule).** The backlight driver (`kernel/platform/backlight.c`, shared
+  with the Y2 but inert there) takes the CPU named by the DT property `innioasis,screen-off-offline-cpu` offline
+  through `remove_cpu()` when the screen goes dark (`bl_power` or brightness 0), and brings it back through
+  `add_cpu()` when it lights, from a work item on `system_unbound_wq`. The Y1 DTS sets `<1>`. Build
+  `out/y1-boot-d5b`, BOOTIMG sha256 `64cbc6440e03cfd775316850fbbebc9d0ef00595b7ab478852332253a7eb3abe`.
+- **D5b run (2026-11-16): PASS.** `bl_power` 4/0 by hand, five times: `online` `0` with `PWR_STATUS` `0x37ff` and
+  `FC1_PWR_CON` `0x32`, then `0-1` with `0x3fff`. Reborn's own screen timeout set `bl_power` 4 and CPU1 went
+  offline within 5 s. 50 cycles with both CPUs spinning: 0 failures, no kernel message. With CPU1 off, a
+  3 s `aplay` ran without error. Afterwards cpufreq check PASS (1 min soak), Wi-Fi up, charging, `bluetoothd`
+  and Reborn running.
 - **D5 — CPU1 power-off.** `HOTPLUG_CPU` with the stock `FC1_PWR_CON` sequence (a `smp_operations` cpu_kill /
   boot path in the MT6572 platform code) and a policy that takes CPU1 offline when idle. Prerequisite for D6.
 - **D6 — deep idle.** A cpuidle state on CPU0 with stock's entry conditions (one CPU online, the clock
   mask through CCF, residency), mainline `cpu_pm`/`cpu_suspend` for the context instead of stock's
   `mt_dormant.c`, the dpidle firmware as data, CIRQ, GPT wake, and the PWRAP DVFS slots 1/2 with readback.
   New admission needed: SPM, PWRAP DVFS slot and `AP_DVFS_CON_SET` writes.
+  Owner's decision (2026-11-16): D6 ports the Y2's coordinator (`kernel/platform/system-idle.c`: 30 s quiet
+  window, playback/scan/transfer leases, input and display restore, escalating hold) to the Y1 and retires the
+  D5b backlight hook. Its Y2-only inputs (`y2_cpu_safe`, CCF reclaim, local timer, boot mode) need Y1 owners.
 - **D7 — suspend.** The suspend firmware and the MT6323 sleep-mode registers above; only after D6.
 
