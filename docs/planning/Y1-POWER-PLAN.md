@@ -821,6 +821,40 @@ Same unattended run (12 min, cable out from minute 1, both radios off, screen da
   - **Abort status:** whether the firmware lowers VPROC to slot 2 (and lets 26 MHz sleep) before it reports
     the abort is not shown. Stock runs this firmware with `cpu_pdn` = 1, and with the CPU's dormant power
     kept (`CC_DISABLE_DORM_PWR`) the abort status may be its normal outcome. INFERRED.
-  - **Power:** a drain comparison with D3's screen-off run (`y1-power-baseline.py`) answers whether D6c saves
-    anything.
-  - **Rest of the test list:** the 1 h soak, the button wake and the ping test are still to do.
+  - **Power:** answered by the drain comparison below: no saving shown.
+  - **Rest of the test list:** the 1 h soak is covered by the drain run below; the button wake and the ping
+    test are still to do.
+
+**D6c drain comparison (2026-11-16, build `de2bb31d…`): no saving shown.** There is no usable screen-off drain
+run from D3, so the state was switched on and off within one run.
+- **Setup:**
+  - `y1-power-baseline.py start dpidle-ab-screenoff-radios-off --interval 60 --hours 5`, cable out, screen
+    dark, both radios off, untouched;
+  - beside it, `tools/development/y1-dpidle-ab.sh` switched `state1/disable` every 30 min, starting with on.
+  - Ten 30-sample blocks, five on and five off; the run ended at its 5 h limit.
+- **Overall:** 3.970 V → 3.763 V over 5.01 h (-30.3 mV/h); the daemon's percentage fell 85 → 48. CPU busy
+  was 7.4 %, CPU1 stayed parked from the first block on, and the PMIC die temperature stayed at 27–29 °C.
+  The charger's sense estimate read 0 mA throughout, so it says nothing on battery.
+- **Deep idle in the on blocks:** 36 000–38 700 entries and 1540–1625 s in the state per 1800 s block (86–90 %),
+  every exit an abort, no latch (`dpidle_broken` N to the end). The 1 h soak is covered.
+- **Voltage slope per block (mV/h, least squares on the raw voltage):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off | 8 on | 9 off |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | Slope | -127.7 | -51.1 | -37.3 | -31.6 | -25.6 | -26.0 | -22.2 | -20.9 | -17.1 | -17.8 |
+  | Against the mean of its neighbours | – | – | +4.1 | -0.2 | +3.2 | -2.1 | +1.2 | -1.2 | +2.2 | – |
+
+  - The cell is still recovering from the unplug, so the slope flattens through the whole run and block 0
+    is mostly that recovery.
+  - Against the mean of their neighbours, the on blocks are 1–4 mV/h shallower and the off blocks 0–2 mV/h
+    steeper. The sign is consistent, but neighbouring blocks share the comparison and the difference is a
+    few mV over 30 min, close to the voltage's resolution. At most a saving of the order of 10 %;
+    not shown.
+  - CPU busy was slightly higher in the on blocks (7.9–8.1 % against 7.5 %): the entry and exit work.
+- **Reading:** this fits the abort status from run 2. If the firmware aborts before the SPM lowers VPROC and
+  stops 26 MHz, D6c is a WFI with extra work, and the saving can only come from what the firmware does before
+  the abort. INFERRED. A real gain needs a normal (non-abort) sleep. Without a current measurement, the battery
+  voltage cannot resolve differences this small.
+- **After the run:** the state was left disabled and both radios back on. By the next morning the player had
+  gone flat; it booted on the cable at 3.46 V. The shutdown itself was not logged, so a clean empty-battery
+  shutdown is INFERRED, not shown.
