@@ -226,6 +226,7 @@ static void __init y1_deep_idle_release_unused(void)
 #define SPM_PCM_MAS_PAUSE_MASK 0x354
 #define SPM_PCM_PWR_IO_EN 0x358
 #define SPM_PCM_TIMER_VAL 0x35c
+#define SPM_PCM_TIMER_OUT 0x360
 #define SPM_PCM_REG12_DATA 0x3b0
 #define SPM_PCM_REG13_DATA 0x3b4
 #define SPM_PCM_EVENT_REG_STA 0x3c0
@@ -343,7 +344,15 @@ static unsigned dpidle_entries, dpidle_normal, dpidle_aborts, dpidle_unknown, dp
 static unsigned dpidle_uart_acks, dpidle_uart_timeouts, dp_uart_streak, dpidle_cirq_flushed;
 static unsigned dpidle_last_wake, dpidle_last_event, dpidle_last_r13, dpidle_last_dvfs, dpidle_last_debug;
 static unsigned dpidle_last_fsm;
+/* Abort diagnosis (§17): PCM_TIMER_OUT (32 kHz ticks the firmware's timer ran) per exit and summed, the sleep
+ * ISR status, and how often R12 recorded 26M_SLP (bit 12) or AP_SLEEP (bit 31). */
+static unsigned dpidle_last_timer_out, dpidle_timer_ticks, dpidle_last_isr, dpidle_r12_26m_slp, dpidle_r12_ap_sleep;
 static unsigned dpidle_refusals[DP_REASONS], dpidle_spm_boot[8], gpt4_boot[2];
+/* AP_STANBY_CON's request masks: md_mask (bits 19-20) and mm_mask (bits 16-17). Stock's dpidle value is both
+ * unmasked (3 and 3). Writable for the abort diagnosis (docs/planning/Y1-POWER-PLAN.md §17); only these bits are
+ * taken, the rest of the register stays stock's. */
+#define DP_STANBY_MASKS (3U << 19 | 3U << 16)
+static unsigned dpidle_stanby = DP_STANBY_MASKS;
 module_param(dpidle_broken, bool, 0400);
 module_param(dpidle_stage, charp, 0400);
 module_param(dpidle_entries, uint, 0400);
@@ -360,6 +369,12 @@ module_param(dpidle_last_r13, uint, 0400);
 module_param(dpidle_last_dvfs, uint, 0400);
 module_param(dpidle_last_debug, uint, 0400);
 module_param(dpidle_last_fsm, uint, 0400);
+module_param(dpidle_stanby, uint, 0600);
+module_param(dpidle_last_timer_out, uint, 0400);
+module_param(dpidle_timer_ticks, uint, 0400);
+module_param(dpidle_last_isr, uint, 0400);
+module_param(dpidle_r12_26m_slp, uint, 0400);
+module_param(dpidle_r12_ap_sleep, uint, 0400);
 /* cpu, slots, quiet, clocks, timer, pending, uart, broken */
 module_param_array(dpidle_refusals, uint, NULL, 0400);
 /* CLK_CON, PCM_CON1, PWR_IO_EN, POWER_ON_VAL1, IM_PTR, IM_LEN, SLEEP_ISR_MASK, WAKEUP_EVENT_MASK at boot */
@@ -535,7 +550,7 @@ static int dp_pcm_arm(void)
 		EVENT_VEC(11, 1, 0, 0), EVENT_VEC(12, 1, 0, 15), EVENT_VEC(30, 1, 0, 28), EVENT_VEC(31, 1, 0, 69),
 	};
 	unsigned n;
-	u32 con0, val1;
+	u32 con0, val1, stanby = (READ_ONCE(dpidle_stanby) & DP_STANBY_MASKS) | 1U << 4;
 	spm_wr(SPM_POWERON_CONFIG_SET, SPM_KEY | BIT(0));
 	spm_wr(SPM_PCM_CON0, SPM_KEY | CON0_PCM_SW_RESET);
 	spm_wr(SPM_PCM_CON0, SPM_KEY);
@@ -572,8 +587,9 @@ static int dp_pcm_arm(void)
 	for (n = 0; n < 4; n++)
 		spm_wr(0x3d0 + n * 4, 0);
 	spm_wr(SPM_APMCU_PWRCTL, 1); /* PWR_LV0 */
-	/* md_mask and mm_mask unmasked (3), SCU and L2C checked, REDUCE_AND; both cores' WFI selected. */
-	spm_wr(SPM_AP_STANBY_CON, 3U << 19 | 3U << 16 | 1U << 4);
+	/* md_mask and mm_mask from dpidle_stanby (stock: 3 and 3), SCU and L2C checked, REDUCE_AND; both cores'
+	 * WFI selected. CORE0/1_WFI_SEL read back as AP_STANBY_CON bits 0 and 1 (devmem, 2026-11-17). */
+	spm_wr(SPM_AP_STANBY_CON, stanby);
 	for (n = 0; n < 4; n++)
 		spm_wr(SPM_CORE_WFI_SEL(n), n < 2);
 	spm_wr(SPM_PCM_TIMER_VAL, ~0U);
@@ -583,7 +599,7 @@ static int dp_pcm_arm(void)
 	spm_wr(SPM_SLEEP_WAKEUP_EVENT_MASK, ~DPIDLE_WAKE_SRC);
 	spm_wr(SPM_SLEEP_ISR_MASK, 0x200);
 	if (spm_rd(SPM_PCM_IM_PTR) != dp_pcm_phys || spm_rd(SPM_PCM_IM_LEN) != Y1_DPIDLE_PCM_WORDS ||
-	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~DPIDLE_WAKE_SRC ||
+	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~DPIDLE_WAKE_SRC || spm_rd(SPM_AP_STANBY_CON) != (stanby | 3) ||
 	    !(spm_rd(SPM_PCM_CON1) & CON1_PCM_TIMER_EN) || (spm_rd(SPM_PCM_CON1) & CON1_PCM_WDT_EN)) {
 		spm_wr(SPM_POWER_ON_VAL1, val1);
 		return dp_break("arm_readback");
@@ -615,6 +631,11 @@ static int dp_wake_status(void)
 	dpidle_last_r13 = spm_rd(SPM_PCM_REG13_DATA);
 	dpidle_last_dvfs = spm_rd(SPM_AP_DVFS_CON_SET);
 	dpidle_last_fsm = spm_rd(SPM_PCM_FSM_STA);
+	dpidle_last_timer_out = spm_rd(SPM_PCM_TIMER_OUT);
+	dpidle_timer_ticks += dpidle_last_timer_out;
+	dpidle_last_isr = spm_rd(SPM_SLEEP_ISR_STATUS);
+	dpidle_r12_26m_slp += !!(dpidle_last_wake & BIT(12));
+	dpidle_r12_ap_sleep += !!(dpidle_last_wake & BIT(31));
 	if (dpidle_last_debug)
 		return dp_break("pcm_assert");
 	if (dpidle_last_event & PCM_EVENT_ABORT)

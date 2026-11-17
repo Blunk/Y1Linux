@@ -858,3 +858,36 @@ run from D3, so the state was switched on and off within one run.
 - **After the run:** the state was left disabled and both radios back on. By the next morning the player had
   gone flat; it booted on the cable at 3.46 V. The shutdown itself was not logged, so a clean empty-battery
   shutdown is INFERRED, not shown.
+
+**D6c abort diagnosis (2026-11-17, builds `b6c6cf63…` and `08fe06b5…`): the unused modem holds 26 MHz awake.**
+- **Diagnostics added to `deep-idle.c`:**
+  - `dpidle_stanby` (0600): the request-mask bits of `AP_STANBY_CON` (md_mask bits 19–20, mm_mask bits 16–17),
+    default stock's 3 and 3; written and read back on every arm, nothing else in the register changes.
+  - `CORE0/1_WFI_SEL` read back as `AP_STANBY_CON` bits 0 and 1 (devmem). The first build's readback ignored
+    this and latched `arm_readback` on its first entry, before the kick (build `0053e59b…`, fixed).
+  - Per exit: `PCM_TIMER_OUT` (last and summed), `SLEEP_ISR_STATUS`, and counts of R12 bit 12 (26M_SLP) and
+    bit 31 (AP_SLEEP).
+  - `y1-dpidle-run.sh` takes a list of `dpidle_stanby` values and runs the given minutes per value.
+- **Power domains with the screen dark and both radios off:** `PWR_STATUS` `0x3fed`/`0x37ef`: MD1 (bit 0) and
+  DIS (bit 3) on, CONN (bit 1) off with the radios off, MFG (bit 4) off. `MD1_PWR_CON` = `0xd`,
+  `PERI_PDN0_MD1_STA` = 0. Nothing in Linux powers MD1 off; stock leaves it to the modem driver.
+- **Sweeps, cable out, 4–5 min per value (all exits aborts, no latch, slot 1 after every wake):**
+
+  | `dpidle_stanby` | md / mm | Entries | 26M_SLP in R12 |
+  |---|---|---|---|
+  | `0x1b0000` (stock) | 3 / 3 | 6365 | 0 |
+  | `0x130000` | 2 / 3 (bit 19 clear) | 4261 | 4261 |
+  | `0` | 0 / 0 | 537 (cable back in after about 1 min) | 537 |
+
+  The earlier single-sample sweep agrees: every value with bit 19 set recorded 26M_WAKE and AP_WAKE, every
+  value with it clear 26M_SLP. The display and GPU bits change nothing.
+- **Reading:**
+  - Bit 19 is the MD1 request (stock: "unmask MD1 and MD2"). The modem is powered but never booted, so its
+    request stays asserted and the SPM keeps 26 MHz on. Stock's own modem driver would release it. INFERRED.
+  - `PCM_TIMER_OUT` summed to 268.9 s against 270.9 s in the state (stock value), so the PCM timer runs from
+    arm to clean and does not by itself show sleep.
+  - The abort status stays with 26 MHz asleep, so it is a separate matter, most likely the firmware's report
+    for a CPU that was not powered down (`cpu_pdn` = 0). INFERRED.
+- **Open (owner's choice):** how to take MD1 out of the condition: mask bit 19 for deep idle, gate
+  `PERI_PDN0_MD1` as the Y2 did (F11), or power MD1 off at boot (stock's `spm_mtcmos_ctrl_mdsys1` sequence).
+  Then a drain A/B with 26 MHz really asleep.

@@ -557,7 +557,7 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "3b235d2060f2ca84231486fc31ccd0752b5741c4798de2d8a0d12be4881439a1"
+      "sha256": "71c998055ced22727cf3847c08b6ca65c22ced266f1125b4f45ef8c8d2741ee2"
     }
   ]
 }
