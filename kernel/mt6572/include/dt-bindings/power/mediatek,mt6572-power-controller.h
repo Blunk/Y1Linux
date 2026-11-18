@@ -6,6 +6,8 @@
 //#define MT6572_POWER_DOMAIN_MD1		0
 //#define MT6572_POWER_DOMAIN_CONN	1
 #define MT6572_POWER_DOMAIN_DPY 2
+/* The unused modem, for the Y1 (docs/planning/Y1-POWER-PLAN.md §17): a free index, not stock's numbering. */
+#define MT6572_POWER_DOMAIN_MD1 3
 #define MT6572_POWER_DOMAIN_DIS 1
 #define MT6572_POWER_DOMAIN_MFG 0
 #define MT6572_POWER_DOMAIN_ISP 5

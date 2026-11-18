@@ -493,10 +493,17 @@
 	innioasis,force-session-valid;
 };
 
-/* The display domain is LK's: Linux would power an unclaimed domain off at late init (dark screen). */
+/* The display domain is LK's: Linux would power an unclaimed domain off at late init (dark screen).
+ * MD1, the modem the Y1 never boots, has no consumer, so genpd powers it off at late init: its request held
+ * 26 MHz on in deep idle (docs/planning/Y1-POWER-PLAN.md §17). */
 &spm {
 	power-domain@MT6572_POWER_DOMAIN_DIS {
 		status = "disabled";
+	};
+
+	power-domain@MT6572_POWER_DOMAIN_MD1 {
+		reg = <MT6572_POWER_DOMAIN_MD1>;
+		#power-domain-cells = <0>;
 	};
 };
 

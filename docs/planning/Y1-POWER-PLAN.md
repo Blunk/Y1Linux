@@ -888,6 +888,21 @@ run from D3, so the state was switched on and off within one run.
     arm to clean and does not by itself show sleep.
   - The abort status stays with 26 MHz asleep, so it is a separate matter, most likely the firmware's report
     for a CPU that was not powered down (`cpu_pdn` = 0). INFERRED.
-- **Open (owner's choice):** how to take MD1 out of the condition: mask bit 19 for deep idle, gate
-  `PERI_PDN0_MD1` as the Y2 did (F11), or power MD1 off at boot (stock's `spm_mtcmos_ctrl_mdsys1` sequence).
-  Then a drain A/B with 26 MHz really asleep.
+- **Owner's choice:** of masking bit 19 for deep idle, gating `PERI_PDN0_MD1` as the Y2 did (F11), or powering
+  MD1 off at boot, the owner chose powering it off at boot (2026-11-17).
+
+**D6c MD1 off at boot (2026-11-18, build `324c5804…`): 26 MHz sleeps with stock's mask.**
+- **Change:** MD1 is a genpd domain of mainline's `mtk-pm-domains` (`MT6572_POWER_DOMAIN_MD1` = 3, a DT node
+  under `&spm` with no consumer), so genpd powers it on at probe and off at late init. Registers from stock's
+  `SYS_MD1` and `spm_mtcmos_ctrl_mdsys1`: control `0x10006284`, status bit 0, SRAM bit 8 without an acknowledge.
+- **No bus protection:** the first build (`d4c050ad…`) gave the domain stock's TOPAXI mask `0x5300`. On the
+  Y1 `INFRA_TOPAXI_PROTECTSTA1` reads `0xf000` with the enable clear (bits 12 and 14 of the mask stay set),
+  so the release wait in genpd's power-on at probe timed out (-110). That failed the whole power controller:
+  no MFG domain, and Reborn reported "graphics unavailable". Stock's power-down leaves the protection out
+  (`#if 0`, "FIXME no bus protect"), and the second build does the same.
+- **After boot:** `PWR_STATUS` `0x3fee` (bit 0 clear), `MD1_PWR_CON` `0x112` (SRAM down, isolated, clock off,
+  reset held). No errors in dmesg. Reborn healthy with Mali graphics, Wi-Fi online, Bluetooth ready.
+- **Run, cable out, 10 min, stock mask `0x1b0000`:** 12607 entries, all with 26M_SLP in R12 (6365 entries with
+  none before). 542.9 s of the 600 s in state1, CPU1 offline, no latch. Every exit still reports an abort
+  (`last_wake` `0x40001010`: GPT, 26M_SLP, AP_WAKE; event `0xd0010000`), which fits the `cpu_pdn` reading above.
+- **Next:** a drain A/B with 26 MHz really asleep; the remaining D6c tests (button wake, ping); the abort label.

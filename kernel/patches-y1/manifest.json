@@ -332,7 +332,7 @@
     {
       "path": "include/dt-bindings/power/mediatek,mt6572-power-controller.h",
       "source": "kernel/mt6572/include/dt-bindings/power/mediatek,mt6572-power-controller.h",
-      "sha256": "40247eaba24febb7b8d161808329beece9bee8c6a361ab763471a57294662349"
+      "sha256": "77a2d90488f5942b3e01bc347d00175e3acbd0ca2bc372a27b39ceee754032c4"
     },
     {
       "path": "include/dt-bindings/memory/mt6572-larb-port.h",
@@ -467,7 +467,7 @@
     {
       "path": "drivers/pmdomain/mediatek/mt6572-pm-domains.h",
       "source": "kernel/y1/mt6572-pm-domains.h",
-      "sha256": "1c986c9db3cde92a91b9420038d0202648df52e703cf7d365d55b1591fdf4379"
+      "sha256": "554104a9a78d4495595da78c84c090d5924f95045504453ba868ad38184a1094"
     },
     {
       "path": "drivers/mmc/host/y1-emmc-guard.h",
