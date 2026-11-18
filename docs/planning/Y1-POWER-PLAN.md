@@ -906,3 +906,29 @@ run from D3, so the state was switched on and off within one run.
   none before). 542.9 s of the 600 s in state1, CPU1 offline, no latch. Every exit still reports an abort
   (`last_wake` `0x40001010`: GPT, 26M_SLP, AP_WAKE; event `0xd0010000`), which fits the `cpu_pdn` reading above.
 - **Next:** a drain A/B with 26 MHz really asleep; the remaining D6c tests (button wake, ping); the abort label.
+
+**D6c drain comparison with MD1 off (2026-11-18, build `324c5804…`): still no saving shown.**
+- **Setup:** as on 2026-11-16 (`dpidle-ab-md1off-screenoff-radios-off`, 60 s, 5 h, ten 30 min blocks starting
+  with on, cable out, screen dark, both radios off, untouched), MD1 off throughout.
+- **Overall:** 4.126 V → 3.854 V over 5.01 h (-51.6 mV/h); the daemon's percentage fell 99 → 70. CPU busy
+  7.2–7.5 % in every block, CPU1 parked, PMIC die 29.6–31.9 °C. The player was still running when plugged in
+  about 7 h after the run ended (radios back on).
+- **Deep idle in the on blocks:** 36 800–38 700 entries and 1540–1625 s in the state per 1800 s block, every
+  exit an abort, no latch.
+- **Voltage slope per block (mV/h):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off | 8 on | 9 off |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | Slope | -67.8 | -51.0 | -55.3 | -56.1 | -49.4 | -37.2 | -49.0 | -70.7 | -49.6 | -35.6 |
+  | Against the mean of its neighbours | – | +10.5 | -1.7 | -3.7 | -2.8 | +12.0 | +4.9 | -21.3 | +3.5 | – |
+
+  - The on blocks 2–8 average -50.8 mV/h and the off blocks 1–9 -50.1 mV/h. The off blocks scatter by
+    ±17 mV/h, far more than on 2026-11-16 at the lower charge level, so the noise swamps anything of the
+    size the first run hinted at. No saving shown, and no sign either way.
+- **MD1 itself:** the daemon's percentage fell 29 points in 5 h here against 37 on 2026-11-16 (85 → 48). The two
+  runs cover different parts of the curve and the percentage is a provisional voltage estimate, so this is
+  at most a hint that powering MD1 off saves something. INFERRED, not measured.
+- **Reading:** with 26 MHz asleep on every entry the battery voltage still shows no difference. Every exit is
+  still an abort, so the firmware most likely still skips the step that would save power (VPROC down, or the
+  sleep that a normal exit reports). INFERRED. The voltage cannot settle this; the abort status is the next
+  thing to explain.
