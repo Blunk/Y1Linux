@@ -932,3 +932,18 @@ run from D3, so the state was switched on and off within one run.
   still an abort, so the firmware most likely still skips the step that would save power (VPROC down, or the
   sleep that a normal exit reports). INFERRED. The voltage cannot settle this; the abort status is the next
   thing to explain.
+
+**D6c ping and button tests (2026-11-18, build `324c5804…`, MD1 off).**
+- **Ping over Wi-Fi, cable out, state1 enabled, both radios left on:** the host pinged the player once a second
+  for 600 s. 174 replies, then no route: Reborn switched Wi-Fi off after 300 s dark ("Wi-Fi blocked while the
+  player is dark and idle", its own policy, not a fault). Deep idle never entered: entries stayed at 202 906
+  and the clock-gate refusal count rose from 6 to 113 607 (Bluetooth kept CONN's clocks on after Wi-Fi went
+  off). So with a radio on, state1 stays out of the way. A 10 min ping is not possible under Reborn's idle
+  Wi-Fi block, and with the radios needing to be off for deep idle (B2) the test has nothing more to show.
+- **Button wake, cable out, radios off, 6 min:** the owner pressed a button about 2 min after the screen went
+  dark. The screen woke at once (Reborn `screen_wake` at 51528.45 s). The exit before it recorded R12
+  `0x40001020` (EINT, 26M_SLP, AP_WAKE): the press woke the SPM out of deep idle with 26 MHz asleep. 3694
+  entries, 161 s in the state, all aborts, no latch; Reborn healthy afterwards.
+- **D6c test list:** done except the abort question. Stock runs deep idle only with `cpu_pdn` = 1
+  (`mt_idle.c`: `dpidle_cpu_pdn = 1`), so whether a normal exit and a saving need the CPU powered down is a
+  D6d question, which waits for the owner.
