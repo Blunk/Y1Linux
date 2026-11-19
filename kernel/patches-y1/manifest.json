@@ -262,7 +262,7 @@
     {
       "path": "drivers/soc/mediatek/Kconfig",
       "base_sha256": "7e85e245ec98934226170f7d151df13dc5a3fe49240b009ab20f02b0c2400dcc",
-      "result_sha256": "413c3ba31d9da10284c4d9f8bc71968dceef017377a993383ba42d9c8c8e598a",
+      "result_sha256": "4a50e1ee005e04d6b40065a3db3d14dcd099d890de1e591ac277162df2701240",
       "patch": "0045-innioasis-y1-idle-kconfig.patch"
     },
     {
@@ -557,7 +557,7 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "71c998055ced22727cf3847c08b6ca65c22ced266f1125b4f45ef8c8d2741ee2"
+      "sha256": "581230fb8997e94731305ac0da60d35bfae7cba5e44921ebb8223229eb25b779"
     }
   ]
 }

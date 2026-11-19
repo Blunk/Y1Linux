@@ -947,3 +947,23 @@ run from D3, so the state was switched on and off within one run.
 - **D6c test list:** done except the abort question. Stock runs deep idle only with `cpu_pdn` = 1
   (`mt_idle.c`: `dpidle_cpu_pdn = 1`), so whether a normal exit and a saving need the CPU powered down is a
   D6d question, which waits for the owner.
+
+**D6d CPU0 power-down (2026-11-19, build `53e884d1…`): CPU0 powers down and resumes safely; the abort stays.**
+- **Change:** `kernel/y1/deep-idle.c` gains cpuidle state2 (DORMANT, `CPUIDLE_FLAG_OFF | RCU_IDLE`). It runs
+  the same deep-idle sequence as state1, with the kick clearing `CC_DISABLE_DORM_PWR` (stock `cpu_pdn` = 1).
+  Around it are `cpu_pm_enter` and `cpu_cluster_pm_enter` (GIC, VFP and arch timer). `BOOT_SLV_CFG`/`ADDR`
+  (0x10001400) point at `cpu_resume_arm`, and `CA7_CACHE_CONFIG` bit 4 keeps L2 across the reset. The WFI runs
+  through `cpu_suspend` with stock's dormant finisher: D-cache off and flushed, SMP off. A WFI that returns
+  goes back with -EBUSY (stock `cpu_check_dormant_abort`). The Kconfig selects `ARM_CPU_SUSPEND`.
+  `BOOT_SLV_CFG` reads back `0x1`, not the written key `0x13800001`, so the arm check compares bit 0 only.
+  The first build (`aa388569…`) compared the full key and was not run.
+- **Run 1, cable out, radios off, 3 min on state2** (`Y1_DPIDLE_STATE=2 tools/development/y1-dpidle-run.sh 3`):
+  2360 entries and 2360 resumes through `cpu_resume`, with no WFI returns. So every entry really took CPU0
+  through reset and back with its context. 107 s of the 192 s in the state, CPU1 offline, no latch
+  (`dpidle_broken` N). Reborn was healthy afterwards (same process, no warnings or RCU stalls in dmesg).
+- **Wake record:** unchanged from D6c. Every exit was still an abort: `last_wake` `0x40001010` (GPT, 26M_SLP,
+  AP_WAKE) and event `0xd0010000`. The 26 MHz sleep was counted on every exit. So `cpu_pdn` is not what makes
+  the firmware report an abort, and the D6c reading above (abort as the normal outcome with dormant power kept)
+  is ruled out.
+- **Next:** find the firmware condition that reports the abort, by comparing the R13/FSM debug values with
+  stock's `spm_dpidle_after_wfi` path. Then run a drain A/B on state2 against state1.

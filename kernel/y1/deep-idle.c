@@ -15,13 +15,20 @@
  * engine. The path's own driverless clocks (SMI common, LARB0, BLS) now follow OVL (patches-y1 0019).
  * D6c: cpuidle state 1 on CPU0, stock's spm_go_to_dpidle with cpu_pdn = 0 (mt_spm_dpidle.c, mt_spm_pcm.c,
  * mt_idle.c, mt_cirq.c): the PCM firmware lowers VPROC through DVFS slot 2 while CPU0 waits in WFI with its
- * state kept, and returns it to slot 1 on wake. The state starts disabled (sysfs cpuidle state1/disable). */
+ * state kept, and returns it to slot 1 on wake. The state starts disabled (sysfs cpuidle state1/disable).
+ * D6d: cpuidle state 2, the same with cpu_pdn = 1 (stock mt_idle.c's only setting, dpidle_cpu_pdn = 1): the
+ * firmware powers CPU0 down after its WFI with L2 kept (CA7_CACHE_CONFIG bit 4, mt_dormant.c), and the boot ROM
+ * resumes it at BOOT_SLV_ADDR. Stock's cpu_power_down/platform_save_context is replaced by mainline's cpu_pm
+ * notifiers (GIC, VFP, arch timer) and cpu_suspend/cpu_resume_arm. Also disabled at boot (state2/disable). */
 #include <dt-bindings/clock/mediatek,mt6572-clk.h>
 #include <linux/cpuidle.h> /* before asm/cpuidle.h, which uses its types */
 #include <asm/barrier.h>
 #include <asm/cacheflush.h>
+#include <asm/cp15.h>
 #include <asm/cpuidle.h>
+#include <asm/suspend.h>
 #include <linux/clk.h>
+#include <linux/cpu_pm.h>
 #include <linux/cpumask.h>
 #include <linux/delay.h>
 #include <linux/io.h>
@@ -33,6 +40,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/stringify.h>
 #include <linux/tick.h>
 #include <linux/workqueue.h>
 #include "dpidle-pcm.h"
@@ -335,8 +343,18 @@ static const struct { bool mmsys; u16 offset; u32 mask; } dp_gates[] = {
 #define CIRQ_CHANNELS 107
 #define CIRQ_IRQ_BASE 52
 #define CIRQ_WORDS 4
+/* D6d, stock mt_dormant.c: the boot ROM's resume address for a CPU coming out of reset (SRAMROM), and the
+ * CA7 cache configuration whose bit 4 keeps L2 from being invalidated on that reset. */
+#define BOOT_SLV_BASE 0x10001400
+#define BOOT_SLV_CFG 0x0
+#define BOOT_SLV_ADDR 0x4
+#define BOOT_SLV_CFG_ENABLE 0x13800001
+#define BOOT_SLV_CFG_ON BIT(0) /* the key does not read back: CFG reads 0x1 (devmem after D5's CPU1 boot) */
+#define CA7_CACHE_CONFIG 0x10200000
+#define CA7_L2_KEEP BIT(4)
 enum dp_reason { DP_CPU, DP_SLOTS, DP_QUIET, DP_CLOCKS, DP_TIMER, DP_PENDING, DP_UART, DP_BROKEN, DP_REASONS };
 static void __iomem *dp_spm, *dp_top, *dp_mm, *dp_gpt, *dp_cirq, *dp_dist, *dp_pol;
+static void __iomem *dp_boot, *dp_cache;
 static phys_addr_t dp_pcm_phys;
 static bool dpidle_broken;
 static char *dpidle_stage = "off";
@@ -348,6 +366,10 @@ static unsigned dpidle_last_fsm;
  * ISR status, and how often R12 recorded 26M_SLP (bit 12) or AP_SLEEP (bit 31). */
 static unsigned dpidle_last_timer_out, dpidle_timer_ticks, dpidle_last_isr, dpidle_r12_26m_slp, dpidle_r12_ap_sleep;
 static unsigned dpidle_refusals[DP_REASONS], dpidle_spm_boot[8], gpt4_boot[2];
+/* D6d: entries into cpu_suspend, returns through the boot ROM and cpu_resume (CPU0 was powered down), and WFIs
+ * that returned without a reset (the firmware did not take the power; Linux's context is kept). */
+static unsigned dpidle_dormant_entries, dpidle_dormant_resumes, dpidle_dormant_wfi_returns;
+static int dpidle_dormant_last;
 /* AP_STANBY_CON's request masks: md_mask (bits 19-20) and mm_mask (bits 16-17). Stock's dpidle value is both
  * unmasked (3 and 3). Writable for the abort diagnosis (docs/planning/Y1-POWER-PLAN.md §17); only these bits are
  * taken, the rest of the register stays stock's. */
@@ -375,6 +397,10 @@ module_param(dpidle_timer_ticks, uint, 0400);
 module_param(dpidle_last_isr, uint, 0400);
 module_param(dpidle_r12_26m_slp, uint, 0400);
 module_param(dpidle_r12_ap_sleep, uint, 0400);
+module_param(dpidle_dormant_entries, uint, 0400);
+module_param(dpidle_dormant_resumes, uint, 0400);
+module_param(dpidle_dormant_wfi_returns, uint, 0400);
+module_param(dpidle_dormant_last, int, 0400);
 /* cpu, slots, quiet, clocks, timer, pending, uart, broken */
 module_param_array(dpidle_refusals, uint, NULL, 0400);
 /* CLK_CON, PCM_CON1, PWR_IO_EN, POWER_ON_VAL1, IM_PTR, IM_LEN, SLEEP_ISR_MASK, WAKEUP_EVENT_MASK at boot */
@@ -606,12 +632,13 @@ static int dp_pcm_arm(void)
 	}
 	return 0;
 }
-/* Stock spm_kick_pcm: CPU and INFRA/DDRPHY power kept, INFRA DCM locked, R0/R7 (and R1/R2) drive power. */
-static void dp_pcm_kick(void)
+/* Stock spm_kick_pcm: INFRA/DDRPHY power kept, CPU power kept unless cpu_pdn (D6d), INFRA DCM locked, R0/R7
+ * (and R1/R2) drive power. */
+static void dp_pcm_kick(bool pdn)
 {
 	u32 con0;
 	spm_wr(SPM_CLK_CON, (spm_rd(SPM_CLK_CON) & ~(CC_DISABLE_DORM_PWR | CC_DISABLE_INFRA_PWR)) |
-	       CC_DISABLE_DORM_PWR | CC_DISABLE_INFRA_PWR | CC_LOCK_INFRA_DCM);
+	       (pdn ? 0 : CC_DISABLE_DORM_PWR) | CC_DISABLE_INFRA_PWR | CC_LOCK_INFRA_DCM);
 	spm_wr(SPM_PCM_MAS_PAUSE_MASK, ~0U);
 	spm_wr(SPM_PCM_PWR_IO_EN, PCM_PWRIO_EN_R0 | PCM_PWRIO_EN_R7 | PCM_PWRIO_EN_R1 | PCM_PWRIO_EN_R2);
 	spm_wr(SPM_CLK_CON, spm_rd(SPM_CLK_CON) | CC_SRCLKENA_MASK);
@@ -669,28 +696,132 @@ static int dp_pcm_clean(void)
 		return dp_break("clean_readback");
 	return 0;
 }
+/* D6d finisher, after cpu_suspend has saved Linux's context: v7_exit_coherency_flush(all) with the flush called
+ * through a register (clang's integrated assembler rejects the macro's "bl", as in patches-y1 0044), then stock's
+ * clrex and WFI. The firmware powers CPU0 down in that WFI and the boot ROM resumes it at cpu_resume_arm. If the
+ * WFI returns instead, the power was not taken: coherency and the data cache come back on and cpu_suspend
+ * returns -EBUSY with the context intact (stock cpu_check_dormant_abort). */
+extern void v7_flush_dcache_all(void);
+static int dp_finish(unsigned long unused)
+{
+	asm volatile(
+	"mrc	p15, 0, r0, c1, c0, 0\n\t"
+	"bic	r0, r0, #" __stringify(CR_C) "\n\t"
+	"mcr	p15, 0, r0, c1, c0, 0\n\t"
+	"isb\n\t"
+	"blx	%0\n\t"
+	"mrc	p15, 0, r0, c1, c0, 1\n\t"
+	"bic	r0, r0, #(1 << 6)\n\t"
+	"mcr	p15, 0, r0, c1, c0, 1\n\t"
+	"isb\n\t"
+	"dsb\n\t"
+	"clrex\n\t"
+	"dsb\n\t"
+	"wfi\n\t"
+	"mrc	p15, 0, r0, c1, c0, 1\n\t"
+	"orr	r0, r0, #(1 << 6)\n\t"
+	"mcr	p15, 0, r0, c1, c0, 1\n\t"
+	"isb\n\t"
+	"mrc	p15, 0, r0, c1, c0, 0\n\t"
+	"orr	r0, r0, #" __stringify(CR_C) "\n\t"
+	"mcr	p15, 0, r0, c1, c0, 0\n\t"
+	"isb"
+	: : "r" (v7_flush_dcache_all)
+	: "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r9", "r10", "ip", "lr", "memory");
+	return -EBUSY;
+}
+/* D6d: stock cpu_power_down's boot vector and L2 retention bit, read back before the PCM is armed. */
+static int dp_dormant_arm(u32 cache)
+{
+	u32 entry = __pa_symbol(cpu_resume_arm);
+	writel(BOOT_SLV_CFG_ENABLE, dp_boot + BOOT_SLV_CFG);
+	writel(entry, dp_boot + BOOT_SLV_ADDR);
+	writel(cache | CA7_L2_KEEP, dp_cache);
+	dsb(sy);
+	if (readl(dp_boot + BOOT_SLV_CFG) != BOOT_SLV_CFG_ON ||
+	    readl(dp_boot + BOOT_SLV_ADDR) != entry || readl(dp_cache) != (cache | CA7_L2_KEEP))
+		return dp_break("dormant_arm");
+	return 0;
+}
+/* The WFI itself: plain for D6c; for D6d through cpu_suspend with RCU told the CPU is idle (the state carries
+ * CPUIDLE_FLAG_RCU_IDLE so that the cpu_pm notifiers run with RCU watching). */
+static int dp_wfi(bool pdn)
+{
+	int ret;
+	if (!pdn) {
+		isb();
+		dsb(sy);
+		wfi();
+		return 0;
+	}
+	dpidle_dormant_entries++;
+	ct_cpuidle_enter();
+	ret = cpu_suspend(0, dp_finish);
+	ct_cpuidle_exit();
+	dpidle_dormant_last = ret;
+	if (!ret)
+		dpidle_dormant_resumes++;
+	else if (ret == -EBUSY)
+		dpidle_dormant_wfi_returns++;
+	else
+		return dp_break("cpu_suspend");
+	return 0;
+}
 /* The PCM part of stock's spm_go_to_dpidle with its before_wfi/after_wfi, interrupts already masked. */
-static int dp_sleep(u32 ticks)
+static int dp_sleep(u32 ticks, bool pdn)
 {
 	u32 aud;
-	int ret = dp_pcm_arm();
+	int ret = dp_pcm_arm(), wfi_ret;
 	if (ret)
 		return ret;
-	dp_pcm_kick();
+	dp_pcm_kick(pdn);
 	aud = readl(dp_top + TOP_CLK_CFG_0);
 	writel(aud & ~AUD_INTBUS_MASK, dp_top + TOP_CLK_CFG_0); /* clk26m */
 	dp_gpt4_arm(ticks);
 	dpidle_entries++;
-	isb();
-	dsb(sy);
-	wfi();
-	ret = dp_wake_status();
+	wfi_ret = dp_wfi(pdn);
+	ret = dp_wake_status() ?: wfi_ret;
 	if (dp_gpt4_disarm())
 		dpidle_gpt_wakes++;
 	writel((readl(dp_top + TOP_CLK_CFG_0) & ~AUD_INTBUS_MASK) | (aud & AUD_INTBUS_MASK), dp_top + TOP_CLK_CFG_0);
 	return dp_pcm_clean() ?: ret;
 }
-static int dp_enter(struct cpuidle_device *dev, struct cpuidle_driver *drv, int index)
+/* D6d around dp_sleep: Linux's CPU and cluster context (the GIC distributor holds the masked enables here, which
+ * its restore puts back before dp_gic_restore), the boot vector and L2 bit, and the L2 bit cleared again on
+ * either return (stock platform_restore_context and cpu_check_dormant_abort). */
+static int dp_sleep_dormant(u32 ticks)
+{
+	u32 cache = readl(dp_cache);
+	int ret = cpu_pm_enter();
+	if (ret) {
+		dpidle_dormant_last = ret; /* a notifier refused: plain WFI, not counted as a UART refusal */
+		return -EAGAIN;
+	}
+	ret = cpu_cluster_pm_enter();
+	if (!ret) {
+		ret = dp_dormant_arm(cache) ?: dp_sleep(ticks, true);
+		writel(cache, dp_cache);
+		dsb(sy);
+		if (readl(dp_cache) != cache)
+			ret = dp_break("dormant_cache");
+		cpu_cluster_pm_exit();
+	} else {
+		dpidle_dormant_last = ret;
+		ret = -EAGAIN;
+	}
+	cpu_pm_exit();
+	return ret;
+}
+/* Plain WFI in place of the state; a D6d state runs with RCU watching, so it says the CPU is idle around it. */
+static void dp_idle(bool pdn)
+{
+	if (pdn)
+		ct_cpuidle_enter();
+	cpu_do_idle();
+	if (pdn)
+		ct_cpuidle_exit();
+}
+static int dp_enter_common(int index, bool pdn)
 {
 	u32 enable[GIC_BANKS], ticks = 0;
 	int reason = dp_admit(&ticks), ret;
@@ -698,10 +829,13 @@ static int dp_enter(struct cpuidle_device *dev, struct cpuidle_driver *drv, int 
 		reason = DP_PENDING;
 	if (reason >= 0) {
 		dpidle_refusals[reason]++;
-		cpu_do_idle();
+		dp_idle(pdn);
 		return 0;
 	}
-	ret = dp_cirq_clone(enable) ? dp_break("cirq_clone") : dp_sleep(ticks);
+	if (dp_cirq_clone(enable))
+		ret = dp_break("cirq_clone");
+	else
+		ret = pdn ? dp_sleep_dormant(ticks) : dp_sleep(ticks, false);
 	if (ret == -EBUSY)
 		dpidle_refusals[DP_UART]++;
 	if (!dp_cirq_flush())
@@ -709,10 +843,18 @@ static int dp_enter(struct cpuidle_device *dev, struct cpuidle_driver *drv, int 
 	if (!dp_gic_restore(enable))
 		ret = dp_break("gic_restore");
 	if (ret) {
-		cpu_do_idle();
+		dp_idle(pdn);
 		return 0;
 	}
 	return index;
+}
+static int dp_enter(struct cpuidle_device *dev, struct cpuidle_driver *drv, int index)
+{
+	return dp_enter_common(index, false);
+}
+static int dp_enter_dormant(struct cpuidle_device *dev, struct cpuidle_driver *drv, int index)
+{
+	return dp_enter_common(index, true);
 }
 static struct cpuidle_driver y1_idle_driver = {
 	.name = "y1_idle",
@@ -727,12 +869,22 @@ static struct cpuidle_driver y1_idle_driver = {
 			.name = "DPIDLE",
 			.desc = "SPM deep idle, CPU on (D6c)",
 		},
+		{
+			.enter = dp_enter_dormant,
+			.exit_latency = 600,
+			.target_residency = 5000,
+			.flags = CPUIDLE_FLAG_TIMER_STOP | CPUIDLE_FLAG_OFF | CPUIDLE_FLAG_RCU_IDLE,
+			.name = "DORMANT",
+			.desc = "SPM deep idle, CPU0 off (D6d)",
+		},
 	},
-	.state_count = 2,
+	.state_count = 3,
 };
 static void __init dp_unmap(void)
 {
-	void __iomem **maps[] = { &dp_spm, &dp_top, &dp_mm, &dp_gpt, &dp_cirq, &dp_dist, &dp_pol };
+	void __iomem **maps[] = {
+		&dp_spm, &dp_top, &dp_mm, &dp_gpt, &dp_cirq, &dp_dist, &dp_pol, &dp_boot, &dp_cache,
+	};
 	unsigned n;
 	for (n = 0; n < ARRAY_SIZE(maps); n++)
 		if (*maps[n]) {
@@ -755,7 +907,10 @@ static int __init y1_dpidle_init(void)
 	dp_cirq = ioremap(CIRQ_BASE, 0x400);
 	dp_dist = ioremap(GIC_DIST_BASE, 0x1000);
 	dp_pol = ioremap(SYSIRQ_POL_BASE, 0x1c);
-	if (!dp_spm || !dp_top || !dp_mm || !dp_gpt || !dp_cirq || !dp_dist || !dp_pol) {
+	dp_boot = ioremap(BOOT_SLV_BASE, 8);
+	dp_cache = ioremap(CA7_CACHE_CONFIG, 4);
+	if (!dp_spm || !dp_top || !dp_mm || !dp_gpt || !dp_cirq || !dp_dist || !dp_pol || !dp_boot ||
+	    !dp_cache) {
 		ret = -ENOMEM;
 		goto fail;
 	}
