@@ -967,3 +967,49 @@ run from D3, so the state was switched on and off within one run.
   is ruled out.
 - **Next:** find the firmware condition that reports the abort, by comparing the R13/FSM debug values with
   stock's `spm_dpidle_after_wfi` path. Then run a drain A/B on state2 against state1.
+
+**D6d abort found (2026-11-19, build `8a930c35…`): the display's standby request holds the AP awake.**
+- **Firmware reading:** decoded from stock's dpidle PCM program (`mt_spm_dpidle.c`, v16-24).
+  - Writes to R14 are waits. The label in bits 16–23 is what `PCM_EVENT_REG_STA` keeps: `0xd0010000` is the
+    abort label and `0x90100000` the normal one.
+  - The main program waits at PC 261 for the AP's WFI. It then powers CPU0 and L2 down (`FC0_PWR_CON`,
+    `CPU_PWR_CON`, `L2_DAT_SLEEP_B`), unless `CLK_CON` bit 14 (`CC_DISABLE_DORM_PWR`) is set.
+  - It then loops at PC 309–323. Any wake source while in the loop goes to the abort path. The loop repeats
+    while R12 bit 30 (AP_WAKE) is set, and while R13 bit 4 is set.
+  - Only after that does it run the sleep sequence and wait for the wake with the normal label (PC 379).
+  - Every D6c/D6d exit carried AP_WAKE: the AP standby condition (`AP_STANBY_CON`) was never met, so the
+    firmware sat in that loop until the GPT woke it, and reported an abort.
+- **Change:** `dpidle_stanby` now also takes the SCU and L2C idle masks (bits 6 and 5) and the cores whose WFI
+  counts (bits 0–1, written to `CORE0/1_WFI_SEL`). The default `0x1b0003` is stock's.
+- **Sweeps on state2, cable out, both radios off** (`y1-dpidle-run.sh`, 2–3 min per value). Every value
+  resumed CPU0 on every entry, with no WFI returns and no latch.
+
+  | `dpidle_stanby` | What is unmasked | Exits | Result |
+  |---|---|---|---|
+  | `0x1b0003` (stock) | all, both cores | 3619 | all aborts |
+  | `0x1b0001` | all, CPU0 only | 3667 | all aborts |
+  | `0x1b0061` | MD and MM, CPU0 only, no SCU/L2C | 3801 | all aborts |
+  | `0x61` | CPU0 only | 1567 | all normal |
+  | `0x60` / `0` | nothing (with or without SCU/L2C) | 2502 / 2518 | all normal |
+  | `0x180061` | MD1 and MD2 | 1444 | all normal |
+  | `0x080061` / `0x100061` | MD1 / MD2 | 2404 / 371 | all normal |
+  | `0x030061` | MM (bits 16 and 17) | 2574 | all aborts |
+  | `0x010061` | bit 16 only | 1294 | all aborts |
+  | `0x020061` | bit 17 only | 2505 | all normal |
+  | `0x1a0003` | stock without bit 16 | 2532 | all normal |
+  | `0x190003` | stock without bit 17 | 2474 | all aborts |
+
+  - Normal exits record event `0x90100000` and R12 `0x10` (GPT only). Aborts record `0xd0010000` and
+    `0x40001010` as before.
+- **Reading:**
+  - Bit 16 is the display request (stock's enum: value 1 is `MFG_MASK`, so bit 17 is MFG and bit 16 DISP).
+  - With the screen dark, the DIS power domain stays on in Linux (`PWR_STATUS` bit 3, D6c abort diagnosis),
+    and its request keeps the AP standby condition false. Stock powers DIS down when its last clock goes
+    off, so it never saw this. INFERRED.
+  - Neither CPU1's WFI nor the SCU/L2C checks matter.
+  - Deep idle already refuses to enter unless every MMSYS clock is gated (`dp_gates`), so the display engine
+    is clock-gated whenever the request would be masked.
+- **Not yet shown:** that a normal sleep saves power (26M_SLP no longer appears in R12 on a normal exit; the
+  firmware switches the clock itself in its sleep sequence), and the health of a long run with bit 16 masked.
+- **Owner's choice next:** mask the DISP request in deep idle (default `0x1a0003`), or power the DIS domain off
+  while the screen is dark, as stock does.

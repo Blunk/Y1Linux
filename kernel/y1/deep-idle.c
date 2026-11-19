@@ -370,11 +370,13 @@ static unsigned dpidle_refusals[DP_REASONS], dpidle_spm_boot[8], gpt4_boot[2];
  * that returned without a reset (the firmware did not take the power; Linux's context is kept). */
 static unsigned dpidle_dormant_entries, dpidle_dormant_resumes, dpidle_dormant_wfi_returns;
 static int dpidle_dormant_last;
-/* AP_STANBY_CON's request masks: md_mask (bits 19-20) and mm_mask (bits 16-17). Stock's dpidle value is both
- * unmasked (3 and 3). Writable for the abort diagnosis (docs/planning/Y1-POWER-PLAN.md §17); only these bits are
- * taken, the rest of the register stays stock's. */
-#define DP_STANBY_MASKS (3U << 19 | 3U << 16)
-static unsigned dpidle_stanby = DP_STANBY_MASKS;
+/* AP_STANBY_CON's request masks: md_mask (bits 19-20), mm_mask (bits 16-17), the SCU and L2C idle masks (bits 6
+ * and 5, 0 = checked) and the cores whose WFI counts (bits 0-1, written to CORE0/1_WFI_SEL, which read back
+ * there). Stock's dpidle value: md and mm unmasked (3 and 3), SCU and L2C checked, both cores. Writable for the
+ * abort diagnosis (docs/planning/Y1-POWER-PLAN.md §17); only these bits are taken, REDUCE_AND (bit 4) stays. */
+#define DP_STANBY_MASKS (3U << 19 | 3U << 16 | 3U << 5)
+#define DP_STANBY_CORES 3U
+static unsigned dpidle_stanby = (DP_STANBY_MASKS & ~(3U << 5)) | DP_STANBY_CORES;
 module_param(dpidle_broken, bool, 0400);
 module_param(dpidle_stage, charp, 0400);
 module_param(dpidle_entries, uint, 0400);
@@ -576,7 +578,7 @@ static int dp_pcm_arm(void)
 		EVENT_VEC(11, 1, 0, 0), EVENT_VEC(12, 1, 0, 15), EVENT_VEC(30, 1, 0, 28), EVENT_VEC(31, 1, 0, 69),
 	};
 	unsigned n;
-	u32 con0, val1, stanby = (READ_ONCE(dpidle_stanby) & DP_STANBY_MASKS) | 1U << 4;
+	u32 con0, val1, req = READ_ONCE(dpidle_stanby), stanby = (req & DP_STANBY_MASKS) | 1U << 4;
 	spm_wr(SPM_POWERON_CONFIG_SET, SPM_KEY | BIT(0));
 	spm_wr(SPM_PCM_CON0, SPM_KEY | CON0_PCM_SW_RESET);
 	spm_wr(SPM_PCM_CON0, SPM_KEY);
@@ -613,11 +615,12 @@ static int dp_pcm_arm(void)
 	for (n = 0; n < 4; n++)
 		spm_wr(0x3d0 + n * 4, 0);
 	spm_wr(SPM_APMCU_PWRCTL, 1); /* PWR_LV0 */
-	/* md_mask and mm_mask from dpidle_stanby (stock: 3 and 3), SCU and L2C checked, REDUCE_AND; both cores'
-	 * WFI selected. CORE0/1_WFI_SEL read back as AP_STANBY_CON bits 0 and 1 (devmem, 2026-11-17). */
+	/* The masks and cores from dpidle_stanby (stock: md and mm 3 and 3, SCU and L2C checked, both cores),
+	 * REDUCE_AND. CORE0/1_WFI_SEL read back as AP_STANBY_CON bits 0 and 1 (devmem, 2026-11-17). */
 	spm_wr(SPM_AP_STANBY_CON, stanby);
 	for (n = 0; n < 4; n++)
-		spm_wr(SPM_CORE_WFI_SEL(n), n < 2);
+		spm_wr(SPM_CORE_WFI_SEL(n), n < 2 && (req & BIT(n)));
+	stanby |= req & DP_STANBY_CORES;
 	spm_wr(SPM_PCM_TIMER_VAL, ~0U);
 	spm_wr(SPM_PCM_CON1, SPM_KEY | (spm_rd(SPM_PCM_CON1) & 0xffff) | CON1_PCM_TIMER_EN);
 	spm_wr(SPM_PCM_WDT_TIMER_VAL, 0);
@@ -625,7 +628,7 @@ static int dp_pcm_arm(void)
 	spm_wr(SPM_SLEEP_WAKEUP_EVENT_MASK, ~DPIDLE_WAKE_SRC);
 	spm_wr(SPM_SLEEP_ISR_MASK, 0x200);
 	if (spm_rd(SPM_PCM_IM_PTR) != dp_pcm_phys || spm_rd(SPM_PCM_IM_LEN) != Y1_DPIDLE_PCM_WORDS ||
-	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~DPIDLE_WAKE_SRC || spm_rd(SPM_AP_STANBY_CON) != (stanby | 3) ||
+	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~DPIDLE_WAKE_SRC || spm_rd(SPM_AP_STANBY_CON) != stanby ||
 	    !(spm_rd(SPM_PCM_CON1) & CON1_PCM_TIMER_EN) || (spm_rd(SPM_PCM_CON1) & CON1_PCM_WDT_EN)) {
 		spm_wr(SPM_POWER_ON_VAL1, val1);
 		return dp_break("arm_readback");
