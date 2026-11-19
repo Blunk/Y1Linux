@@ -1022,3 +1022,37 @@ run from D3, so the state was switched on and off within one run.
   - **Risk:** display resume (black screen or a stuck DSI), which the button-wake test must cover.
   - **Decide:** after the D6d drain comparison shows whether deep idle saves power at all.
 - **Next:** check the new default on the player, then run a drain comparison of state2 against state1 (or off).
+
+**D6d drain comparison (2026-11-19, build `f9910360…`): the first saving shown.**
+- **Setup:**
+  - `y1-power-baseline.py start dpidle-ab-d6d-normal-screenoff-radios-off --interval 60 --hours 5`, cable out,
+    screen dark, both radios off, untouched;
+  - beside it, `Y1_DPIDLE_STATE=2 tools/development/y1-dpidle-ab.sh` (now takes the state) switched state2
+    every 30 min, starting with on;
+  - `dpidle_stanby` `0x1a0003`, MD1 off.
+  - The owner ended the run after 3.71 h: seven full blocks and 13 min of an eighth (off).
+- **Overall:** 4.090 V → 3.934 V (-39.3 mV/h); the daemon's percentage fell 97 → 79. CPU busy was 7.4 %.
+- **Deep idle in the on blocks:**
+  - 36 300–38 500 entries and about 1540–1620 s in the state per 1800 s block;
+  - every exit normal (149 893 normal, 0 aborts), every entry resumed through `cpu_resume`;
+  - no latch, CPU1 parked.
+  - Afterwards Reborn was the same process and dmesg had no warnings.
+- **Voltage slope per block (mV/h, least squares on the raw voltage):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off (13 min) |
+  |---|---|---|---|---|---|---|---|---|
+  | Slope | -37.2 | -47.9 | -28.0 | -58.1 | -25.5 | -43.7 | -20.8 | -63.7 |
+  | Against the mean of its neighbours | – | -15.3 | +24.9 | -31.3 | +25.4 | -20.5 | +32.9 | – |
+
+  - Every on block is shallower than both of its neighbours, by 25–33 mV/h. On blocks 2–6 average
+    -24.8 mV/h, off blocks 1–5 -49.9 mV/h.
+  - The voltage drop per 30 min block was 9–19 mV on and 21–29 mV off. Block 0 includes the recovery after
+    the unplug and is still shallower than block 1.
+  - Both D6c runs (aborts) showed at most a few mV/h, inside the noise. This difference is about ten times
+    that, with the same sign in every block.
+- **Reading:** a normal deep-idle sleep with CPU0 powered down roughly halves the voltage slope with the screen
+  dark and the radios off. That is consistent with a halved idle current, but the cell's voltage is not a
+  current measurement, so the size is INFERRED. A current measurement (or a full discharge with the state
+  on, against the 2026-11-18 run) would size it.
+- **Next:** enable state2 by default (it still starts disabled), then a long soak with normal use (button wake,
+  playback start, charging). D6e (DIS off while dark) is decided after that.
