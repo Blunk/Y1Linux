@@ -1011,5 +1011,14 @@ run from D3, so the state was switched on and off within one run.
     is clock-gated whenever the request would be masked.
 - **Not yet shown:** that a normal sleep saves power (26M_SLP no longer appears in R12 on a normal exit; the
   firmware switches the clock itself in its sleep sequence), and the health of a long run with bit 16 masked.
-- **Owner's choice next:** mask the DISP request in deep idle (default `0x1a0003`), or power the DIS domain off
-  while the screen is dark, as stock does.
+- **Owner's choice (2026-11-19):** mask the DISP request in deep idle for now. The `dpidle_stanby` default is
+  `0x1a0003` (stock's value without bit 16), build `out/y1-boot-d6d4`, BOOTIMG
+  `f9910360db33ed49dbd177519842a26e124878acd69b100d5d2523647411ca77`.
+- **Later option (D6e, not started):** power the DIS domain off while the screen is dark, as stock does, and put
+  the request mask back to stock's.
+  - **Gain:** it removes the masked request, and the display subsystem's leakage while dark.
+  - **Needs:** the display driver releasing the domain on blank (genpd runtime PM on OVL/RDMA/DSI and the
+    panel), and a clean re-init of DSI and the panel on unblank.
+  - **Risk:** display resume (black screen or a stuck DSI), which the button-wake test must cover.
+  - **Decide:** after the D6d drain comparison shows whether deep idle saves power at all.
+- **Next:** check the new default on the player, then run a drain comparison of state2 against state1 (or off).

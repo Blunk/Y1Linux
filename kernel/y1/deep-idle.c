@@ -370,13 +370,16 @@ static unsigned dpidle_refusals[DP_REASONS], dpidle_spm_boot[8], gpt4_boot[2];
  * that returned without a reset (the firmware did not take the power; Linux's context is kept). */
 static unsigned dpidle_dormant_entries, dpidle_dormant_resumes, dpidle_dormant_wfi_returns;
 static int dpidle_dormant_last;
-/* AP_STANBY_CON's request masks: md_mask (bits 19-20), mm_mask (bits 16-17), the SCU and L2C idle masks (bits 6
- * and 5, 0 = checked) and the cores whose WFI counts (bits 0-1, written to CORE0/1_WFI_SEL, which read back
- * there). Stock's dpidle value: md and mm unmasked (3 and 3), SCU and L2C checked, both cores. Writable for the
- * abort diagnosis (docs/planning/Y1-POWER-PLAN.md §17); only these bits are taken, REDUCE_AND (bit 4) stays. */
+/* AP_STANBY_CON's request masks: md_mask (bits 19-20), mm_mask (bits 16-17: DISP, MFG), the SCU and L2C idle
+ * masks (bits 6 and 5, 0 = checked) and the cores whose WFI counts (bits 0-1, written to CORE0/1_WFI_SEL, which
+ * read back there). Stock's dpidle value is 0x1b0003. The default masks the DISP request (bit 16): Linux keeps
+ * the DIS domain on with the screen dark, and its request held the firmware in its abort loop on every entry
+ * (docs/planning/Y1-POWER-PLAN.md §17). Every MMSYS clock is gated before entry (dp_gates). Writable for
+ * diagnosis; only these bits are taken, REDUCE_AND (bit 4) stays. */
 #define DP_STANBY_MASKS (3U << 19 | 3U << 16 | 3U << 5)
 #define DP_STANBY_CORES 3U
-static unsigned dpidle_stanby = (DP_STANBY_MASKS & ~(3U << 5)) | DP_STANBY_CORES;
+#define DP_STANBY_DISP BIT(16)
+static unsigned dpidle_stanby = (DP_STANBY_MASKS & ~(3U << 5) & ~DP_STANBY_DISP) | DP_STANBY_CORES;
 module_param(dpidle_broken, bool, 0400);
 module_param(dpidle_stage, charp, 0400);
 module_param(dpidle_entries, uint, 0400);
