@@ -1056,3 +1056,10 @@ run from D3, so the state was switched on and off within one run.
   on, against the 2026-11-18 run) would size it.
 - **Next:** enable state2 by default (it still starts disabled), then a long soak with normal use (button wake,
   playback start, charging). D6e (DIS off while dark) is decided after that.
+
+**D6d on at boot (2026-11-19, build `1932a292…`).** State2 (DORMANT) no longer carries `CPUIDLE_FLAG_OFF`, so it is
+enabled at boot; state1 (DPIDLE, D6c) still starts disabled. After boot: state2 `disable` 0, `dpidle_stanby`
+`0x1a0003`, stage `ready`, no latch, Reborn healthy. With the cable in it refuses (CPU1 online), as before.
+`y1-dpidle-run.sh` and `y1-dpidle-ab.sh` now put the state's `disable` back as they found it instead of
+disabling it. Next: the soak with normal use (button wake, playback start, charging, Wi-Fi and Bluetooth
+switched back on).

@@ -20,7 +20,7 @@
 +	  Stock's PMIC wrapper DVFS slot table and deep idle on CPU0
 +	  (docs/planning/Y1-POWER-PLAN.md section 17): a cpuidle driver whose
 +	  deep states run stock's SPM firmware, with CPU0 powered (D6c) or
-+	  powered down and resumed through cpu_suspend (D6d). Both start
-+	  disabled and are enabled through sysfs.
++	  powered down and resumed through cpu_suspend (D6d). D6d is on
++	  at boot; D6c starts disabled and is enabled through sysfs.
 +
  endmenu

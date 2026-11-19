@@ -9,7 +9,8 @@
 # Switches Bluetooth and Wi-Fi off through Reborn (deep idle needs both off, B2), waits for the logger to start
 # sampling (cable pulled), then alternates on/off every <block_s>, starting with on. One line per switch goes
 # to /data/power-baseline/<label>-blocks.txt (epoch, state, the deep-idle counters). It ends when the logger
-# ends (cable back in, 3.50 V or its hour limit), then leaves the state disabled and switches both radios on.
+# ends (cable back in, 3.50 V or its hour limit), then puts the state's disable back as found (state2 is on at
+# boot) and switches both radios on.
 # SPDX-License-Identifier: GPL-2.0-only
 set -u
 label=${1:?label}
@@ -18,6 +19,7 @@ dir=/data/power-baseline
 out="$dir/$label-blocks.txt"
 p=/sys/module/y1_deep_idle/parameters
 st=/sys/devices/system/cpu/cpu0/cpuidle/state${Y1_DPIDLE_STATE:-1}
+dis0=$(cat $st/disable)
 alive() { [ -r "$dir/running.pid" ] && kill -0 "$(cat "$dir/running.pid")" 2>/dev/null; }
 mark() {
     echo "$(date +%s) $1 entries=$(cat $p/dpidle_entries) aborts=$(cat $p/dpidle_aborts)" \
@@ -36,6 +38,6 @@ while alive; do
     while alive && [ $t -lt "$block" ]; do sleep 10; t=$((t + 10)); done
     state=$((1 - state))
 done
-echo 1 > $st/disable
+echo "$dis0" > $st/disable
 mark end
 rebornctl bluetooth on >/dev/null; rebornctl wifi on >/dev/null

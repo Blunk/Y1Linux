@@ -19,7 +19,8 @@
  * D6d: cpuidle state 2, the same with cpu_pdn = 1 (stock mt_idle.c's only setting, dpidle_cpu_pdn = 1): the
  * firmware powers CPU0 down after its WFI with L2 kept (CA7_CACHE_CONFIG bit 4, mt_dormant.c), and the boot ROM
  * resumes it at BOOT_SLV_ADDR. Stock's cpu_power_down/platform_save_context is replaced by mainline's cpu_pm
- * notifiers (GIC, VFP, arch timer) and cpu_suspend/cpu_resume_arm. Also disabled at boot (state2/disable). */
+ * notifiers (GIC, VFP, arch timer) and cpu_suspend/cpu_resume_arm. Enabled at boot: with the DISP request masked every
+ * exit is a normal sleep, and it halved the screen-off voltage slope (Y1-POWER-PLAN.md §17, 2026-11-19). */
 #include <dt-bindings/clock/mediatek,mt6572-clk.h>
 #include <linux/cpuidle.h> /* before asm/cpuidle.h, which uses its types */
 #include <asm/barrier.h>
@@ -879,7 +880,7 @@ static struct cpuidle_driver y1_idle_driver = {
 			.enter = dp_enter_dormant,
 			.exit_latency = 600,
 			.target_residency = 5000,
-			.flags = CPUIDLE_FLAG_TIMER_STOP | CPUIDLE_FLAG_OFF | CPUIDLE_FLAG_RCU_IDLE,
+			.flags = CPUIDLE_FLAG_TIMER_STOP | CPUIDLE_FLAG_RCU_IDLE,
 			.name = "DORMANT",
 			.desc = "SPM deep idle, CPU0 off (D6d)",
 		},

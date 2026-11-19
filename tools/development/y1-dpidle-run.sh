@@ -6,9 +6,9 @@
 #   D6d (state2, CPU0 powered down): Y1_DPIDLE_STATE=2 setsid sh /tmp/y1-dpidle-run.sh ...
 # Switches Bluetooth and Wi-Fi off through Reborn, waits for the USB cable to come out (up to 10 min), enables
 # cpuidle state1 (DPIDLE), or state2 (DORMANT) with Y1_DPIDLE_STATE=2, samples once a minute for the given
-# minutes with the screen left to go dark, then disables the state and switches both radios on. With stanby
-# values (dpidle_stanby, the AP_STANBY_CON request masks), it runs the given minutes once per value and puts the
-# stock value back at the end.
+# minutes with the screen left to go dark, then puts the state's disable back as found (state2 is on at boot)
+# and switches both radios on. With stanby values (dpidle_stanby, the AP_STANBY_CON request masks), it runs the
+# given minutes once per value and puts the value found at the start back at the end.
 # The Y1 has no RTC device: compare the player's uptime with the host's clock before and after the run.
 # SPDX-License-Identifier: GPL-2.0-only
 set -u
@@ -37,6 +37,7 @@ snap() {
         "dvfs=$(devmem 0x10006604) bl_power=$(cat /sys/class/backlight/y2-backlight/bl_power)"
 }
 [ -d "$st/$state" ] || { echo "FAIL: no cpuidle $state"; exit 1; }
+dis0=$(cat $st/$state/disable)
 echo "boot: spm=$(cat $p/dpidle_spm_boot) gpt4=$(cat $p/gpt4_boot) driver=$(cat /sys/devices/system/cpu/cpuidle/current_driver)"
 up0=$(cut -d' ' -f1 /proc/uptime)
 snap start
@@ -66,7 +67,7 @@ for v in $values; do
         "dormant_wfi_returns=$(($(cat $p/dpidle_dormant_wfi_returns) - w0))"
     [ "$(cat $p/dpidle_broken)" = Y ] && { echo 'BROKEN: stopping early'; break; }
 done
-echo 1 > $st/$state/disable
+echo "$dis0" > $st/$state/disable
 echo "$stock" > $p0
 up1=$(cut -d' ' -f1 /proc/uptime)
 snap end
