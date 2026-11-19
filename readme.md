@@ -9,7 +9,7 @@ Last.fm and seventeen skins. Once it's installed, the player updates itself over
   <img src="docs/images/reborn-hero.png" alt="Reborn on the Y2: the Home screen, Now Playing with its progress wave, and Cover Flow" width="100%">
 </p>
 
-> **Current version: Y2Linux 1.0 Beta 9.3.34** (19 November 2026), a public beta. New: Bluetooth cutouts show in error reports. For listening without dropouts, wired headphones are the best choice on the Y2.
+> **Current version: Y2Linux 1.0 Beta 9.3.35** (20 November 2026), a public beta. New: Reborn Light, What's New on the player, cover colours that match the cover, and a book for audiobooks without a cover.
 > **[Download it from the releases page](https://github.com/SchulzCode/Y2Linux/releases/latest)** and follow the
 > [install guide](docs/INSTALL.md). It runs every day on the developer's Y2 and on many others, but it is still a
 > beta: read [Known issues](#known-issues) first.
@@ -135,16 +135,16 @@ calibration and factory partitions untouched. A Y2 with a different board, stora
 
 ## For developers
 
-| | 1.0 Beta 9.3.34 (Baseline 267) |
+| | 1.0 Beta 9.3.35 (Baseline 268) |
 | --- | --- |
-| Git tag (both repositories) | `baseline-267` (previous: `baseline-266`); the GitHub release carries the first-install images, the signed over-the-air update and the GPL sources |
-| Release / kernel | `1.0.0-beta.9.3.34` / `6.18.56-y2linux-1.0.0-beta.9.3.34` (Linux 6.18 long-term line) |
-| Root filesystem | `2026.08-platform-v1.290` (Buildroot 2026.08) |
+| Git tag (both repositories) | `baseline-268` (previous: `baseline-267`); the GitHub release carries the first-install images, the signed over-the-air update and the GPL sources |
+| Release / kernel | `1.0.0-beta.9.3.35` / `6.18.56-y2linux-1.0.0-beta.9.3.35` (Linux 6.18 long-term line) |
+| Root filesystem | `2026.08-platform-v1.291` (Buildroot 2026.08) |
 | Platform | `y2-platform` (Rust 1.99): the battery, sleep, Wi-Fi, Bluetooth, storage, update, USB and report services; no Python on the player |
-| Player | Y2Reborn 1.0.0-beta.9.3.34 (Rust 1.99, OpenGL ES on the Mali-400 GPU through DRM + Lima, FFmpeg, SQLite) |
+| Player | Y2Reborn 1.0.0-beta.9.3.35 (Rust 1.99, OpenGL ES on the Mali-400 GPU through DRM + Lima, FFmpeg, SQLite) |
 | Bluetooth codecs | SBC, AAC (fdk-aac-free) and LDAC |
 | Main components | GCC 15.3 / glibc 2.44, Mesa 26.2.4, FFmpeg 9.0.2, BlueZ 5.87, OpenSSL 4.0.3 |
-| Images built from | Y2Linux `d3ea1f73`, Y2Reborn `a8c8ec8` ([Beta 9.3.34 report](docs/validation/Y2-LINUX-1.0-BETA-9.3.34.md); every earlier release report is listed in the [documentation catalog](docs/DOCUMENTATION_CATALOG.md)) |
+| Images built from | Y2Linux `f3b7a8f7`, Y2Reborn `18d82b6` ([Beta 9.3.35 report](docs/validation/Y2-LINUX-1.0-BETA-9.3.35.md); every earlier release report is listed in the [documentation catalog](docs/DOCUMENTATION_CATALOG.md)) |
 
 - **[Build from source](docs/BUILDING.md)**: host setup, the build, the first-install package and releases.
 - **[Coding standard](docs/CODING-STANDARD.md)** for the platform and Reborn; `tools/development/platform-gate.sh`
