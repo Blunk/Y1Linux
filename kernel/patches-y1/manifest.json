@@ -124,7 +124,7 @@
     {
       "path": "drivers/gpu/drm/mediatek/mtk_dsi.c",
       "base_sha256": "a8405967bc29d4786727389cff06f9f7129b319ecb27840ae9b4ed0fcd857476",
-      "result_sha256": "175aa4467e4c2fc4ae2e417741a019c5a931620a54b7bfbbea4368a4a9cff873",
+      "result_sha256": "e4fef24bd9a1fdcdb5e489727c91bb869de784d724c7252c3f7fb71cc2f9116f",
       "patch": "0021-mt6572-dsi.patch"
     },
     {
