@@ -1063,3 +1063,20 @@ enabled at boot; state1 (DPIDLE, D6c) still starts disabled. After boot: state2 
 `y1-dpidle-run.sh` and `y1-dpidle-ab.sh` now put the state's `disable` back as they found it instead of
 disabling it. Next: the soak with normal use (button wake, playback start, charging, Wi-Fi and Bluetooth
 switched back on).
+
+**D6d soak in normal use (2026-11-19/20, build `1932a292…`): healthy, but deep idle never entered.**
+- **Owner's report:** the player behaved normally ("seems fine").
+- **After 8.3 h of uptime:**
+  - no latch, Reborn the same process since boot, no warnings in dmesg;
+  - **0 entries**: `dpidle_refusals` `5065,0,0,641311,…`, almost all for the clock condition.
+- **Cause:**
+  - Reborn had Bluetooth on (an audio device paired) and Wi-Fi associated. CTRL1 read `0xd8efcefb`, so APDMA
+    (bit 2) and BTIF (bit 12) were on, plus bit 13.
+  - That is B2: the connectivity owner holds the radio link clocks while any radio function is held, and deep
+    idle with a radio on needs MediaTek's STP sleep protocol, which is out of scope.
+  - Reborn's dark-idle Wi-Fi block does not release Bluetooth, so the chip stays powered.
+- **Reading:**
+  - The saving measured on 2026-11-19 needs both radios off. In normal use with Bluetooth on, D6d costs
+    nothing and gives nothing.
+  - Ways to reach it: Reborn releasing Bluetooth while dark and idle with no connected device, as it already
+    does for Wi-Fi; or the STP sleep protocol (out of scope). Owner's choice.
