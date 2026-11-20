@@ -369,7 +369,7 @@ Indexed pages: **356**. Explicit scope notices: **228**.
 | [Y1 SMP plan](planning/Y1-SMP-PLAN.md) | The MT6572's second core: mainline's boot-ROM key path; LK already powers CPU1 (read on the device); admission |
 | [Y1 audio plan](planning/Y1-AUDIO-PLAN.md) | ALSA playback: MT6572 AFE (from the Y2's), a new MT6323 codec, the AW87559; stock sequences from the HAL; staged admission |
 | [Y1 power plan](planning/Y1-POWER-PLAN.md) | Milestone D: power-off, the Y2 power daemon with a Y1 battery profile, CPU scaling at fixed VPROC; stock facts; staged admission |
-| [Y1 Reborn plan](planning/Y1-REBORN-PLAN.md) | Milestone E: Y2Reborn on the Y1; the GPU (Lima, MFG domain) is the blocker; source review, GPU, RAM-only first UI; admission |
+| [Y1 Reborn plan](planning/Y1-REBORN-PLAN.md) | Milestone E: Y2Reborn on the Y1; source review, GPU (Lima on the Mali-400, MFG domain), first UI, sound, power off, screen timeout, sleep: all PASS |
 | [Y1 data plan](planning/Y1-DATA-PLAN.md) | Milestone B: Y2DATA on USRDATA through a guarded loop, created offline like the Y2's; staged admission |
 | [Y1 MTP plan](planning/Y1-MTP-PLAN.md) | Milestone B3: music over MTP with the Y2's umtprd, a configfs gadget built by PID1, one storage `/data/music`; admission |
 | [Y1 charge-mode plan](planning/Y1-CHARGE-MODE-PLAN.md) | Robust charging: a charge-only mode in PID1, the latched-fault fix, wall chargers, the full charge; admission |

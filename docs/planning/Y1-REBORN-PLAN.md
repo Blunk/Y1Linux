@@ -4,8 +4,14 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **planned** (2026-11-05), not admitted. The owner asked to run Y2Reborn after the power-off PASS
-(D2 and D3 of [the power plan](Y1-POWER-PLAN.md) and milestone B are not done). Each stage has its own admission.
+Status: **R0 done, R1a, R1b, R2 and R3 PASS** on the owner's player (2026-11-05, owner-approved;
+[R1b run](#12-r1b-run--2026-11-05), [R2](#13-r2--2026-11-05), [R3](#14-r3--sound-in-reborn-plan-2026-11-05)):
+Reborn renders through Lima on the Y1's Mali-400, navigates with the wheel and buttons, and plays to the
+headphones. Power off from Reborn ([2026-11-06](#15-power-off-from-reborn--2026-11-06)), the screen timeout
+([2026-11-09](#16-screen-timeout--2026-11-09)) and sleep from a centre hold
+([2026-11-12](#17-sleep-from-a-centre-hold--2026-11-12)) PASS as well. The owner asked to run Y2Reborn after the
+power-off PASS (at the time, D2 and D3 of [the power plan](Y1-POWER-PLAN.md) and milestone B were not done).
+Each stage has its own admission.
 
 ## 1. Evidence
 
