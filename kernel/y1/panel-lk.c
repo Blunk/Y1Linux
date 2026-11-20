@@ -7,7 +7,14 @@
  * 480 x 360, sync-pulse video, 2 lanes, packed RGB888, EoT on, continuous clock; blanking in pixels
  * HSA 10, HBP 80, HFP 80, VSA 8, VBP 100, VFP 100. The 16.25 MHz pixel clock gives 195 Mbit/s per lane,
  * for which the MT8173-style MIPI TX code programs TXDIV0 2 and PCW 60, LK's own values (about 44 Hz).
+ *
+ * The takeover reprograms the PLL and the link while the panel scans out, and the pipeline's first frames
+ * after the changeover from LK's configuration showed as garbage, then white, under LK's lit backlight. Probe
+ * therefore turns the backlight (the DT's "backlight") off before the DSI attach, as bl_power 4 does, and
+ * leaves it to userspace: Reborn, the charge screen and the recovery screen turn it on (bl_power 0) once
+ * they draw. The panel is not the backlight's owner otherwise (Reborn blanks and wakes it with bl_power).
  */
+#include <linux/backlight.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <drm/drm_mipi_dsi.h>
@@ -44,6 +51,7 @@ static const struct drm_panel_funcs y1_lk_panel_funcs = {
 static int y1_lk_panel_probe(struct mipi_dsi_device *dsi)
 {
 	struct device *dev = &dsi->dev;
+	struct backlight_device *backlight;
 	struct y1_lk_panel *ctx;
 	int ret;
 
@@ -51,6 +59,16 @@ static int y1_lk_panel_probe(struct mipi_dsi_device *dsi)
 				   DRM_MODE_CONNECTOR_DSI);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
+	backlight = devm_of_find_backlight(dev);
+	if (IS_ERR(backlight))
+		return dev_err_probe(dev, PTR_ERR(backlight), "backlight\n");
+	if (backlight) {
+		/* bl_power 4, not backlight_disable(): its FB blank state would outlast userspace's bl_power 0. */
+		backlight->props.power = BACKLIGHT_POWER_OFF;
+		ret = backlight_update_status(backlight);
+		if (ret)
+			return dev_err_probe(dev, ret, "backlight off before the takeover\n");
+	}
 	dsi->lanes = 2;
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;

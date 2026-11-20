@@ -254,3 +254,45 @@ from a Linux-allocated XRGB8888 buffer, with the panel and backlight as LK left 
 power-down/re-init (reset is `LCD_RSTB` `0x14012010`), backlight control (MT6323 ISINK0/1), blanking, the
 display power domain, the IOMMU, LK's exact horizontal blanking (mainline's is about 2 % shorter and the
 panel accepts it).
+
+## 16. Right column and takeover flash — 2026-11-20
+
+Owner's report: graphical artefacts flash right after LK's logo; after boot the rightmost pixel column shows
+a single colour (green, blue or purple, changing). The column is correct while LK's logo is up.
+
+**Result — PASS — 2026-11-20** (build `out/y1-boot-disp5`, BOOTIMG sha256
+`3dcbee8b0acc5ff862a6dde28782f0892091ad2d8163f47b988e01bbfef7d840`, read back identical; owner: "black until
+reborn, column good, wake works").
+
+**Cause of the column: the DSI PHY timings.** Mainline computes `DSI_PHY_TIMECON0..3` from the lane rate; at the
+Y1's 195 Mbit/s that is `0x03040202 0x05080406 0x01040000 0x00020901`, an HS trail of 3 cycles. With per-line LP
+every line ends with that trail, and the panel loses the line's last pixel. LK and stock use
+`0x0c040202 0x110a0308 0x0c0a0000 0x00041101` (HS trail 12). Written live, the column was correct at once.
+**Fix (overlay `0021`):** `mt6572_dsi_driver_data.phy_timecon` holds LK's four values, which
+`mtk_dsi_phy_timconfig` writes in place of the computed ones. The computed timing still sets the horizontal
+blanking (HBP 208, HFP 217 bytes), the combination tested live; LK's DA_HS_EXIT would shorten it further, untested.
+
+**Cause of the flash:** the takeover (0.28–0.70 s) reprograms the MIPI TX PLL, the DSI and the pipeline while the
+panel scans out, under LK's lit backlight; the first frames after the changeover from LK's configuration were
+garbage, and with the backlight off over the takeover and on again 120 ms after the first enable, white (a wake,
+which re-enables a configured pipeline, was clean either way). **Fix (owner's choice: dark until the UI):** the
+panel stub (`kernel/y1/panel-lk.c`, `backlight = <&panel_backlight>` on `panel@0`) turns the backlight off at probe
+as `bl_power` 4 does (`props.power` only; `backlight_disable()`'s FB blank state would outlast userspace's
+`bl_power` 0) and does not touch it again. Reborn turns it on at start (measured: `bl_power` 0 after a restart
+with DPMS on); PID1's charge screen and the recovery screen write `bl_power` 0 when they show (`backlight_on()`,
+`initramfs/y1-charge-mode.h`); `S90y1-reborn` does after five quick exits, so the console shows. Not run on the
+player: the charge screen and the recovery screen.
+
+**Investigation record** (builds `1932a292…` to `3dcbee8b…`; `devmem` writes undone afterwards, Reborn paused with
+SIGSTOP where noted). OVL and RDMA registers are shadowed: a write takes effect only after an acquire/release of
+display mutex 0 (`0x1400e024` 1, poll bit 1, 0), as `mtk_crtc_update_config` does without CMDQ. A uniform frame
+(OVL background only) cannot show a stale last pixel, which made two early readings wrong:
+
+| Test | Result |
+| --- | --- |
+| Widths: OVL, RDMA, COLOR, BLS 480 × 360; DSI word count `0x5a0` | as LK |
+| RDMA height 0 → 360; RDMA FIFO_CON pseudo size 0x10–0xF0 | no change; RDMA flags underflow and EOF-abnormal every frame under LK as well |
+| Frame buffer in memory, x 477–479 | column 479 like its neighbours |
+| OVL layer 0 or 2, 32-bit or LK's RGB565 logo, fetch width 481, LK's GMC | column wrong each time (a layer-2 build, `a612d61e…`, reverted) |
+| Diagnostic boot with the panel node disabled (`out/y1-boot-lkdiag`): LK's display untouched, full register dump of MMSYS, OVL, RDMA, COLOR, BLS, DSI, mutex, MIPI TX | column correct; DSI PHY timings, COLOR (LK: processing, `0x400` `0x200000bf`) and RDMA FIFO_CON (`0x81000010`) differ from Linux |
+| LK's DSI PHY timings written live | **column correct** |

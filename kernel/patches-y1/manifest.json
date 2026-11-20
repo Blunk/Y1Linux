@@ -432,7 +432,7 @@
     {
       "path": "drivers/gpu/drm/panel/panel-innioasis-y1-lk.c",
       "source": "kernel/y1/panel-lk.c",
-      "sha256": "27ca330572674a33d9db0fa5aa248d760d5c32ae428cdf8a2d4cd79505d42dd6"
+      "sha256": "453352149ae7eef7b7318a3299d92177862c48b27c6d9c7c27a014f0ba1f1353"
     },
     {
       "path": "drivers/video/backlight/innioasis-mt6323-backlight.c",

@@ -75,6 +75,16 @@ static void set_brightness(const char *value)
     if (fd >= 0) { call5(SYS_WRITE, fd, (long)value, n, 0, 0); call5(SYS_CLOSE, fd, 0, 0, 0, 0); }
 }
 
+/* bl_power 0: the kernel leaves the backlight off from the display takeover until userspace draws
+ * (kernel/y1/panel-lk.c); brightness alone does not light it. */
+static void backlight_on(void)
+{
+    char path[80];
+    copy(path, sizeof(path), backlight_dir, "/bl_power", 0);
+    long fd = call5(SYS_OPEN, (long)path, O_WRONLY, 0, 0, 0);
+    if (fd >= 0) { call5(SYS_WRITE, fd, (long)"0", 1, 0, 0); call5(SYS_CLOSE, fd, 0, 0, 0, 0); }
+}
+
 static void charge_power_off(const char *why)
 {
     chg_light_on(0); /* the charging screen, if shown, goes dark first */
@@ -104,6 +114,7 @@ static void charge_gate(void)
     int graphics = charge_screen_open(brightness); /* the Y2's charging screen; text only without it */
     if (!graphics) {
         set_brightness("4");
+        backlight_on();
         console_to("/dev/tty0"); /* the charge-only mode talks on the screen */
     }
     put("charge: battery "); put_volts(uv); put(" on a charger: charge-only mode; hold the centre button 2 s to start\n");

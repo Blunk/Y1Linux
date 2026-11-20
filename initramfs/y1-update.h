@@ -388,6 +388,7 @@ static void recovery_run(void)
     recovery_watchdog = call5(SYS_OPEN, (long)"/dev/watchdog", O_WRONLY, 0, 0, 0);
     screen(installing);
     recovery_ui = spawn(ui, 0);
+    backlight_on();
     log_kernel("recovery started", 0);
     if (!data_device[0]) { recovery_stuck("Storage not found"); return; }
     if (!mount_data()) { recovery_stuck("Storage check failed"); return; }

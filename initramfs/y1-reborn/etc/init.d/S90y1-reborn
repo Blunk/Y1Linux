@@ -50,6 +50,8 @@ supervise() {
 		sleep 2
 	done
 	echo "y1-reborn: stopped after 5 quick exits" > /dev/kmsg
+	# The kernel leaves the backlight off until a UI turns it on (kernel/y1/panel-lk.c): show the console.
+	for b in /sys/class/backlight/*/bl_power; do echo 0 > "$b"; done
 }
 
 case "$1" in

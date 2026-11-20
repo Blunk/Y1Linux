@@ -97,6 +97,7 @@ static void chg_light_on(int on)
     if (on) {
         call5(SYS_IOCTL, chg_fd, FBIOBLANK, FB_BLANK_UNBLANK, 0, 0);
         set_brightness(chg_light);
+        backlight_on();
     } else {
         set_brightness("0");
         call5(SYS_IOCTL, chg_fd, FBIOBLANK, FB_BLANK_POWERDOWN, 0, 0);

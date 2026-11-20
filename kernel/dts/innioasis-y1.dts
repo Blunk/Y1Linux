@@ -458,6 +458,8 @@
 	panel@0 {
 		compatible = "innioasis,y1-lk-panel";
 		reg = <0>;
+		/* Off from the takeover until a UI turns it on (kernel/y1/panel-lk.c). */
+		backlight = <&panel_backlight>;
 
 		port {
 			panel_in: endpoint {
