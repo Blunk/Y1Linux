@@ -587,7 +587,12 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "07b0a1f7420be735215c9d84f96379af8dcbb86ed6db70b85794a2681f919e79"
+      "sha256": "cfb0ddc785df89424596c2074933dea77a235ceb4ecab32bc4c957030ef927b6"
+    },
+    {
+      "path": "drivers/soc/mediatek/vproc-sleep-policy.h",
+      "source": "kernel/platform/vproc-sleep-policy.h",
+      "sha256": "e16193cc9d27b87bfbcdd9213017981a8b098b7091354424ce183a3dae72994c"
     },
     {
       "path": "drivers/soc/mediatek/suspend-pcm.h",

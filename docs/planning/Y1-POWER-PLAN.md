@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). **D7c** VPROC sleep voltage: button and timer wakes at 0.85 V PASS on the owner's Y1, drain A/B open ([§19](#19-d7c-vproc-sleep-voltage--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -65,8 +65,8 @@ image's code or data, not on the device) and of the Y2's tree.
 | **D3** | CPU frequency scaling 598/806/1001 MHz at LK's fixed VPROC | seventeenth boot |
 | **D4** | Tick: the Cortex-A7 architected timer, tickless idle, high-resolution timers; the GPT as broadcast | `out/y1-boot-d4` |
 | **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence; CPU1 off while the screen is dark | `out/y1-boot-d5b` |
-| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot; the Y2's coordinator (§17) | admitted, D6a–D6d |
-| **D7** | Suspend: stock's suspend firmware, MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops) | planned |
+| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot (no effect: LK leaves VPROC in software mode, §19); the Y2's coordinator (§17) | admitted, D6a–D6d |
+| **D7** | Suspend: stock's suspend firmware (D7b), MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops, D7c) | D7b on at boot; D7c admitted (§19) |
 
 D1 comes first because D2's low-battery shutdown is worthless without a real power-off. D3 is last and
 riskiest: it reprograms the CPU's own PLL.
@@ -1084,7 +1084,8 @@ switched back on).
 ## 18. D7 system sleep — 2026-11-21
 
 **Status: D7b admitted by the owner (2026-11-21): "go straight to D7b"; Bluetooth is dropped for a sleep as on
-the Y2; Reborn is not changed. D7c (MT6323 sleep mode) and D7d (INFRA power-down) are not admitted.**
+the Y2; Reborn is not changed. D7c (MT6323 sleep mode) was admitted later the same day (§19); D7d (INFRA power-down)
+is not admitted.**
 
 **Why.** D6d saves power only with both radios off, and in normal use Bluetooth stays on, so deep idle never
 entered in the 8.3 h soak (§17, last entry). The Y2 solves this with full system sleep: Reborn asks the shared
@@ -1276,3 +1277,105 @@ on at boot (`system_sleep_abi=1`, maintenance 1800 s). Cable out, player untouch
 by itself after its dark-idle delay; `kernel_suspend` 1.9 s later, 143.8 s asleep, the owner's centre press woke
 it (`wake=0x20`, `wake_reason` power), `product.state` restored, Bluetooth and Wi-Fi back (`functions=0x9`), the
 clock matching the host.
+
+## 19. D7c VPROC sleep voltage — 2026-11-21
+
+**Status: admitted by the owner (2026-11-21, "start d7c"). On the owner's Y1: `pm_test platform`, a button wake and a
+timer wake PASS (runs 1–3 below); the night's drain A/B is open.**
+
+**What.** Stock lowers VPROC (the CPU cluster and SoC core) to 0.85 V while the suspend firmware has released
+SRCLKEN with 26 MHz, through the MT6323's own sleep mode, not through DVFS. D7b sleeps at 1.15 V.
+
+**Stock (`drsami/mt6572_kernel` `c4b775c`, `pmic_mt6323.c` `PMIC_INIT_SETTING_V1`, "20130328_0.85v"):** written once
+at boot: `0x212[5:4]` `QI_VPROC_VSLEEP` 2, `0x216[1]` `VPROC_VOSEL_CTRL` 1 (hardware mode), `0x21c` `VPROC_SFCHG_FRATE`
+0x17, `FEN` 1, `REN` 1, `0x222` `VPROC_VOSEL_SLEEP` 0x18 (0.85 V), `0x230[1:0]` `VPROC_TRANSTD` 3, `0x230[8]`
+`VPROC_VSLEEP_EN` 1, and `0x120[4]` `RG_SRCLKEN_HW_MODE` (`TOP_CKCON0`) 1. These eight VPROC fields are the Y2 FM
+kernel's exactly (`kernel/platform/vproc-sleep-policy.h`, Y2 POWER-FINAL-13, `tests/test_vproc_sleep.py`). On the Y2
+`0x120[4]` already read 1 from the boot chain (golden capture 2026-10-11); on the Y1 it is to be read.
+
+**What D7c ports from the Y2:** the table, the plan and the restore order of `vproc-sleep-policy.h`, unchanged (added
+to the Y1 build as `drivers/soc/mediatek/vproc-sleep-policy.h`): only while the PMIC is in software mode with
+`VOSEL` (`0x21e`) and the bank readback `NI_VPROC_VOSEL` (`0x224`) at 0x48 (1.15 V); `VOSEL_ON` preset to that selector
+so the mode switch itself changes nothing, the mode bit written last; afterwards `NI_VPROC_VOSEL` must still read
+0x48. Every word saved first and written back in reverse order (the mode bit first), each read back. A refused or
+failed apply leaves 1.15 V and the sleep goes on, as on the Y2.
+
+**Different on the Y1 (`kernel/y1/deep-idle.c`):**
+- **Where.** The Y2 writes the fields inside `->enter()` with interrupts off through its own wrapper driver. The Y1
+  uses mainline's `mtk-pmic-wrap`, whose regmap takes a mutex and polls with sleeps, so D7c applies them in
+  `suspend_ops->prepare_late` (after every device's noirq suspend, interrupts on) and restores them in `->wake`
+  (after `syscore_resume` and CPU1's return, before any device's noirq resume).
+- **Deep idle refuses in between** (`vproc_armed`, new refusal reason `sleep`, the ninth `dpidle_refusals` entry).
+  `prepare_late` runs before `cpuidle_pause()` and `->wake` after `cpuidle_resume()`, and deep idle's firmware also
+  releases SRCLKEN (§17), so D6d would otherwise run at 0.85 V, which it was never qualified at. The flag is set
+  before the first PMIC write and cleared only after a verified restore.
+- **`0x120[4]` is a precondition, not a write:** without SRCLKEN hardware mode the PMIC would not see SRCLKEN drop,
+  and switching it would change more than VPROC (the 26 MHz buffer and VTCXO follow it). Unset refuses
+  (`vproc_stage=srclken_software`).
+- **A failed restore** latches sleep off (`sleep_stage=vproc_restore`) and leaves deep idle refused for the boot; the
+  helper's guard then quarantines the image.
+- `vproc_sleep` (`/sys/module/y1_deep_idle/parameters/vproc_sleep`, default 1) switches the step off for an A/B
+  night. `state` gains one line: `vproc_sleep`, `vproc_stage`, `vproc_armed`, `vproc_entries`, `vproc_restores`,
+  `vproc_refusals`, `vproc_failures`, `vproc_error` and the four PMIC words read at the last plan (`vproc_ckcon0`,
+  `vproc_control`, `vproc_software`, `vproc_actual`).
+
+**Not in D7c:** VSYS sleep mode (the Y2's group 8), the LDO `LP_SEL` bits, `RG_OSC_HW_MODE`, VTCXO control, VPROC in
+hardware mode outside a sleep (stock's boot-time setting, which would also lower deep idle), INFRA power-down (D7d).
+
+**Open question the first read answered (test 1 below: software mode):** whether LK leaves VPROC in software mode. If `0x216[1]` is already 1,
+the plan refuses (`not_software_1150mv`) and the Y1 already runs in hardware mode; then D6b–D6d's slot 2 (1.05 V on
+`VOSEL_ON`) took effect, while in software mode it changed nothing (the slot table writes `VOSEL_ON`, the PMIC
+uses `VOSEL`). Either way D6d's results stand; only what they mean for VPROC differs.
+
+**Risks:**
+- **No wake at 0.85 V.** The cluster is powered down in the sleep and L2 flushed (SHUTDOWN_MODE), so nothing
+  retains state on VPROC; on wake SRCLKEN rises, the PMIC returns to `VOSEL_ON` (1.15 V) during the 26 MHz settle
+  (128 ticks, 3.9 ms; the ramp of 300 mV takes well under 1 ms) before the boot ROM resumes CPU0. A hang is covered
+  as in D7b by the PCM watchdog, the RGU backstop and the cable wake; the first runs are with the owner at hand.
+- **A restore that fails** leaves VPROC in hardware mode at 1.15 V while awake (SRCLKEN high): safe to run, and
+  sleep and deep idle stay off until reboot.
+
+**Test 1, read-only (2026-11-21, on the running D7b build `6a60ef20…`, regmap debugfs `1000f000.pwrap`, one line
+each):** `0x120` `0x0031` (`RG_SRCLKEN_EN`, `RG_SRCLKEN_HW_MODE`, `RG_OSC_HW_MODE` set: the precondition holds), `0x212`
+`0x0003`, `0x216` `0x0000` (**software mode**), `0x21c` `0x0505`, `0x21e`/`0x220`/`0x224` `0x48` (1.15 V), `0x222` `0x48`,
+`0x230` `0x0000`. So the plan admits, and VPROC has been in software mode all along: D6b–D6d's slot 2 (1.05 V written
+to `VOSEL_ON`) never lowered VPROC in deep idle; the PMIC used `VOSEL` (1.15 V) throughout. D6d's saving (§17) came
+without any voltage change. The same read showed `entries=3 normal=3`, last `wake=0x20` after 893 s asleep.
+
+**Build `out/y1-boot-d7c1`** (Y2ROOT `out/y1-root-d7b8`, unchanged): BOOTIMG sha256
+`235d53aa03d5fb974cfe5e967a5b3c7e0c433a1a40bbfb90c70dc8510e4c1b37`, RECOVERY
+`535c87dee4d98d0346fab2c6d852b5f6d4bf0896430a07c4b7cf696eeea57d38`; the DTB and kernel config are D7b8's. Flash BOOTIMG only.
+
+**Tests (owner at hand, cable out for real sleeps, Wi-Fi then USB):**
+1. Read-only, on the running D7b build: PMIC `0x120`, `0x212`, `0x216`, `0x21c`, `0x21e`, `0x220`, `0x222`, `0x224`,
+   `0x230` from the regmap debugfs file. Decides whether D7c can arm at all.
+2. Boot D7c: `state` shows `vproc_sleep=1 vproc_stage=not_attempted`; D6d, D7b and the health checks as before.
+3. `pm_test platform`, cable out: `prepare_late` applies and `->wake` restores without a sleep: `vproc_entries` =
+   `vproc_restores` = 1, `vproc_failures` 0, `vproc_actual` 0x48, `vproc_armed` 0; PMIC words equal to step 1.
+4. A real sleep (`sleep_maintenance_s` 60, `sleep request`): timer wake and a button wake, counters as in 3, journal
+   `EXIT`, clock matches the host, Wi-Fi and Bluetooth back.
+5. `dpidle_refusals` ninth entry stays 0 outside a sleep; deep idle entries continue after the wake.
+6. A night asleep against D7b's (run 7 onward), then the same with `vproc_sleep` 0 for the A/B.
+
+**D7c runs (2026-11-21, build `235d53aa…` flashed and read back, cable out, over Wi-Fi):**
+- **Boot (test 2): PASS.** `vproc_sleep=1 vproc_stage=not_attempted`, `system_sleep_abi=1`, DVFS slots ready, ninth
+  `dpidle_refusals` entry 0, no `y1-deep-idle` error.
+- **Run 1, `pm_test platform` (test 3): PASS.** The first attempt with the radios on was refused at device suspend by
+  the connectivity owner (`-16`), before `prepare_late`, as in D7b. With both radios rfkill-blocked (chip
+  `powered=0` after 2 s): `vproc_entries=1 vproc_restores=1 vproc_failures=0`, `vproc_actual` 0x48 after apply and
+  restore, and every PMIC word after the cycle equal to before (`0x216` 0, `0x222` 0x48, `0x230` 0). Deep idle
+  refused 499 times with reason `sleep` during the 5 s window, so the guard holds. Radios back.
+- **Run 2, product path, button wake (test 4): PASS.** `y2-platform sleep request`; asleep 106.4 s at the stock
+  sleep voltage, the owner's centre press woke it (`wake=0x20`), normal exit; `vproc_entries=2 vproc_restores=2`,
+  no failure; journal `COMPLETE error=0 pcm_length=576 reset_resume_entry=0x59325253`; receipt `restored`,
+  `kernel_completed` true, `wake_reason` power; 106.4 s injected, wall clock equal to the host's; Bluetooth and
+  Wi-Fi back (`functions=0x9`); no kernel warning. (Maintenance was 1800 s here: the test script put it back too
+  early, since the request returns once queued.)
+- **Run 3, timer wake: PASS for the kernel.** `sleep_maintenance_s` 60: a normal exit after 60.000 s
+  (`wake=0x1`, `ticks32k` 1 966 091), `vproc_entries=3 vproc_restores=3`, journal `COMPLETE error=0`, clock equal to
+  the host's, radios back. The helper then restored and completed (`complete_result_0`, `wake_reason` unknown)
+  instead of sleeping again, so the owner's later press found the player awake. That is the shared helper's
+  maintenance handling, not D7c; on the Y1 it had only run with 600 s and 1800 s maintenance before. Open.
+- **Open:** a night asleep (D7c) against D7b's, then a `vproc_sleep` 0 night for the A/B; the helper's re-entry
+  after a maintenance wake.
+

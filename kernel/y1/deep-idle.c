@@ -23,7 +23,9 @@
  * exit is a normal sleep, and it halved the screen-off voltage slope (Y1-POWER-PLAN.md §17, 2026-11-19).
  * D7b: system suspend (suspend to RAM) with stock's suspend firmware (suspend-pcm.h), CPU0 and L2 powered down,
  * INFRA kept powered, for the Y2's sleep helper: its journal (pm-journal.c), RGU backstop (mtk_wdt overlay) and
- * the SPM state on 10006000.power-controller (Y1-POWER-PLAN.md §18). */
+ * the SPM state on 10006000.power-controller (Y1-POWER-PLAN.md §18).
+ * D7c: stock's MT6323 VPROC sleep voltage (0.85 V once the suspend firmware releases SRCLKEN), applied only around a
+ * system sleep with the Y2's vproc-sleep-policy.h (Y1-POWER-PLAN.md §19). */
 #include <dt-bindings/clock/mediatek,mt6572-clk.h>
 #include <linux/cpuidle.h> /* before asm/cpuidle.h, which uses its types */
 #include <asm/barrier.h>
@@ -55,6 +57,7 @@
 #include "suspend-pcm.h"
 #include "pm-journal.h"
 #include "system-idle.h"
+#include "vproc-sleep-policy.h"
 #define PWRAP_BASE 0x1000f000
 #define PWRAP_HIPRIO_ARB_EN 0x50
 #define PWRAP_DVFS_ADR(n) (0xe4 + (n) * 8)
@@ -362,11 +365,17 @@ static const struct { bool mmsys; u16 offset; u32 mask; } dp_gates[] = {
 #define BOOT_SLV_CFG_ON BIT(0) /* the key does not read back: CFG reads 0x1 (devmem after D5's CPU1 boot) */
 #define CA7_CACHE_CONFIG 0x10200000
 #define CA7_L2_KEEP BIT(4)
-enum dp_reason { DP_CPU, DP_SLOTS, DP_QUIET, DP_CLOCKS, DP_TIMER, DP_PENDING, DP_UART, DP_BROKEN, DP_REASONS };
+enum dp_reason {
+	DP_CPU, DP_SLOTS, DP_QUIET, DP_CLOCKS, DP_TIMER, DP_PENDING, DP_UART, DP_BROKEN, DP_SLEEP, DP_REASONS
+};
 static void __iomem *dp_spm, *dp_top, *dp_mm, *dp_gpt, *dp_cirq, *dp_dist, *dp_pol;
 static void __iomem *dp_boot, *dp_cache;
 static phys_addr_t dp_pcm_phys;
 static bool dpidle_broken;
+/* D7c: VPROC is in the MT6323's hardware mode for a system sleep (or a restore failed). Deep idle's firmware also
+ * releases SRCLKEN (26M_SLP on every entry since MD1 is off, §17), so it would then run at 0.85 V, which D6d was
+ * never qualified at (stock sets the mode at boot; the Y1, like the Y2, keeps it to system sleep). It refuses. */
+static bool vproc_armed;
 static char *dpidle_stage = "off";
 static unsigned dpidle_entries, dpidle_normal, dpidle_aborts, dpidle_unknown, dpidle_gpt_wakes;
 static unsigned dpidle_uart_acks, dpidle_uart_timeouts, dp_uart_streak, dpidle_cirq_flushed;
@@ -416,7 +425,7 @@ module_param(dpidle_dormant_entries, uint, 0400);
 module_param(dpidle_dormant_resumes, uint, 0400);
 module_param(dpidle_dormant_wfi_returns, uint, 0400);
 module_param(dpidle_dormant_last, int, 0400);
-/* cpu, slots, quiet, clocks, timer, pending, uart, broken */
+/* cpu, slots, quiet, clocks, timer, pending, uart, broken, sleep (D7c) */
 module_param_array(dpidle_refusals, uint, NULL, 0400);
 /* CLK_CON, PCM_CON1, PWR_IO_EN, POWER_ON_VAL1, IM_PTR, IM_LEN, SLEEP_ISR_MASK, WAKEUP_EVENT_MASK at boot */
 module_param_array(dpidle_spm_boot, uint, NULL, 0400);
@@ -439,6 +448,8 @@ static int dp_admit(u32 *ticks)
 	u32 value;
 	if (READ_ONCE(dpidle_broken))
 		return DP_BROKEN;
+	if (READ_ONCE(vproc_armed))
+		return DP_SLEEP;
 	if (smp_processor_id() || num_online_cpus() != 1 ||
 	    ((spm_rd(SPM_PWR_STATUS) | spm_rd(SPM_PWR_STATUS_S)) & PWR_STATUS_FC1))
 		return DP_CPU;
@@ -1209,6 +1220,155 @@ static void sleep_wake(void)
 	delta = ns_to_timespec64(sleep_injected_ns);
 	timekeeping_inject_sleeptime64(&delta);
 }
+/* D7c: stock's VPROC sleep voltage. The MT6572 drop's PMIC_INIT_SETTING_V1 ("20130328_0.85v", pmic_mt6323.c) writes
+ * the same eight fields as the Y2's FM kernel, so the Y2's table and plan (vproc-sleep-policy.h) apply unchanged:
+ * in hardware mode the MT6323 takes VOSEL_ON (preset to the live selector) while the SPM holds SRCLKEN and VOSEL_SLEEP
+ * (0.85 V) once the suspend firmware releases it with 26 MHz. TOP_CKCON0 bit 4 (RG_SRCLKEN_HW_MODE, set by stock's
+ * init too) must already be set, or the PMIC would not see SRCLKEN drop. Mainline's PMIC wrapper regmap sleeps (a
+ * mutex and polled waits), so the fields go in at prepare_late and come back at wake, not inside the Y2's
+ * interrupts-off ->enter(); deep idle refuses in between (vproc_armed). A refused or failed apply leaves 1.15 V and
+ * the sleep goes on, as on the Y2; a failed restore latches sleep off and keeps deep idle refused for the boot. */
+#define PMIC_TOP_CKCON0 0x120
+#define PMIC_SRCLKEN_HW_MODE BIT(4)
+#define PMIC_VPROC_VOSEL_CTRL 0x216
+#define PMIC_VPROC_VOSEL 0x21e
+static struct y2_vproc_sleep vproc_sleep;
+static bool vproc_sleep_enabled = true;
+static char *vproc_stage = "not_attempted";
+static unsigned vproc_entries, vproc_restores, vproc_refusals, vproc_failures;
+static unsigned vproc_ckcon0, vproc_control, vproc_software, vproc_actual;
+static int vproc_error;
+module_param_named(vproc_sleep, vproc_sleep_enabled, bool, 0644);
+static int vproc_write(struct regmap *pmic, unsigned i, unsigned value)
+{
+	const struct y2_vproc_field *f = &y2_vproc_sleep_fields[i];
+	unsigned readback;
+	int ret = regmap_update_bits(pmic, f->reg, f->mask, value & f->mask);
+	if (!ret)
+		ret = regmap_read(pmic, f->reg, &readback);
+	if (!ret && (readback & f->mask) != (value & f->mask))
+		ret = -EIO;
+	return ret;
+}
+/* Every saved word back in reverse order, the mode bit first; then VPROC must read 1.15 V. */
+static int vproc_restore(struct regmap *pmic)
+{
+	unsigned n, i;
+	int ret, first = 0;
+	for (n = 0; n < Y2_VPROC_SLEEP_STEPS; n++) {
+		i = y2_vproc_restore_index(n);
+		ret = vproc_write(pmic, i, vproc_sleep.saved[i]);
+		if (ret && !first)
+			first = ret;
+	}
+	ret = regmap_read(pmic, PMIC_NI_VPROC_VOSEL, &vproc_actual);
+	if (!first && !ret && (vproc_actual & 0x7f) != Y2_VPROC_ACTIVE_SELECTOR)
+		ret = -EIO;
+	vproc_sleep.active = 0;
+	return first ?: ret;
+}
+static int vproc_plan(struct regmap *pmic)
+{
+	unsigned i;
+	int ret = regmap_read(pmic, PMIC_TOP_CKCON0, &vproc_ckcon0);
+	if (!ret)
+		ret = regmap_read(pmic, PMIC_VPROC_VOSEL_CTRL, &vproc_control);
+	if (!ret)
+		ret = regmap_read(pmic, PMIC_VPROC_VOSEL, &vproc_software);
+	if (!ret)
+		ret = regmap_read(pmic, PMIC_NI_VPROC_VOSEL, &vproc_actual);
+	if (ret)
+		return ret;
+	if (!(vproc_ckcon0 & PMIC_SRCLKEN_HW_MODE)) {
+		vproc_stage = "srclken_software";
+		return -EOPNOTSUPP;
+	}
+	if (y2_vproc_sleep_plan(&vproc_sleep, vproc_control, vproc_software, vproc_actual)) {
+		vproc_stage = "not_software_1150mv";
+		return -ERANGE;
+	}
+	for (i = 0; i < Y2_VPROC_SLEEP_STEPS && !ret; i++)
+		ret = regmap_read(pmic, y2_vproc_sleep_fields[i].reg, &vproc_sleep.saved[i]);
+	return ret;
+}
+/* The stock fields in order, the mode bit last; switching the mode must not move the live voltage. */
+static int vproc_apply(struct regmap *pmic)
+{
+	unsigned i;
+	int ret = 0;
+	vproc_sleep.active = 1;
+	for (i = 0; i < Y2_VPROC_SLEEP_STEPS && !ret; i++)
+		ret = vproc_write(pmic, i, vproc_sleep.planned[i]);
+	if (!ret) {
+		udelay(40);
+		ret = regmap_read(pmic, PMIC_NI_VPROC_VOSEL, &vproc_actual);
+	}
+	if (!ret && (vproc_actual & 0x7f) != Y2_VPROC_ACTIVE_SELECTOR)
+		ret = -EIO;
+	return ret;
+}
+static void vproc_fail(int ret, const char *stage)
+{
+	vproc_failures++;
+	vproc_error = ret;
+	vproc_stage = (char *)stage;
+}
+/* suspend_ops->prepare_late: after every device's noirq suspend, interrupts on, CPU1 still online. Never refuses. */
+static int sleep_prepare_late(void)
+{
+	struct regmap *pmic = y1_pmic_regmap();
+	int ret;
+	if (!READ_ONCE(vproc_sleep_enabled) || READ_ONCE(vproc_armed))
+		return 0;
+	if (!pmic) {
+		vproc_fail(-ENODEV, "no_pmic");
+		return 0;
+	}
+	ret = vproc_plan(pmic);
+	if (ret) {
+		vproc_refusals++;
+		vproc_error = ret;
+		return 0;
+	}
+	WRITE_ONCE(vproc_armed, true); /* before the first write: no deep idle in hardware mode */
+	ret = vproc_apply(pmic);
+	if (!ret) {
+		vproc_entries++;
+		vproc_stage = "armed";
+		return 0;
+	}
+	vproc_fail(ret, "apply");
+	if (vproc_restore(pmic)) {
+		sleep_break("vproc_restore");
+		return 0;
+	}
+	WRITE_ONCE(vproc_armed, false);
+	return 0;
+}
+/* suspend_ops->wake, interrupts on, CPU1 back: before anything resumes that could change VPROC. */
+static void sleep_vproc_wake(void)
+{
+	struct regmap *pmic;
+	int ret;
+	if (!vproc_sleep.active)
+		return;
+	pmic = y1_pmic_regmap();
+	ret = pmic ? vproc_restore(pmic) : -ENODEV;
+	if (ret) {
+		vproc_fail(ret, "restore_failed");
+		sleep_break("vproc_restore"); /* vproc_armed stays: deep idle off for the boot */
+		pr_err("y1-deep-idle: VPROC sleep configuration restore failed: %d\n", ret);
+		return;
+	}
+	vproc_restores++;
+	vproc_stage = "restored";
+	WRITE_ONCE(vproc_armed, false);
+}
+static void sleep_platform_wake(void)
+{
+	sleep_vproc_wake();
+	sleep_wake();
+}
 static int sleep_prepare(void)
 {
 	if (!READ_ONCE(sleep_ready) || READ_ONCE(sleep_broken))
@@ -1218,8 +1378,9 @@ static int sleep_prepare(void)
 static const struct platform_suspend_ops sleep_ops = {
 	.valid = suspend_valid_only_mem,
 	.prepare = sleep_prepare,
+	.prepare_late = sleep_prepare_late,
 	.enter = sleep_enter,
-	.wake = sleep_wake,
+	.wake = sleep_platform_wake,
 };
 /* The SPM state the shared sleep helper reads (the Y2's kernel/platform/spm.c state_show fields it uses:
  * system_sleep_abi, broken, maintenance_seconds, timer_wake, ticks32k, wake), on 10006000.power-controller. A
@@ -1241,6 +1402,10 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr, cha
 			   sleep_uart_busy, sleep_refused_pending, sleep_restore_failures, sleep_counter_before,
 			   sleep_counter_after, sleep_counter_ns,
 			   sleep_pcm_ns, sleep_injected_ns, sleep_injections);
+	n += sysfs_emit_at(buf, n, "vproc_sleep=%u vproc_stage=%s vproc_armed=%u vproc_entries=%u vproc_restores=%u vproc_refusals=%u vproc_failures=%u vproc_error=%d vproc_ckcon0=%#x vproc_control=%#x vproc_software=%#x vproc_actual=%#x\n",
+			   READ_ONCE(vproc_sleep_enabled), vproc_stage, READ_ONCE(vproc_armed), vproc_entries,
+			   vproc_restores, vproc_refusals, vproc_failures, vproc_error, vproc_ckcon0, vproc_control,
+			   vproc_software, vproc_actual);
 	return n + sysfs_emit_at(buf, n, "suspend_pcm_words=%u suspend_pcm_origin=MT6572_c4b775c_pcm_suspend_v26-42 system_sleep_abi=%u maintenance_seconds=%u timer_wake=%u\n",
 				 Y1_SUSPEND_PCM_WORDS, READ_ONCE(sleep_ready) && READ_ONCE(sleep_enabled),
 				 maintenance, timer_wake);
