@@ -22,6 +22,16 @@ impl Player {
         }
     }
 
+    /// The IM_LEN the kernel programs for this player's suspend PCM firmware, as its sleep journal
+    /// reports it (`pcm_length`): the Y2's 597-word vendor program as 596, the Y1's stock 576-word
+    /// program as 576 (docs/planning/Y1-POWER-PLAN.md §18).
+    pub fn suspend_pcm_length(self) -> &'static str {
+        match self {
+            Player::Y2 => "596",
+            Player::Y1 => "576",
+        }
+    }
+
     /// The native update core built for this player's eMMC (`core.c`, `-DY2_UPDATE_Y1` for the Y1).
     pub fn update_core(self) -> &'static str {
         match self {
@@ -52,6 +62,8 @@ mod tests {
         }
         assert_eq!(Player::Y1.update_core(), "/usr/sbin/y1-update-core");
         assert_eq!(Player::Y2.update_core(), "/usr/sbin/y2-update-core");
+        assert_eq!(Player::Y2.suspend_pcm_length(), "596");
+        assert_eq!(Player::Y1.suspend_pcm_length(), "576");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
