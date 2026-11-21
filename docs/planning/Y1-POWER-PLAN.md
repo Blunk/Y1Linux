@@ -1268,3 +1268,11 @@ kernel fault; the receipt calls a completed sleep "refused". Left as on the Y2; 
 and the short centre press reach the helper. Committed on branch `y1-d7b-sleep` with the platform's per-player
 `pcm_length`; Y2ROOT `out/y1-root-d7b8` and BOOTIMG/RECOVERY `out/y1-boot-d7b8` are built from that commit.
 Remaining: automatic sleep, the 30 min maintenance wake, about 20 cycles, a night's drain against D6d.
+
+**D7b run 7 (2026-11-21, committed build: Y2ROOT `out/y1-root-d7b8` rootfs `14eaf0dd…4f79b37a`, BOOTIMG
+`6a60ef2048ee66467ef45d309e90cc2badf632f94a3baa96aca3b605c91bad22`, RECOVERY `93b88234…0fc7b1f`, commit
+`28684f73`; ANDROID, BOOTIMG and RECOVERY written and read back): automatic sleep, PASS.** No test binary, sleep
+on at boot (`system_sleep_abi=1`, maintenance 1800 s). Cable out, player untouched: Reborn requested the sleep
+by itself after its dark-idle delay; `kernel_suspend` 1.9 s later, 143.8 s asleep, the owner's centre press woke
+it (`wake=0x20`, `wake_reason` power), `product.state` restored, Bluetooth and Wi-Fi back (`functions=0x9`), the
+clock matching the host.
