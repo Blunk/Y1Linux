@@ -20,7 +20,10 @@
  * firmware powers CPU0 down after its WFI with L2 kept (CA7_CACHE_CONFIG bit 4, mt_dormant.c), and the boot ROM
  * resumes it at BOOT_SLV_ADDR. Stock's cpu_power_down/platform_save_context is replaced by mainline's cpu_pm
  * notifiers (GIC, VFP, arch timer) and cpu_suspend/cpu_resume_arm. Enabled at boot: with the DISP request masked every
- * exit is a normal sleep, and it halved the screen-off voltage slope (Y1-POWER-PLAN.md §17, 2026-11-19). */
+ * exit is a normal sleep, and it halved the screen-off voltage slope (Y1-POWER-PLAN.md §17, 2026-11-19).
+ * D7b: system suspend (suspend to RAM) with stock's suspend firmware (suspend-pcm.h), CPU0 and L2 powered down,
+ * INFRA kept powered, for the Y2's sleep helper: its journal (pm-journal.c), RGU backstop (mtk_wdt overlay) and
+ * the SPM state on 10006000.power-controller (Y1-POWER-PLAN.md §18). */
 #include <dt-bindings/clock/mediatek,mt6572-clk.h>
 #include <linux/cpuidle.h> /* before asm/cpuidle.h, which uses its types */
 #include <asm/barrier.h>
@@ -44,7 +47,13 @@
 #include <linux/stringify.h>
 #include <linux/tick.h>
 #include <linux/workqueue.h>
+#include <linux/suspend.h>
+#include <linux/syscore_ops.h>
+#include <linux/timekeeping.h>
+#include <clocksource/arm_arch_timer.h>
 #include "dpidle-pcm.h"
+#include "suspend-pcm.h"
+#include "pm-journal.h"
 #include "system-idle.h"
 #define PWRAP_BASE 0x1000f000
 #define PWRAP_HIPRIO_ARB_EN 0x50
@@ -575,22 +584,47 @@ static bool dp_gpt4_disarm(void)
 	writel(GPT4_IRQ, dp_gpt + GPT_IRQACK);
 	return fired;
 }
-/* Stock spm_init_pcm for pcm_config_dpidle: pwrlevel 0 (UART sleep request), no PCM timer or WDT. */
-static int dp_pcm_arm(void)
+/* One of stock's SPM_PCM_CONFIGs, as far as the Y1 uses it: the firmware, its four event vectors, APMCU_PWRCTL,
+ * AP_STANBY_CON and the cores whose WFI counts, the PCM timer and watchdog (32 kHz ticks, 0 = off) and the wake
+ * sources. */
+struct spm_program {
+	phys_addr_t phys;
+	u32 words, vectors[4], pwrctl, stanby, cores, timer, wdt, wake;
+	bool keep_wdt;	/* deep idle: CON1 keeps its watchdog bits (stock spm_reset_and_init_pcm) */
+	bool settle;	/* the firmware switches 26 MHz off: stock spm_set_sysclk_settle */
+};
+/* Stock spm_set_sysclk_settle with SPM_AP_ONLY_SLEEP: settle = 99 (3 ms) less the MD settle. The Y1's MD settle
+ * reads 128 (0x80, D7b run 1, 2026-11-21), so stock's unsigned subtraction underflows; the AP part is 0 then and
+ * the settle stays the MD's 128 ticks (3.9 ms), longer than stock meant, which only delays the wake. */
+#define SPM_CLK_SETTLE 0x100
+#define CC_SYSSETTLE_SEL BIT(4)
+#define SPM_SYSCLK_SETTLE 99
+static int spm_settle(void)
 {
-	static const u32 vectors[4] = {
-		EVENT_VEC(11, 1, 0, 0), EVENT_VEC(12, 1, 0, 15), EVENT_VEC(30, 1, 0, 28), EVENT_VEC(31, 1, 0, 69),
-	};
+	u32 md;
+	spm_wr(SPM_CLK_CON, spm_rd(SPM_CLK_CON) | CC_SYSSETTLE_SEL);
+	spm_wr(SPM_CLK_SETTLE, 0);
+	md = spm_rd(SPM_CLK_SETTLE);
+	spm_wr(SPM_CLK_SETTLE, md < SPM_SYSCLK_SETTLE ? SPM_SYSCLK_SETTLE - md : 0);
+	return 0;
+}
+/* Stock spm_init_pcm: -EBUSY without the UART's clock-off ACK, -EIO when a write does not read back; nothing is
+ * kicked either way and the UART request is withdrawn. A timer or watchdog value is read back only when set (deep
+ * idle's all-ones timer never was). */
+static int spm_arm(const struct spm_program *p)
+{
 	unsigned n;
-	u32 con0, val1, req = READ_ONCE(dpidle_stanby), stanby = (req & DP_STANBY_MASKS) | 1U << 4;
+	u32 con0, con1, val1;
 	spm_wr(SPM_POWERON_CONFIG_SET, SPM_KEY | BIT(0));
+	if (p->settle && spm_settle())
+		return -EIO;
 	spm_wr(SPM_PCM_CON0, SPM_KEY | CON0_PCM_SW_RESET);
 	spm_wr(SPM_PCM_CON0, SPM_KEY);
 	spm_wr(SPM_PCM_CON0, SPM_KEY | CON0_IM_SLEEP_DVS);
 	spm_wr(SPM_PCM_CON1, SPM_KEY | CON1_IM_NONRP_EN | CON1_MIF_APBEN |
-	       (spm_rd(SPM_PCM_CON1) & (CON1_PCM_WDT_EN | CON1_PCM_WDT_WAKE_MODE)));
-	spm_wr(SPM_PCM_IM_PTR, dp_pcm_phys);
-	spm_wr(SPM_PCM_IM_LEN, Y1_DPIDLE_PCM_WORDS);
+	       (p->keep_wdt ? spm_rd(SPM_PCM_CON1) & (CON1_PCM_WDT_EN | CON1_PCM_WDT_WAKE_MODE) : 0));
+	spm_wr(SPM_PCM_IM_PTR, p->phys);
+	spm_wr(SPM_PCM_IM_LEN, p->words);
 	con0 = spm_rd(SPM_PCM_CON0) & 0xffff;
 	spm_wr(SPM_PCM_CON0, con0 | SPM_KEY | CON0_IM_KICK);
 	spm_wr(SPM_PCM_CON0, con0 | SPM_KEY);
@@ -600,13 +634,10 @@ static int dp_pcm_arm(void)
 	for (n = 0; !(spm_rd(SPM_PCM_REG13_DATA) & R13_UART_CLK_OFF_ACK); n++) {
 		if (n >= 10) {
 			spm_wr(SPM_POWER_ON_VAL1, val1);
-			dpidle_uart_timeouts++;
-			return ++dp_uart_streak >= 16 ? dp_break("uart_ack") : -EBUSY;
+			return -EBUSY;
 		}
 		udelay(10);
 	}
-	dpidle_uart_acks++;
-	dp_uart_streak = 0;
 	spm_wr(SPM_PCM_REG_DATA_INI, spm_rd(SPM_POWER_ON_VAL0));
 	spm_wr(SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R0);
 	spm_wr(SPM_PCM_PWR_IO_EN, 0);
@@ -615,28 +646,57 @@ static int dp_pcm_arm(void)
 	spm_wr(SPM_PCM_PWR_IO_EN, 0);
 	spm_wr(SPM_PCM_REG_DATA_INI, 0);
 	for (n = 0; n < 4; n++)
-		spm_wr(0x340 + n * 4, vectors[n]);
+		spm_wr(0x340 + n * 4, p->vectors[n]);
 	for (n = 0; n < 4; n++)
 		spm_wr(0x3d0 + n * 4, 0);
-	spm_wr(SPM_APMCU_PWRCTL, 1); /* PWR_LV0 */
-	/* The masks and cores from dpidle_stanby (stock: md and mm 3 and 3, SCU and L2C checked, both cores),
-	 * REDUCE_AND. CORE0/1_WFI_SEL read back as AP_STANBY_CON bits 0 and 1 (devmem, 2026-11-17). */
-	spm_wr(SPM_AP_STANBY_CON, stanby);
+	spm_wr(SPM_APMCU_PWRCTL, p->pwrctl);
+	/* CORE0/1_WFI_SEL read back as AP_STANBY_CON bits 0 and 1 (devmem, 2026-11-17). */
+	spm_wr(SPM_AP_STANBY_CON, p->stanby);
 	for (n = 0; n < 4; n++)
-		spm_wr(SPM_CORE_WFI_SEL(n), n < 2 && (req & BIT(n)));
-	stanby |= req & DP_STANBY_CORES;
-	spm_wr(SPM_PCM_TIMER_VAL, ~0U);
+		spm_wr(SPM_CORE_WFI_SEL(n), n < 2 && (p->cores & BIT(n)));
+	/* Stock spm_set_wakeup_event: the timer always runs ("Fix 32K less": TIMER_VAL is all ones unless a wake
+	 * period is wanted); the watchdog only with a value, then in wake mode. */
+	spm_wr(SPM_PCM_TIMER_VAL, p->timer ?: ~0U);
 	spm_wr(SPM_PCM_CON1, SPM_KEY | (spm_rd(SPM_PCM_CON1) & 0xffff) | CON1_PCM_TIMER_EN);
-	spm_wr(SPM_PCM_WDT_TIMER_VAL, 0);
-	spm_wr(SPM_PCM_CON1, SPM_KEY | (spm_rd(SPM_PCM_CON1) & 0xffff & ~(CON1_PCM_WDT_EN | CON1_PCM_WDT_WAKE_MODE)));
-	spm_wr(SPM_SLEEP_WAKEUP_EVENT_MASK, ~DPIDLE_WAKE_SRC);
+	spm_wr(SPM_PCM_WDT_TIMER_VAL, p->wdt);
+	con1 = spm_rd(SPM_PCM_CON1) & 0xffff & ~(CON1_PCM_WDT_EN | CON1_PCM_WDT_WAKE_MODE);
+	spm_wr(SPM_PCM_CON1, SPM_KEY | con1 | (p->wdt ? CON1_PCM_WDT_EN | CON1_PCM_WDT_WAKE_MODE : 0));
+	spm_wr(SPM_SLEEP_WAKEUP_EVENT_MASK, ~p->wake);
 	spm_wr(SPM_SLEEP_ISR_MASK, 0x200);
-	if (spm_rd(SPM_PCM_IM_PTR) != dp_pcm_phys || spm_rd(SPM_PCM_IM_LEN) != Y1_DPIDLE_PCM_WORDS ||
-	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~DPIDLE_WAKE_SRC || spm_rd(SPM_AP_STANBY_CON) != stanby ||
-	    !(spm_rd(SPM_PCM_CON1) & CON1_PCM_TIMER_EN) || (spm_rd(SPM_PCM_CON1) & CON1_PCM_WDT_EN)) {
+	if (spm_rd(SPM_PCM_IM_PTR) != p->phys || spm_rd(SPM_PCM_IM_LEN) != p->words ||
+	    spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK) != ~p->wake ||
+	    spm_rd(SPM_AP_STANBY_CON) != (p->stanby | (p->cores & DP_STANBY_CORES)) ||
+	    (p->timer && spm_rd(SPM_PCM_TIMER_VAL) != p->timer) ||
+	    (p->wdt && spm_rd(SPM_PCM_WDT_TIMER_VAL) != p->wdt) ||
+	    !(spm_rd(SPM_PCM_CON1) & CON1_PCM_TIMER_EN) || !(spm_rd(SPM_PCM_CON1) & CON1_PCM_WDT_EN) != !p->wdt) {
 		spm_wr(SPM_POWER_ON_VAL1, val1);
-		return dp_break("arm_readback");
+		return -EIO;
 	}
+	return 0;
+}
+/* Stock spm_init_pcm for pcm_config_dpidle: pwrlevel 0 (UART sleep request), no PCM timer or WDT. */
+static int dp_pcm_arm(void)
+{
+	u32 req = READ_ONCE(dpidle_stanby);
+	/* The masks and cores from dpidle_stanby (stock: md and mm 3 and 3, SCU and L2C checked, both cores),
+	 * REDUCE_AND. */
+	const struct spm_program dpidle = {
+		.phys = dp_pcm_phys, .words = Y1_DPIDLE_PCM_WORDS,
+		.vectors = { EVENT_VEC(11, 1, 0, 0), EVENT_VEC(12, 1, 0, 15), EVENT_VEC(30, 1, 0, 28),
+			     EVENT_VEC(31, 1, 0, 69) },
+		.pwrctl = 1, /* PWR_LV0 */
+		.stanby = (req & DP_STANBY_MASKS) | 1U << 4, .cores = req & DP_STANBY_CORES,
+		.wake = DPIDLE_WAKE_SRC, .keep_wdt = true,
+	};
+	int ret = spm_arm(&dpidle);
+	if (ret == -EBUSY) {
+		dpidle_uart_timeouts++;
+		return ++dp_uart_streak >= 16 ? dp_break("uart_ack") : -EBUSY;
+	}
+	if (ret)
+		return dp_break("arm_readback");
+	dpidle_uart_acks++;
+	dp_uart_streak = 0;
 	return 0;
 }
 /* Stock spm_kick_pcm: INFRA/DDRPHY power kept, CPU power kept unless cpu_pdn (D6d), INFRA DCM locked, R0/R7
@@ -682,9 +742,9 @@ static int dp_wake_status(void)
 		return dp_break("dvfs_slot");
 	return 0;
 }
-/* Stock spm_clean_after_wakeup for deep idle (SW_INT_CLEAR 0xd); its CCCI flip-flop workaround is for the
- * modem, which the Y1 does not run. */
-static int dp_pcm_clean(void)
+/* Stock spm_clean_after_wakeup (SW_INT_CLEAR 0xd for deep idle, 0xf for suspend); its CCCI flip-flop workaround
+ * is for the modem, which the Y1 does not run. False when a cleared bit is still set. */
+static bool spm_clean(u32 sw_int_clear)
 {
 	spm_wr(SPM_POWER_ON_VAL1, spm_rd(SPM_POWER_ON_VAL1) & ~R7_UART_CLK_OFF_REQ);
 	spm_wr(SPM_CLK_CON, spm_rd(SPM_CLK_CON) &
@@ -696,12 +756,14 @@ static int dp_pcm_clean(void)
 	spm_wr(SPM_SLEEP_WAKEUP_EVENT_MASK, ~0U);
 	spm_wr(SPM_SLEEP_ISR_MASK, 0x8);
 	spm_wr(SPM_SLEEP_ISR_STATUS, 0x8);
-	spm_wr(SPM_PCM_SW_INT_CLEAR, 0xd);
-	if ((spm_rd(SPM_POWER_ON_VAL1) & R7_UART_CLK_OFF_REQ) || spm_rd(SPM_PCM_PWR_IO_EN) ||
-	    (spm_rd(SPM_CLK_CON) & (CC_LOCK_INFRA_DCM | CC_SRCLKENA_MASK)) ||
-	    (spm_rd(SPM_PCM_CON1) & (CON1_PCM_TIMER_EN | CON1_PCM_WDT_EN)))
-		return dp_break("clean_readback");
-	return 0;
+	spm_wr(SPM_PCM_SW_INT_CLEAR, sw_int_clear);
+	return !((spm_rd(SPM_POWER_ON_VAL1) & R7_UART_CLK_OFF_REQ) || spm_rd(SPM_PCM_PWR_IO_EN) ||
+		 (spm_rd(SPM_CLK_CON) & (CC_LOCK_INFRA_DCM | CC_SRCLKENA_MASK)) ||
+		 (spm_rd(SPM_PCM_CON1) & (CON1_PCM_TIMER_EN | CON1_PCM_WDT_EN)));
+}
+static int dp_pcm_clean(void)
+{
+	return spm_clean(0xd) ? 0 : dp_break("clean_readback");
 }
 /* D6d finisher, after cpu_suspend has saved Linux's context: v7_exit_coherency_flush(all) with the flush called
  * through a register (clang's integrated assembler rejects the macro's "bl", as in patches-y1 0044), then stock's
@@ -709,7 +771,7 @@ static int dp_pcm_clean(void)
  * WFI returns instead, the power was not taken: coherency and the data cache come back on and cpu_suspend
  * returns -EBUSY with the context intact (stock cpu_check_dormant_abort). */
 extern void v7_flush_dcache_all(void);
-static int dp_finish(unsigned long unused)
+static noinline int dp_power_off(void)
 {
 	asm volatile(
 	"mrc	p15, 0, r0, c1, c0, 0\n\t"
@@ -736,6 +798,10 @@ static int dp_finish(unsigned long unused)
 	: : "r" (v7_flush_dcache_all)
 	: "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r9", "r10", "ip", "lr", "memory");
 	return -EBUSY;
+}
+static int dp_finish(unsigned long unused)
+{
+	return dp_power_off();
 }
 /* D6d: stock cpu_power_down's boot vector and L2 retention bit, read back before the PCM is armed. */
 static int dp_dormant_arm(u32 cache)
@@ -887,6 +953,330 @@ static struct cpuidle_driver y1_idle_driver = {
 	},
 	.state_count = 3,
 };
+/* ---- D7b: system suspend, stock spm_go_to_sleep with INFRA kept powered (Y1-POWER-PLAN.md §18) ---- */
+#if IS_ENABLED(CONFIG_INNIOASIS_Y1_SLEEP)
+extern void y1_cpu_resume(void); /* resume-vector.S */
+/* Stock pcm_config_suspend (mt_spm_suspend.c): its vectors, PWR_LVNA (APMCU_PWRCTL 0xff), md_mask MDCONN_UNMASK
+ * and mm_mask MMALL_MASK with the SCU and L2C masks and REDUCE_AND (AP_STANBY_CON 0x180070), both cores' WFI,
+ * the 26 MHz settle, cpu_pdn. INFRA stays powered (stock's infra_pdn = 1 is a later step, D7d). Wake: stock's KP,
+ * EINT, USB_CD and THERM; its CCIF, MD_WDT and CONN belong to the modem and the radios, which are off, and SYSPWREQ
+ * is bypassed as in stock. The PCM timer and watchdog are the Y2's (kernel/platform/spm-suspend-policy.h): stock
+ * arms neither, so the maintenance wake bounds every sleep and the PCM watchdog wakes 30 s after it. */
+#define SLEEP_WAKE_SRC (BIT(2) | BIT(5) | BIT(14) | BIT(21))
+#define SLEEP_STANBY 0x180070
+#define SLEEP_WDT_MARGIN (30U * 32768U)
+#define SLEEP_MAINTENANCE_MAX 1800U
+static phys_addr_t sp_pcm_phys;
+static bool sleep_ready, sleep_broken, sleep_cirq_pending;
+/* On at boot since D7b runs 2-6 (2026-11-21: timer, button and cable wakes, the product path). Writing 0 makes
+ * the sleep helper see system_sleep_abi=0, which refuses every sleep, Reborn's automatic one included. */
+static bool sleep_enabled = true;
+static char *sleep_stage = "off";
+/* The maintenance wake (s): the Y2's 30 min; shorter for an owner's test of the timer wake. */
+static unsigned sleep_maintenance_s = SLEEP_MAINTENANCE_MAX;
+static unsigned sleep_entries, sleep_resumes, sleep_wfi_returns, sleep_aborts, sleep_normal, sleep_unknown;
+static unsigned sleep_uart_busy, sleep_refused_pending, sleep_restore_failures;
+static unsigned sleep_last_wake, sleep_last_event, sleep_last_debug, sleep_last_r13, sleep_last_isr;
+static unsigned sleep_last_cpu_wake, sleep_last_ticks, sleep_last_dvfs, sleep_last_fsm;
+static int sleep_last_result;
+static u32 sleep_enable[GIC_BANKS];
+/* Sleep time. The arch counter does not count the sleep (D7b runs 2 and 3, 2026-11-21: the clocks lost 60 s
+ * sleeps), so the DTS marks it arm,no-tick-in-suspend and timekeeping takes no time from it; every completed sleep
+ * adds the PCM timer's span instead (sleep_wake). The counter Linux reads (arch_timer_read_counter) before and
+ * after is recorded for diagnosis only. */
+static u64 sleep_counter_ns, sleep_pcm_ns, sleep_injected_ns, sleep_counter_before, sleep_counter_after;
+static unsigned sleep_injections;
+static int sleep_maintenance_set(const char *value, const struct kernel_param *kp)
+{
+	unsigned s;
+	int ret = kstrtouint(value, 0, &s);
+	if (ret)
+		return ret;
+	if (s < 10 || s > SLEEP_MAINTENANCE_MAX)
+		return -ERANGE;
+	WRITE_ONCE(sleep_maintenance_s, s);
+	return 0;
+}
+static const struct kernel_param_ops sleep_maintenance_ops = {
+	.set = sleep_maintenance_set, .get = param_get_uint,
+};
+module_param_cb(sleep_maintenance_s, &sleep_maintenance_ops, &sleep_maintenance_s, 0644);
+module_param(sleep_enabled, bool, 0644);
+module_param(sleep_broken, bool, 0400);
+module_param(sleep_stage, charp, 0400);
+static int sleep_break(const char *stage)
+{
+	sleep_stage = (char *)stage;
+	WRITE_ONCE(sleep_broken, true);
+	return -EIO;
+}
+/* Stock spm_go_to_sleep's preconditions (spm_cpusys_can_power_down) and the firmware's: one CPU, CPU1 powered
+ * off, the DVFS table it requests slots 4-7 from, and the PMIC wrapper's clock (its sleep path writes the PMIC). */
+static int sleep_admit(void)
+{
+	if (READ_ONCE(sleep_broken))
+		return -EIO;
+	if (smp_processor_id() || num_online_cpus() != 1 ||
+	    ((spm_rd(SPM_PWR_STATUS) | spm_rd(SPM_PWR_STATUS_S)) & PWR_STATUS_FC1))
+		return -EBUSY;
+	if (!smp_load_acquire(&slots_ready) || (readl(dp_top + TOP_CTRL1) & TOP_PMIC_WRAP))
+		return -EBUSY;
+	return 0;
+}
+/* Stock's SHUTDOWN_MODE: the boot vector, and CA7_CACHE_CONFIG bit 4 clear so that the reset invalidates L2,
+ * which the finisher has flushed (stock sets the bit only for DORMANT). */
+static int sleep_vector_arm(u32 cache)
+{
+	u32 entry = __pa_symbol(y1_cpu_resume);
+	writel(BOOT_SLV_CFG_ENABLE, dp_boot + BOOT_SLV_CFG);
+	writel(entry, dp_boot + BOOT_SLV_ADDR);
+	writel(cache & ~CA7_L2_KEEP, dp_cache);
+	dsb(sy);
+	if (readl(dp_boot + BOOT_SLV_CFG) != BOOT_SLV_CFG_ON ||
+	    readl(dp_boot + BOOT_SLV_ADDR) != entry || readl(dp_cache) != (cache & ~CA7_L2_KEEP))
+		return sleep_break("vector_arm");
+	return 0;
+}
+static void sleep_journal_snapshot(void)
+{
+	y2_pm_entry_snapshot(spm_rd(SPM_PCM_TIMER_VAL), spm_rd(SPM_PCM_WDT_TIMER_VAL), spm_rd(SPM_PCM_CON1),
+			     spm_rd(SPM_CLK_CON), readl(dp_cache));
+	y2_pm_spm_snapshot(spm_rd(SPM_PCM_REG12_DATA), spm_rd(SPM_PCM_REG13_DATA), spm_rd(SPM_SLEEP_ISR_STATUS),
+			   spm_rd(SPM_PCM_IM_PTR), spm_rd(SPM_PCM_IM_LEN), spm_rd(SPM_SLEEP_WAKEUP_EVENT_MASK),
+			   readl(dp_boot + BOOT_SLV_ADDR), readl(dp_boot + BOOT_SLV_CFG),
+			   readl(dp_cirq + CIRQ_CON), spm_rd(SPM_PCM_FSM_STA), spm_rd(SPM_PWR_STATUS),
+			   spm_rd(SPM_PWR_STATUS_S));
+}
+/* After cpu_suspend saved Linux's context (the Y2's y2_spm_finish): the last retained mark, the RGU backstop
+ * paused (it must not count sleep time), then the D6d power-off path. */
+static int sleep_finish(unsigned long unused)
+{
+	sleep_journal_snapshot();
+	y2_pm_mark(Y2_PM_BEFORE_SPM_ENTRY, 0);
+	y2_pm_backstop_pause(true);
+	return dp_power_off();
+}
+/* Stock spm_get_wakeup_status for suspend. A PCM assert latches sleep off. */
+static int sleep_wake_status(void)
+{
+	sleep_last_debug = spm_rd(SPM_PCM_REG_DATA_INI);
+	sleep_last_event = spm_rd(SPM_PCM_EVENT_REG_STA);
+	sleep_last_wake = spm_rd(SPM_PCM_REG12_DATA);
+	sleep_last_r13 = spm_rd(SPM_PCM_REG13_DATA);
+	sleep_last_isr = spm_rd(SPM_SLEEP_ISR_STATUS);
+	sleep_last_cpu_wake = spm_rd(SPM_SLEEP_CPU_WAKEUP_EVENT);
+	sleep_last_ticks = spm_rd(SPM_PCM_TIMER_OUT);
+	sleep_last_dvfs = spm_rd(SPM_AP_DVFS_CON_SET);
+	sleep_last_fsm = spm_rd(SPM_PCM_FSM_STA);
+	if (sleep_last_debug)
+		return sleep_break("pcm_assert");
+	if (sleep_last_event & PCM_EVENT_ABORT)
+		sleep_aborts++;
+	else if (sleep_last_event & PCM_EVENT_NORMAL)
+		sleep_normal++;
+	else
+		sleep_unknown++;
+	return 0;
+}
+/* Arm, kick, sleep, and undo, with the GIC already masked and CIRQ cloned. The firmware's last DVFS request may
+ * be one of its slots 4-7; Linux asks for slot 1 again, as every deep-idle exit leaves it. */
+static int sleep_spm(void)
+{
+	const u32 timer = READ_ONCE(sleep_maintenance_s) * 32768U;
+	const struct spm_program suspend = {
+		.phys = sp_pcm_phys, .words = Y1_SUSPEND_PCM_WORDS,
+		.vectors = { EVENT_VEC(11, 1, 0, 0), EVENT_VEC(12, 1, 0, 33), EVENT_VEC(30, 1, 0, 61),
+			     EVENT_VEC(31, 1, 0, 113) },
+		.pwrctl = 0xff, .stanby = SLEEP_STANBY, .cores = DP_STANBY_CORES,
+		.timer = timer, .wdt = timer + SLEEP_WDT_MARGIN, .wake = SLEEP_WAKE_SRC, .settle = true,
+	};
+	u32 cache = readl(dp_cache);
+	u64 before, after;
+	int ret = sleep_vector_arm(cache), wfi;
+	if (ret)
+		goto cache;
+	ret = spm_arm(&suspend);
+	sleep_journal_snapshot();
+	if (ret == -EBUSY)
+		sleep_uart_busy++;
+	else if (ret)
+		ret = sleep_break("arm_readback");
+	if (ret) {
+		/* Nothing was kicked, but the timer and watchdog may be armed: stock's clean undoes them. */
+		if (!spm_clean(0xf))
+			ret = sleep_break("clean_readback");
+		goto cache;
+	}
+	y2_pm_mark(Y2_PM_PCM_INSTALLED, 0);
+	y2_pm_mark(Y2_PM_WAKE_MASK_PROGRAMMED, 0);
+	y2_pm_mark(Y2_PM_CPU_CONTEXT_SAVING, 0);
+	dp_pcm_kick(true);
+	before = arch_timer_read_counter();
+	wfi = cpu_suspend(0, sleep_finish);
+	after = arch_timer_read_counter();
+	y2_pm_backstop_pause(false);
+	if (!wfi)
+		sleep_resumes++;
+	else if (wfi == -EBUSY)
+		sleep_wfi_returns++;
+	ret = sleep_wake_status();
+	sleep_journal_snapshot(); /* the wake's registers, before the clean below */
+	if (!ret && wfi && wfi != -EBUSY)
+		ret = sleep_break("cpu_suspend");
+	y2_pm_mark(Y2_PM_AFTER_SPM_RETURN, ret ?: wfi);
+	y2_pm_mark(Y2_PM_CPU_CONTEXT_RESTORED, ret ?: wfi);
+	sleep_counter_before = before;
+	sleep_counter_after = after;
+	sleep_counter_ns = after < before ? 0 :
+		mul_u64_u32_div(after - before, NSEC_PER_SEC, arch_timer_get_rate() ?: 1);
+	sleep_pcm_ns = div_u64((u64)sleep_last_ticks * NSEC_PER_SEC, 32768);
+	if (y1_dvfs_request(dp_spm, 1))
+		ret = sleep_break("dvfs_slot");
+	if (!spm_clean(0xf))
+		ret = sleep_break("clean_readback");
+	if (!ret)
+		ret = wfi;
+cache:
+	writel(cache, dp_cache);
+	dsb(sy);
+	if (readl(dp_cache) != cache)
+		ret = sleep_break("cache_restore");
+	return ret;
+}
+/* suspend_ops->enter, after syscore_suspend saved the GIC, VFP and arch-timer context (cpu_pm): no cpu_pm calls
+ * here, as on the Y2 (a second save after the masking below would overwrite the saved enables). The CIRQ replay
+ * waits for that context's restore (sleep_syscore_resume). */
+static int sleep_enter(suspend_state_t state)
+{
+	int ret;
+	if (state != PM_SUSPEND_MEM)
+		return -EINVAL;
+	ret = sleep_admit();
+	if (ret)
+		goto out;
+	if (!dp_gic_mask(sleep_enable)) {
+		sleep_refused_pending++;
+		ret = -EBUSY;
+		goto out;
+	}
+	sleep_entries++;
+	sleep_cirq_pending = true;
+	ret = dp_cirq_clone(sleep_enable) ? sleep_break("cirq_clone") : 0;
+	y2_pm_mark(Y2_PM_CIRQ_CLONED, ret);
+	if (!ret)
+		ret = sleep_spm();
+	/* The SPM line's polarity and enable; every other enable comes back with the cpu_pm restore. */
+	writel(BIT(SPM_IRQ % 32), dp_dist + GICD_ICENABLER + SPM_IRQ / 32 * 4);
+	writel(dp_pol_saved, dp_pol + SPM_POL_WORD);
+	dsb(sy);
+	writel(BIT(SPM_IRQ % 32), dp_dist + GICD_ICPENDR + SPM_IRQ / 32 * 4);
+out:
+	sleep_last_result = ret;
+	if (ret)
+		y2_pm_mark(Y2_PM_ABORTED, ret);
+	return ret;
+}
+/* After the cpu_pm syscore restored the distributor (this syscore registers later, so it resumes after it):
+ * latched wakes become pending in the GIC, CIRQ goes off, and the restored enables must equal those at entry. */
+static void sleep_syscore_resume(void *data)
+{
+	unsigned b;
+	int ret = 0;
+	if (!sleep_cirq_pending)
+		return;
+	sleep_cirq_pending = false;
+	if (!dp_cirq_flush())
+		ret = sleep_break("cirq_disable");
+	for (b = 1; b < GIC_BANKS; b++)
+		if (readl(dp_dist + GICD_ISENABLER + b * 4) != sleep_enable[b])
+			ret = sleep_break("gic_restore");
+	if (readl(dp_pol + SPM_POL_WORD) != dp_pol_saved)
+		ret = sleep_break("gic_polarity");
+	if (ret)
+		sleep_restore_failures++;
+	y2_pm_mark(Y2_PM_CIRQ_REPLAYED, ret);
+}
+static const struct syscore_ops sleep_syscore_ops = { .resume = sleep_syscore_resume };
+static struct syscore sleep_syscore = { .ops = &sleep_syscore_ops };
+/* suspend_ops->wake, with interrupts on: the PCM timer's span of a completed sleep goes to the clocks. */
+static void sleep_wake(void)
+{
+	struct timespec64 delta;
+	if (sleep_last_result || !sleep_pcm_ns)
+		return;
+	sleep_injected_ns = sleep_pcm_ns;
+	sleep_injections++;
+	delta = ns_to_timespec64(sleep_injected_ns);
+	timekeeping_inject_sleeptime64(&delta);
+}
+static int sleep_prepare(void)
+{
+	if (!READ_ONCE(sleep_ready) || READ_ONCE(sleep_broken))
+		return -EIO;
+	return READ_ONCE(sleep_enabled) && y2_pm_journal_ready() ? 0 : -EOPNOTSUPP;
+}
+static const struct platform_suspend_ops sleep_ops = {
+	.valid = suspend_valid_only_mem,
+	.prepare = sleep_prepare,
+	.enter = sleep_enter,
+	.wake = sleep_wake,
+};
+/* The SPM state the shared sleep helper reads (the Y2's kernel/platform/spm.c state_show fields it uses:
+ * system_sleep_abi, broken, maintenance_seconds, timer_wake, ticks32k, wake), on 10006000.power-controller. A
+ * timer wake is a normal exit whose only wake bit is the PCM timer (bit 0) after the full maintenance span. */
+static ssize_t state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	unsigned maintenance = READ_ONCE(sleep_maintenance_s);
+	bool timer_wake = !sleep_last_result && !sleep_last_debug && sleep_last_wake == 1 &&
+		(sleep_last_event & PCM_EVENT_NORMAL) && sleep_last_ticks >= maintenance * 32768U;
+	ssize_t n;
+	n = sysfs_emit(buf, "mode=SPM_CPU_SHUTDOWN_INFRA_RETAINED broken=%u stage=%s entries=%u resumes=%u wfi_returns=%u aborts=%u normal=%u unknown=%u result=%d\n",
+		       READ_ONCE(sleep_broken), sleep_stage, sleep_entries, sleep_resumes, sleep_wfi_returns,
+		       sleep_aborts, sleep_normal, sleep_unknown, sleep_last_result);
+	n += sysfs_emit_at(buf, n, "wake=%#x ticks32k=%u event=%#x debug=%#x r13=%#x sleep_isr=%#x cpu_wake=%#x dvfs=%#x fsm=%#x power=%#x/%#x\n",
+			   sleep_last_wake, sleep_last_ticks, sleep_last_event, sleep_last_debug, sleep_last_r13,
+			   sleep_last_isr, sleep_last_cpu_wake, sleep_last_dvfs, sleep_last_fsm,
+			   spm_rd(SPM_PWR_STATUS), spm_rd(SPM_PWR_STATUS_S));
+	n += sysfs_emit_at(buf, n, "uart_busy=%u refused_pending=%u restore_failures=%u counter_before=%llu counter_after=%llu counter_ns=%llu pcm_ns=%llu injected_ns=%llu injections=%u\n",
+			   sleep_uart_busy, sleep_refused_pending, sleep_restore_failures, sleep_counter_before,
+			   sleep_counter_after, sleep_counter_ns,
+			   sleep_pcm_ns, sleep_injected_ns, sleep_injections);
+	return n + sysfs_emit_at(buf, n, "suspend_pcm_words=%u suspend_pcm_origin=MT6572_c4b775c_pcm_suspend_v26-42 system_sleep_abi=%u maintenance_seconds=%u timer_wake=%u\n",
+				 Y1_SUSPEND_PCM_WORDS, READ_ONCE(sleep_ready) && READ_ONCE(sleep_enabled),
+				 maintenance, timer_wake);
+}
+static DEVICE_ATTR_RO(state);
+static int __init y1_sleep_init(void)
+{
+	struct device_node *np = of_find_compatible_node(NULL, NULL, "mediatek,mt6572-scpsys");
+	struct platform_device *pdev = np ? of_find_device_by_node(np) : NULL;
+	int ret;
+	of_node_put(np);
+	if (!pdev) {
+		sleep_stage = "no_scpsys";
+		return -ENODEV;
+	}
+	ret = device_create_file(&pdev->dev, &dev_attr_state);
+	put_device(&pdev->dev);
+	if (ret) {
+		sleep_stage = "state_attr";
+		return ret;
+	}
+	__cpuc_flush_dcache_area((void *)y1_suspend_pcm, sizeof(y1_suspend_pcm));
+	sp_pcm_phys = __pa_symbol(y1_suspend_pcm);
+	register_syscore(&sleep_syscore);
+	suspend_set_ops(&sleep_ops);
+	sleep_stage = "ready";
+	smp_store_release(&sleep_ready, true);
+	return 0;
+}
+#else
+static int __init y1_sleep_init(void)
+{
+	return 0;
+}
+static const char *sleep_stage = "off";
+#endif
 static void __init dp_unmap(void)
 {
 	void __iomem **maps[] = {
@@ -942,6 +1332,8 @@ static int __init y1_dpidle_init(void)
 	if (ret)
 		goto fail;
 	dpidle_stage = "ready";
+	if (y1_sleep_init())
+		pr_err("y1-deep-idle: system sleep not available: %s\n", sleep_stage);
 	return 0;
 fail:
 	dp_unmap();

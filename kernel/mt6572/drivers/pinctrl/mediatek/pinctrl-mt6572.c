@@ -297,6 +297,8 @@ static struct platform_driver mt6572_pinctrl_driver = {
 	.driver = {
 		.name = "mt6572-pinctrl",
 		.of_match_table = mt6572_pinctrl_of_match,
+		/* System sleep (docs/planning/Y1-POWER-PLAN.md §18): only wake-armed EINTs stay unmasked. */
+		.pm = pm_sleep_ptr(&mtk_paris_pinctrl_pm_ops),
 	},
 	.probe = mtk_paris_pinctrl_probe,
 };

@@ -190,7 +190,8 @@ static struct miscdevice y2_workload_device = {
 };
 static int __init y2_workload_init(void)
 {
-	if (!of_machine_is_compatible("innioasis,y2")) return -ENODEV;
+	/* The Y1 too: its sleep helper reads the leases (docs/planning/Y1-POWER-PLAN.md §18). */
+	if (!of_machine_is_compatible("innioasis,y2") && !of_machine_is_compatible("innioasis,y1")) return -ENODEV;
 	return misc_register(&y2_workload_device);
 }
 device_initcall(y2_workload_init);

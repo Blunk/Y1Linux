@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -1080,3 +1080,191 @@ switched back on).
     nothing and gives nothing.
   - Ways to reach it: Reborn releasing Bluetooth while dark and idle with no connected device, as it already
     does for Wi-Fi; or the STP sleep protocol (out of scope). Owner's choice.
+
+## 18. D7 system sleep — 2026-11-21
+
+**Status: D7b admitted by the owner (2026-11-21): "go straight to D7b"; Bluetooth is dropped for a sleep as on
+the Y2; Reborn is not changed. D7c (MT6323 sleep mode) and D7d (INFRA power-down) are not admitted.**
+
+**Why.** D6d saves power only with both radios off, and in normal use Bluetooth stays on, so deep idle never
+entered in the 8.3 h soak (§17, last entry). The Y2 solves this with full system sleep: Reborn asks the shared
+sleep helper (`y2-platform` `sleep request`, on a short Power press and after 60 s dark and idle), the helper
+switches the radios off, quiesces Reborn and writes `mem` to `/sys/power/state`, and the SPM's suspend firmware
+powers the CPU down with DRAM in self-refresh. The Y1 runs the same Reborn and helper; until now the helper
+refused (`physical_qualification_required`) because the Y1 kernel had no suspend at all.
+
+**Stock values D7b uses** (`drsami/mt6572_kernel` `c4b775c`, `mt_spm_suspend.c`, `mt_spm_pcm.c`,
+`mt_dormant.c`):
+- `spm_pcm_suspend`, "pcm_suspend_v26-42", 576 words, IM_LEN 576 (stock's MT6572 convention; the Y2 programs
+  its 597 words as 596), event vectors 26M_WAKE/0, 26M_SLP/33, AP_WAKE/61, AP_SLEEP/113.
+- `pcm_config_suspend`: `PWR_LVNA` (`APMCU_PWRCTL` = 0xff), UART sleep handshake, R0/R7 sync, md_mask
+  MDCONN_UNMASK and mm_mask MMALL_MASK with the SCU and L2C masks and REDUCE_AND (`AP_STANBY_CON` 0x180070),
+  both cores' WFI, the 26 MHz settle (99 less the MD settle), `cpu_pdn` 1, `lock_infra_dcm`.
+- `SHUTDOWN_MODE`: `CA7_CACHE_CONFIG` bit 4 clear, so the reset invalidates the flushed L2.
+- Wake sources KP, EINT, USB_CD, THERM (stock's CCIF, MD_WDT and CONN serve the modem and the radios, which are
+  off; SYSPWREQ is bypassed as in stock). WAKE_ID numbers are the MT6572's (SYSPWREQ is 7 there, not 24).
+- The firmware's DVFS requests use slots 4–7 of D6b's table (1.15 V and `TOP_CKPDN0` set/clear).
+- Not stock: the PCM timer and watchdog. Stock writes the timer as all ones and arms no watchdog; D7b takes
+  the Y2's maintenance wake (30 min, `sleep_maintenance_s`, 10–1800 s for a test) and PCM watchdog wake 30 s
+  later, so every sleep is bounded. D6c showed the PCM timer counting through deep idle with 26 MHz asleep.
+
+**What D7b ports from the Y2** (unchanged unless named):
+- The helper and its receipts, guard and quarantine (userspace, shared). One platform change: the sleep proof
+  compares the journal's `pcm_length` with the player's own firmware length (`Player::suspend_pcm_length`,
+  596 or 576) instead of 596.
+- The sleep journal `kernel/platform/pm-journal.c` (`/sys/firmware/y2_pm`), built for the Y1 by
+  `kernel/y1/pm-journal.c` on a reserved DRAM page (`0x9fbff000`, `kernel/y1/sleep.h`, DTS `no-map`). The Y2
+  keeps it in stock's RAM-console SRAM; the MT6572's equivalent is unknown without the stock kernel. DRAM keeps it
+  through the sleep; across a watchdog reset its retention is unproven (`retention=reserved_dram_unproven`; the
+  journal's own self-test and a warm reboot can show it). The guard file on `/data` quarantines a failed attempt
+  either way.
+- The PM core's stage marks and callback trail (Y2 overlays 0059, 0060, 0067 as Y1 0050–0052), and synchronous
+  device suspend.
+- The MT6323 wake order (Y2 0024–0026 as Y1 0014's PM ops, 0048, 0049): wake masks are written in the PMIC's
+  late suspend, after the key driver armed its wake. Upstream writes them at `PM_SUSPEND_PREPARE`, before that,
+  so the centre button could not wake the player. The RTC-alarm check is skipped without an RTC driver (the Y1
+  has none; a set `RTC_IRQ_EN` is LK's or stock's, not Linux's).
+- The RGU backstop (Y2 0037 as part of Y1 0007): the helper arms 30 s around the `mem` write, the backstop pauses
+  inside the SPM sleep and a stall elsewhere resets the player. On the Y1 the RGU is LK's, fed by the watchdog
+  core (nothing opens `/dev/watchdog`); upstream suspend does not stop such a watchdog, so without this a sleep
+  longer than 15 s would end in a reset.
+- The workload leases (`kernel/platform/workload.c`, `/dev/y2-workload`, added as `workload.c` so its leases are at `/sys/module/workload` as on the Y2), which the helper requires to see no
+  library scan or transfer. Reborn already opens the device; on the Y1 its leases now also apply the Y2's
+  cpufreq floors and bring CPU1 back as on the Y2.
+
+**New on the Y1:**
+- `kernel/y1/deep-idle.c` gains the suspend path, sharing D6's arm/kick/clean, GIC mask, CIRQ clone and
+  power-off code (the arm is now one function for both programs):
+  - `.enter` refuses unless CPU0 alone with CPU1 powered off, the DVFS table ready and the PMIC wrapper clock
+    on; masks the GIC to the SPM line (an enabled interrupt already pending refuses with `-EBUSY`), clones
+    CIRQ, points `BOOT_SLV_ADDR` at `kernel/y1/resume-vector.S` (it stamps the journal, then `cpu_resume`),
+    arms the suspend program with readback, and calls `cpu_suspend` with D6d's power-off finisher after the
+    journal's last mark and the backstop's pause.
+  - No `cpu_pm` calls: syscore already saved the GIC, VFP and arch timer (as on the Y2). A syscore resume
+    registered after `cpu_pm`'s replays CIRQ into the restored GIC and checks the restored enables.
+  - After the wake: the wake registers, slot 1 requested again, stock's clean (`SW_INT_CLEAR` 0xf).
+  - Sleep time: if the arch counter covered less than half of the PCM timer's span it stood still and the
+    difference is injected (`timekeeping_inject_sleeptime64`, which needs `RTC_CLASS`/`RTC_HCTOSYS`; there is
+    still no RTC driver). Whether the counter runs is to be seen.
+  - `state` on `10006000.power-controller`: the fields the helper reads (`system_sleep_abi`, `broken`,
+    `maintenance_seconds`, `timer_wake`, `ticks32k`, `wake`) and the Y1's counters.
+  - Any readback mismatch, PCM assert or restore fault latches `sleep_broken` for the boot.
+- The MT6572 pinctrl's EINT suspend (`mtk_paris_pinctrl_pm_ops`): only wake-armed EINTs stay unmasked.
+- DTS: `wakeup-source` on the centre button (the Y2's Power), the journal page reserved.
+- Config: `SUSPEND`, `PM_DEBUG` (`/sys/power/pm_test`), `INNIOASIS_Y1_SLEEP`, `RTC_CLASS`, `RTC_HCTOSYS`.
+
+**Wake sources:** the centre button (PMIC key through EINT16), the USB cable (CHRDET and USB_CD), the
+maintenance timer, the PCM watchdog. The wheel is not one (as on the Y2: it sleeps and is masked).
+
+**Bounds:**
+- **Off by default:** `/sys/module/y1_deep_idle/parameters/sleep_enabled` starts 0, so the helper reads
+  `system_sleep_abi=0` and refuses Reborn's automatic sleep as before. An owner test writes 1; a later build
+  turns it on after the tests, as D6d did.
+- INFRA stays powered; no PMIC sleep-mode write (D7c); VPROC stays 1.15 V through the sleep.
+- Every SPM write is read back before the kick; a failure before the kick unwinds and refuses.
+- A sleep fault latches sleep off for the boot; the helper's guard then quarantines the image.
+
+**Risks:**
+- **A hang with no power button.** Covered by the backstop around the kernel's steps, the PCM timer and
+  watchdog wakes around the SPM sleep, and the cable wake. If the SPM never wakes at all, only the cable (USB_CD)
+  is left; the first runs are with the owner at hand.
+- **The PCM timer may not wake with the suspend firmware** (stock never used it). The first test uses a short
+  `sleep_maintenance_s`; without a timer wake the maintenance loop cannot run and the button and cable are the
+  wakes.
+- **Device resume:** eMMC (the guard allows CMD5 and power-off notification), SD, display (dark, CRTC off),
+  USB, audio, the connectivity core. Each is a first.
+- **The arch counter** may stop in the sleep: handled by the injection, checked against the host.
+
+**Tests (owner at hand, cable out, over Wi-Fi until the radios go off, then over USB after the wake):**
+1. Boot: `state` shows `system_sleep_abi=0`, `/sys/power/state` lists `mem`, `y2_pm/backstop_s` shows
+   `provider=1`, `y2_pm/retention` and `reset_status` read; D6d and the D5/D6 health checks as before.
+2. `sleep_maintenance_s` 60, `sleep_enabled` 1, then `y2-platform sleep request`: the player sleeps; a timer
+   wake after about 60 s re-enters; the centre button wakes it to Reborn's screen. Receipt
+   `product.kernel_completed` and `wake_reason` power; journal `stage=EXIT`, `reset_resume_entry=0x59325253`,
+   `pcm_length=576`.
+3. Uptime against the host across a 10 min sleep; `injected_ns` and `counter_ns` recorded.
+4. Cable plug wakes it; charging resumes.
+5. Wi-Fi and Bluetooth back, a headset reconnects, playback starts.
+6. 20 cycles (button), then an hour's sleep with the 30 min maintenance wake.
+7. Drain: a night asleep against the D6d screen-off slope.
+
+**D7b build (2026-11-21).** Build `out/y1-boot-d7b3` (Y2ROOT `out/y1-root-b268`), BOOTIMG sha256
+`05b3eb19ddf6e4c4122849ff299b2dc423f1495cab2f75c0e458d448f7c52742`, RECOVERY
+`56243326fcdae8bf4db4d85691f9bcd37b9e23a11473b9176d69eca2d54acae8`. Sleep starts disabled
+(`sleep_enabled` 0). The platform's per-player `pcm_length` needs a Y2ROOT built from a commit with it; until
+then the test binds a cross-built `y2-platform` over the installed one in RAM (gone at reboot). Not yet run on
+the player.
+
+**D7b run 1 (2026-11-21, build `05b3eb19…`, cable out, radios off by hand).**
+- **Boot:** `state` present with `system_sleep_abi=0`, `/sys/power/state` lists `mem`, `pm_test` `[none]`,
+  backstop `provider=1`, journal at `0x9fbff000`, DVFS slots and D6d ready. `/dev/y2-workload` missing: the
+  shared `workload.c` registered only on the Y2, and its added name put its leases under `y2_workload`. Fixed
+  (machine check takes the Y1; added as `workload.c`).
+- **Cable in:** every attempt refused at device prepare by the charger (`-16`, `failed_stage=DPM_PREPARED`), the
+  Y2's rule while charging; abort path and journal correct.
+- **`pm_test devices`, cable out: PASS.** Every device suspended and resumed (rc 0).
+- **Real sleep: refused before any kick, `arm_readback`.** `SPM_CLK_SETTLE` reads 128 (0x80) for the MD part,
+  above stock's 99, so the settle step refused; sleep latched off for the boot, nothing else changed. Stock's
+  unsigned `99 - 128` underflows; the AP part is now 0 (settle 128 ticks, 3.9 ms).
+- Build `out/y1-boot-d7b5`, BOOTIMG `745180a611ca60721df53b19db78e8a8583880a767dc54c651f5645b559ada92`, RECOVERY
+  `e74d59705961e524217c183518331a8a94c1609ab59d2f3accc4d2be169ddd05`.
+
+**D7b run 2 (2026-11-21, build `745180a6…`, cable out, radios off by hand, `sleep_maintenance_s` 60).**
+- `pm_test` devices, platform, processors and core: all rc 0, journal `stage=EXIT error=0`.
+- **Real sleep: PASS for the SPM path.** `resumes=1`, `normal=1`, event `0x90100000`, `wake=0x1` (PCM timer),
+  `ticks32k` 1 966 091 (60.0 s), no PCM assert, no latch; journal `stage=EXIT error=0 pcm_length=576
+  reset_resume_entry=0x59325253`, so the boot ROM resumed CPU0 through `y1_cpu_resume`. The PCM timer wakes the
+  suspend firmware. `/dev/y2-workload` present with Reborn's leases. No kernel warning; the radio chip and Wi-Fi
+  came back.
+- **Clock: FAIL.** Uptime advanced 0.5 s and wall time 1 s across the 60 s sleep: the arch counter read lower
+  after the wake than before (it restarts while the cluster is off; GPT6 still `CON` 0x31), so the "covered at
+  least half" check passed on a wrapped difference and nothing was injected. Fixed: a counter that went back
+  counted nothing, and the PCM span is injected; the raw counter values are now in `state`.
+- Build `out/y1-boot-d7b6`, BOOTIMG `445cf35e46b0626db9889378695abbdfeec5184d93580de9c1bafd241808700b`, RECOVERY
+  `7ad11a0ac5bf0e5ca6ef10f4976cc320ca71540ac4295bb17814b7d1a9023d6e`.
+- Open: whether D6d's deep idle also restarts the counter (it keeps the cluster on; run 1 of D6c matched the host
+  over 851 s, with every exit an abort).
+
+**D7b run 3 (2026-11-21, build `445cf35e…`, two 60 s sleeps in a row).** Both real: `entries=2 resumes=2
+normal=2`, timer wakes, `ticks32k` 1 966 091 each, journal `EXIT`/`576`/`0x59325253`. Clock: the first sleep lost
+its 60 s, the second was injected (uptime +60.6 s); the player ended 60 s behind the host. The recorded counter
+was the virtual one (`CNTVCT`, about 1.6e19: `CNTVOFF` is undefined after the CPU reset and nothing sets it on a
+Y1 that boots in SVC), while Linux reads the physical counter (`arm,cpu-registers-not-fw-configured`); so the
+"did the counter cover the sleep" test was meaningless. Fixed without the counter: the DTS marks the timer
+`arm,no-tick-in-suspend` (timekeeping takes no sleep time from it) and every completed sleep injects the PCM
+timer's span; `state` records `arch_timer_read_counter` before and after for diagnosis. Build
+`out/y1-boot-d7b7`, BOOTIMG `9a68e28b4ec71e8be07c65e1e56382001552af9db84de81a5c92a051a0166072`, RECOVERY
+`e957a3a1a84736c4a494ba1a62b64a27083c1c964564321dd17ed06cc0e765d7`.
+
+**D7b run 4 (2026-11-21, build `9a68e28b…`, two 60 s sleeps): PASS, clock included.** `entries=2 resumes=2
+normal=2`, timer wakes, journal `EXIT error=0`. The physical counter Linux reads advanced 2.0 ms across each
+60 s sleep (26 000 ticks): it stops in suspend. Each sleep injected 60.000 s; uptime advanced 60.5 s per sleep,
+and the player's wall clock matched the host to the second at the end (1795267402 both).
+
+**D7b run 5 (2026-11-21, build `9a68e28b…`, test `y2-platform` bound in RAM, `sleep_maintenance_s` 600): the
+product path, PASS.** Cable out, `y2-platform sleep request` over Wi-Fi; the owner pressed the centre button
+after about 1.5 min and the screen woke.
+- Receipt: `requested` → `reborn_prepared` → `quiescing_radios` → `syncing` → `kernel_suspend` (1.9 s after the
+  request) → `kernel_resumed` → `screen_restored` → `restoring_radios` → `complete_result_0`; `product.state`
+  `restored`, `kernel_completed` true, `wake_reason` `power` (mtk-pmic-keys IRQ count 0 → 2), `reborn_prepared`
+  and `reborn_restore` true, `suspended_seconds` 99.4.
+- SPM: normal exit, `wake=0x20` (EINT: the PMIC key through EINT16), `ticks32k` 3 257 628; journal `COMPLETE`,
+  `pcm_length=576`, `reset_resume_entry=0x59325253`; guard `pending:false`. 99.4 s injected into the clocks.
+- After the wake: Bluetooth and Wi-Fi back (`functions=0x9`), no kernel warning. One `charger check ... error=-5`
+  line at the unplug, 2 min before the request, is the charger's own (not on the sleep path); to be watched.
+- Earlier Reborn's own automatic sleep requests were refused with `physical_qualification_required` while
+  `sleep_enabled` was 0, as intended.
+
+**D7b run 6 (2026-11-21, same setup): cable wake.** `sleep request`, then the owner plugged the cable in after
+about 2 min. Kernel: a normal sleep (`entries=4 resumes=4 normal=4`), `wake=0x20` (EINT: CHRDET through the PMIC),
+`ticks32k` 3 799 768 (116 s), the USB link back at once. Helper: after the kernel returned, its handshake read of
+`/sys/power/wakeup_count` blocked (the charger holds a wakeup source while it charges, `pm_stay_awake` in the shared
+`mt6323-charger.c`), so after 2 s it recorded `product_refused` `wakeup_count_busy` and restored with the screen
+dark (its rule for a refused sleep), `product.kernel_completed` true. The player is awake and charging; the
+screen stays dark until a press. This is the shared helper's behaviour with the shared charger driver, not a Y1
+kernel fault; the receipt calls a completed sleep "refused". Left as on the Y2; noted for the platform.
+
+**D7b on at boot (2026-11-21).** `sleep_enabled` now starts 1, so Reborn's automatic sleep (60 s dark and idle)
+and the short centre press reach the helper. Committed on branch `y1-d7b-sleep` with the platform's per-player
+`pcm_length`; Y2ROOT `out/y1-root-d7b8` and BOOTIMG/RECOVERY `out/y1-boot-d7b8` are built from that commit.
+Remaining: automatic sleep, the 30 min maintenance wake, about 20 cycles, a night's drain against D6d.

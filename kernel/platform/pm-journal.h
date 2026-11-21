@@ -93,7 +93,8 @@ struct y2_pm_backstop_ops {
 	 * back to the kernel-fed watchdog. */
 	void (*end)(void);
 };
-#if IS_ENABLED(CONFIG_Y2_POWER)
+/* The Y2, and the Y1's sleep (kernel/y1/pm-journal.c, docs/planning/Y1-POWER-PLAN.md §18). */
+#if IS_ENABLED(CONFIG_Y2_POWER) || IS_ENABLED(CONFIG_INNIOASIS_Y1_SLEEP)
 bool y2_pm_journal_ready(void);
 bool y2_pm_previous_stage_was(unsigned stage);
 void y2_pm_entry_snapshot(unsigned timer, unsigned watchdog, unsigned con1,

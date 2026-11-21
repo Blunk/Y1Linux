@@ -62,6 +62,12 @@
 		stdout-path = "serial0:921600n8";
 	};
 
+	/* The arch counter does not count system sleep (docs/planning/Y1-POWER-PLAN.md §18 D7b): timekeeping must not
+	 * take the sleep from it; the sleep driver adds the SPM timer's span. */
+	timer {
+		arm,no-tick-in-suspend;
+	};
+
 	/* The MT6572 connectivity core's fixed memory (stock 3.0.2 too); the kernel runs at 0x80108000. */
 	reserved-memory {
 		#address-cells = <1>;
@@ -70,6 +76,12 @@
 
 		connsys_memory: connsys@80000000 {
 			reg = <0x80000000 0x100000>;
+			no-map;
+		};
+
+		/* The sleep journal (kernel/y1/sleep.h, Y1_PM_JOURNAL_PHYS): the last page of the second bank. */
+		pm_journal: pm-journal@9fbff000 {
+			reg = <0x9fbff000 0x1000>;
 			no-map;
 		};
 	};
@@ -265,9 +277,11 @@
 			/* While Reborn has the screen off (bl_power), a centre press is a Power tap: it wakes the
 			 * screen, as Power does on the Y2, and does not select (overlay 0033). */
 			backlight = <&panel_backlight>;
-			/* The centre button (the Y1 has no power button). */
+			/* The centre button (the Y1 has no power button). It wakes the player from system sleep, as
+			 * Power does the Y2 (docs/planning/Y1-POWER-PLAN.md §18). */
 			power {
 				linux,keycodes = <KEY_ENTER>;
+				wakeup-source;
 			};
 		};
 

@@ -1,6 +1,6 @@
 --- a/drivers/soc/mediatek/Kconfig
 +++ b/drivers/soc/mediatek/Kconfig
-@@ -89,4 +89,23 @@
+@@ -89,4 +89,32 @@
  	  information about the SoC to the userspace including the
  	  manufacturer name, marketing name and soc name.
  
@@ -22,5 +22,14 @@
 +	  deep states run stock's SPM firmware, with CPU0 powered (D6c) or
 +	  powered down and resumed through cpu_suspend (D6d). D6d is on
 +	  at boot; D6c starts disabled and is enabled through sysfs.
++
++config INNIOASIS_Y1_SLEEP
++	bool "Innioasis Y1 (MT6572) system sleep"
++	depends on INNIOASIS_Y1_DEEP_IDLE && SUSPEND && PM_DEBUG && MEDIATEK_WATCHDOG
++	help
++	  Suspend to RAM through stock's suspend SPM firmware with INFRA
++	  kept powered (docs/planning/Y1-POWER-PLAN.md section 18, D7b),
++	  with the Y2's sleep journal, RGU backstop, PM core stage marks
++	  and workload leases, which the shared sleep helper requires.
 +
  endmenu

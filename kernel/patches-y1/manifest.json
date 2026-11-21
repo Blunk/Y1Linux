@@ -1,5 +1,5 @@
 {
-  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set. MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V). D6 blocker B4 (0047: with innioasis,vbus-supply-name the MUSB glue follows that charger supply: without VBUS the PHY is powered off, which 0015 now makes end the forced session, and the glue's runtime PM gates the USB clocks once MUSB suspends). D6 blocker B5 (0019: clocks after OVL's own in its node are the display path's driverless blocks, SMI common, LARB0 and BLS, enabled and disabled with OVL).",
+  "purpose": "Innioasis Y1 (MT6572) overlays on Linux 6.18.56; none of the Y2 set, except the PM-core and MT6323 sleep overlays taken over for D7b (0048-0052, docs/planning/Y1-POWER-PLAN.md \u00a718). MT6572 drivers backported from mt6572-mainline/linux 8d427adfb611bcdf4326efc69f44a23c14871b20 (based on Linux 7.0-rc7); docs/planning/Y1-SECOND-BOOT-PLAN.md, Y1-THIRD-BOOT-PLAN.md, Y1-CHARGING-PLAN.md, Y1-DISPLAY-PLAN.md, Y1-BACKLIGHT-PLAN.md, Y1-AUDIO-PLAN.md, Y1-POWER-PLAN.md (the Y2's power-off patch 0027, first as 0030), Y1-RECOVERY-PLAN.md (0041: 0027 plus the RTC PDN1 recovery flag, sysfs recovery_flag and pdn1, replacing 0030), Y1-REBORN-PLAN.md (0031: the MT6572 GPU power domain; 0032: the Y2's Lima patch 0038, unchanged; 0033: an optional label names the PMIC key device; an optional hold reports KEY_POWER on a second device, and with a backlight phandle a press while its bl_power is off is a KEY_POWER tap; with the sysfs tap_power_ms a press released between it and the hold is a KEY_POWER tap), Y1-DATA-PLAN.md (0034: the eMMC write guard; Y1-RECOVERY-PLAN.md R2: a list of write windows per image), Y1-MTP-PLAN.md (0035: the Y2's musb_ep_start, a freshly queued request is served from the FIFO). Y1-BLUETOOTH-PLAN.md (0036/0037: the MT6572 connectivity owner, built but without a DT node; the Y2's btif.c, stp.c, hci.c, firmware.c and protocol.h shared unchanged). Y1-POWER-PLAN.md D3 (0042: an MT6572 entry in mediatek-cpufreq with the 1.15 V of every admitted rate; the voltage is a fixed regulator, so only the CPU mux and ARMPLL change). Y1-POWER-PLAN.md D4 (0043: stock's GPT6 free-run start for the arch counter on the MT6572, checked against GPT6 over 1 ms; the arch timer node is disabled when the counter does not follow). D5 (0044: CPU1 hotplug with stock's FC1 power-off and the boot ROM's BOOT_SLV_CFG/ADDR re-entry, bounded polls). D6a (0045/0046: CONFIG_INNIOASIS_Y1_IDLE, the Y2's core-parking coordinator with Y1 inputs, kernel/y1/system-idle.c; the Y1 AFE's stream lease). D6b (CONFIG_INNIOASIS_Y1_DEEP_IDLE, kernel/y1/deep-idle.c: stock's PWRAP DVFS slot table, read back, and one slot-1 request at 1.15 V). D6 blocker B4 (0047: with innioasis,vbus-supply-name the MUSB glue follows that charger supply: without VBUS the PHY is powered off, which 0015 now makes end the forced session, and the glue's runtime PM gates the USB clocks once MUSB suspends). D6 blocker B5 (0019: clocks after OVL's own in its node are the display path's driverless blocks, SMI common, LARB0 and BLS, enabled and disabled with OVL).",
   "overlays": [
     {
       "path": "drivers/clk/mediatek/Kconfig",
@@ -40,7 +40,7 @@
     {
       "path": "drivers/watchdog/mtk_wdt.c",
       "base_sha256": "6e8230dff7db590f16bdc83918220da48be57c8a594cd3f0917f4c0e0018da9b",
-      "result_sha256": "8dd10f8e2af6549c05ce779dba03badea559fa87e9e83d44ebeba7c6068d673a",
+      "result_sha256": "5885715585c3bdca445356dd652b909a2181b872fe027871fb5ffd66805ea90e",
       "patch": "0007-mt6572-wdt-resets.patch"
     },
     {
@@ -82,7 +82,7 @@
     {
       "path": "drivers/mfd/mt6397-core.c",
       "base_sha256": "4c9b1a942df7ade97f0bb4cd7af65a8f7a9487df96b278eedc125f1eda6e3209",
-      "result_sha256": "b75026aa53d6616645483460b652795da535f8406b28cc431d1a16605fef32eb",
+      "result_sha256": "af64641c6dfb654400c00b2c1e627072ef5a8a0b100b9a09f5140f3fa2f17c55",
       "patch": "0014-mt6323-auxadc-charger-cells.patch"
     },
     {
@@ -262,13 +262,13 @@
     {
       "path": "drivers/soc/mediatek/Kconfig",
       "base_sha256": "7e85e245ec98934226170f7d151df13dc5a3fe49240b009ab20f02b0c2400dcc",
-      "result_sha256": "6ee6432823dc1a401817179a77df12562464f06205b9dd260ec64914d1688947",
+      "result_sha256": "e92ec9a61b203cdd6aa3e5c589421f9d8a5666e54c782b1f35dd4d31d2f9db3a",
       "patch": "0045-innioasis-y1-idle-kconfig.patch"
     },
     {
       "path": "drivers/soc/mediatek/Makefile",
       "base_sha256": "a7a4e5f6da219caffbc95d549d83811473e2fb012f0ee3eb5219da95df1ee0ac",
-      "result_sha256": "25e0f00427573f813478b51e7b333d1bf7ba3d70e229010eece7c72c748f98ae",
+      "result_sha256": "2e1782c7333925bd58df75a7f639c1b8d8a30ae7ccc7ca4e51a17737663b9ff8",
       "patch": "0046-innioasis-y1-idle-makefile.patch"
     },
     {
@@ -276,6 +276,36 @@
       "base_sha256": "33502cc67a3853560a26439fb93a81e034fdd519cb89ffb2dd0e9c2d069137f2",
       "result_sha256": "95e3c9c8d70a8b2e60f5f4adbb7163742013b7c1f34e4edd787a516c08a3bb04",
       "patch": "0047-mtk-musb-vbus-clock-gate.patch"
+    },
+    {
+      "path": "drivers/mfd/mt6397-irq.c",
+      "base_sha256": "be6f4059b169ddfcc48a65539f94969d83f220602c09d4df66b7a4e81bb9a61e",
+      "result_sha256": "adc77c734f93ffba9d4eb88d34d43ea8ed934a56f12913886d10d390b0ee57b4",
+      "patch": "0048-mt6323-wake-order.patch"
+    },
+    {
+      "path": "include/linux/mfd/mt6397/core.h",
+      "base_sha256": "e9391c0799c3c046cefee99187070531cf97baa6fc1113c1d3adfc1c20f24840",
+      "result_sha256": "3981235cf41cc92fe43c524b28d2fb4cff3a5a1fc9f04ee24de128802bbac908",
+      "patch": "0049-mt6323-pm-state.patch"
+    },
+    {
+      "path": "drivers/base/power/main.c",
+      "base_sha256": "0842ea9473ca90bdb3d745912ea47e2826107a5369316d64665e7b597fc01132",
+      "result_sha256": "301dba11f7b851bdf44953b732d8ecb88b3c272f4f21dd142d277d79bb804114",
+      "patch": "0050-pm-balance-prepare-refusal.patch"
+    },
+    {
+      "path": "kernel/power/suspend.c",
+      "base_sha256": "0f5cd354b1523364549e8cfc6dc4bbd781edc207b58a664617c4b971c119ae24",
+      "result_sha256": "1d2d9a01f60849c0c118880f803cc979175935e2c5a2d319fe2b0b63b144194c",
+      "patch": "0051-pm-persistent-suspend-stages.patch"
+    },
+    {
+      "path": "kernel/power/main.c",
+      "base_sha256": "f8eb032af1f0f295f5deb133ae7a8da43636e44e8bd32312b4293072656bcef8",
+      "result_sha256": "13c8ff575567f4981a64d276016b75d834c65deb9e50fb129b7e934e0f5ecfbd",
+      "patch": "0052-pm-sync-device-suspend.patch"
     }
   ],
   "added": [
@@ -307,7 +337,7 @@
     {
       "path": "drivers/pinctrl/mediatek/pinctrl-mt6572.c",
       "source": "kernel/mt6572/drivers/pinctrl/mediatek/pinctrl-mt6572.c",
-      "sha256": "2556c9cf91219ff9acc3075560d4cf3c5384af5f07332170821ccc7b3bb32c6a"
+      "sha256": "5a835f58f1c184c99aa2a97f321ac7a9280079983bd5e031bb9730aa43e790a5"
     },
     {
       "path": "drivers/pinctrl/mediatek/pinctrl-mtk-mt6572.h",
@@ -557,7 +587,47 @@
     {
       "path": "drivers/soc/mediatek/y1-deep-idle.c",
       "source": "kernel/y1/deep-idle.c",
-      "sha256": "8156b7d4990b81a4dd974ff7977af487e906bbe56c9461c97b2a9c1958c81236"
+      "sha256": "07b0a1f7420be735215c9d84f96379af8dcbb86ed6db70b85794a2681f919e79"
+    },
+    {
+      "path": "drivers/soc/mediatek/suspend-pcm.h",
+      "source": "kernel/y1/suspend-pcm.h",
+      "sha256": "8ebfa4c2dd2e5407d50e155974b7ed0e8edba986424c5879dfb86e138c3288a4"
+    },
+    {
+      "path": "drivers/soc/mediatek/sleep.h",
+      "source": "kernel/y1/sleep.h",
+      "sha256": "afa5b7304071daf353e1c13accf4e4d8ac3e8a40fca405df4d4554ed99d1549a"
+    },
+    {
+      "path": "drivers/soc/mediatek/pm-journal.h",
+      "source": "kernel/platform/pm-journal.h",
+      "sha256": "9acfc42effc3d7839fd3b7045d73331d135f79596d09c74959298e4315d8adc0"
+    },
+    {
+      "path": "drivers/soc/mediatek/pm-journal-policy.h",
+      "source": "kernel/platform/pm-journal-policy.h",
+      "sha256": "4d3a132f2f5c5f25fcbf0180a888791db91531ba39bf2bea054a30f81487d20e"
+    },
+    {
+      "path": "drivers/soc/mediatek/y2-pm-journal.c",
+      "source": "kernel/platform/pm-journal.c",
+      "sha256": "bcc23150da4b52234efedb851deffcd2d759a9ebdcbbed22b56fe16a2cc8cdf5"
+    },
+    {
+      "path": "drivers/soc/mediatek/y1-pm-journal.c",
+      "source": "kernel/y1/pm-journal.c",
+      "sha256": "3176178551c1259fead1e46ff2911747cb5c6412aa7cbeda973a21908aeea5dd"
+    },
+    {
+      "path": "drivers/soc/mediatek/y1-resume-vector.S",
+      "source": "kernel/y1/resume-vector.S",
+      "sha256": "65cbfe796ea36715f5200b2503815a1cbdcf4aec0615b3d2854fa7734a8e2c61"
+    },
+    {
+      "path": "drivers/soc/mediatek/workload.c",
+      "source": "kernel/platform/workload.c",
+      "sha256": "0c6b1a042ab90b4f927fb9ef957ae01bd12990541707835310b69fe1bf0b211c"
     }
   ]
 }

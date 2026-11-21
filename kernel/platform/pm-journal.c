@@ -31,7 +31,12 @@
 #include <linux/sched/debug.h>
 #include "pm-journal.h"
 #include "pm-journal-policy.h"
+/* The Y1 build includes this file from kernel/y1/pm-journal.c with its own region, machine and retention. */
+#ifndef Y2_PM_PHYS
 #define Y2_PM_PHYS 0x0010dc00
+#define Y2_PM_MACHINE "innioasis,y2"
+#define Y2_PM_RETENTION "stock_internal_sram_warm_reset"
+#endif
 static void __iomem *journal;
 static unsigned journal_record[Y2_PM_WORDS], previous[Y2_PM_WORDS], slot;
 static unsigned previous_reset_entry;
@@ -300,7 +305,7 @@ static ssize_t emit_record(char *buf, unsigned *record, unsigned reset)
 {
 	return sysfs_emit(
 		buf,
-		"valid=%u sequence=%u stage=%s failed_stage=%s error=%d wake=%#x r13=%#x raw=%#x pcm_pointer=%#x pcm_length=%u wake_mask=%#x boot_vector=%#x boot_enable=%#x cirq=%#x fsm=%#x power=%#x power_s=%#x rtc_enable=%#x pmic_mask0=%#x pmic_mask1=%#x pmic_status0=%#x pmic_status1=%#x reset_resume_entry=%#x sleep_timer=%u watchdog_timer=%u pcm_control1=%#x clock_control=%#x ca7_cache_config=%#x retention=stock_internal_sram_warm_reset\n",
+		"valid=%u sequence=%u stage=%s failed_stage=%s error=%d wake=%#x r13=%#x raw=%#x pcm_pointer=%#x pcm_length=%u wake_mask=%#x boot_vector=%#x boot_enable=%#x cirq=%#x fsm=%#x power=%#x power_s=%#x rtc_enable=%#x pmic_mask0=%#x pmic_mask1=%#x pmic_status0=%#x pmic_status1=%#x reset_resume_entry=%#x sleep_timer=%u watchdog_timer=%u pcm_control1=%#x clock_control=%#x ca7_cache_config=%#x retention=" Y2_PM_RETENTION "\n",
 		y2_pm_valid(record), record[1], stage_name(record[2]),
 		stage_name(record[3]), (int)record[4], record[5], record[6],
 		record[7], record[8], record[9], record[10], record[11],
@@ -817,7 +822,7 @@ static int __init journal_init(void)
 	unsigned a[Y2_PM_WORDS], b[Y2_PM_WORDS], i;
 	struct kobject *k;
 	int ret;
-	if (!of_machine_is_compatible("innioasis,y2"))
+	if (!of_machine_is_compatible(Y2_PM_MACHINE))
 		return -ENODEV;
 	if (!request_mem_region(Y2_PM_PHYS, Y2_PM_REGION, "y2-suspend-journal"))
 		return -EBUSY;

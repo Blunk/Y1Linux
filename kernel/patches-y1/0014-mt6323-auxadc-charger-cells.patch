@@ -23,3 +23,21 @@
  		.name = "mt6323-rtc",
  		.num_resources = ARRAY_SIZE(mt6323_rtc_resources),
  		.resources = mt6323_rtc_resources,
+@@ -431,11 +447,17 @@
+ };
+ MODULE_DEVICE_TABLE(platform, mt6397_id);
+ 
++/* Child keys/RTC arm their IRQs during suspend. Only then apply wake masks.
++ * PM_SUSPEND_PREPARE runs too early and would mask the first wake event. */
++static const struct dev_pm_ops mt6397_pm_ops = {
++	SET_LATE_SYSTEM_SLEEP_PM_OPS(mt6323_irq_suspend, mt6323_irq_resume)
++};
+ static struct platform_driver mt6397_driver = {
+ 	.probe = mt6397_probe,
+ 	.driver = {
+ 		.name = "mt6397",
+ 		.of_match_table = mt6397_of_match,
++		.pm = pm_sleep_ptr(&mt6397_pm_ops),
+ 	},
+ 	.id_table = mt6397_id,
+ };
