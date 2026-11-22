@@ -1003,6 +1003,8 @@ class Y1WifiW6(unittest.TestCase):
         path.chmod(mode)
         # ls -ln names uid 0 only for root: stand in for it with the caller's uid.
         body = self.function('wifi_record').replace('"-rw------- 0 512"', f'"-rw------- {__import__("os").getuid()} 512"')
+        # A host with SELinux (GNU ls) marks the mode with a trailing '.'; the player's BusyBox ls does not.
+        body = body.replace('set -- $(ls -ln "$WRECORD")', 'set -- $(ls -ln "$WRECORD" | sed "s/^\\(.\\{10\\}\\)[.+]/\\1/")')
         run = subprocess.run(['sh', '-c', f'C={core}\nWRECORD={path}\n{body}wifi_record'], capture_output=True)
         return run.returncode, (core / 'wifi_factory').read_bytes()
 
@@ -1142,7 +1144,9 @@ class Y1WifiW3(unittest.TestCase):
             'CONFIG_WIRELESS=y', 'CONFIG_CFG80211=y', 'CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y',
             'CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS=y', 'CONFIG_BT_INNIOASIS_Y1_WIFI=y', 'CONFIG_PACKET=y'}, lines)
         self.assertNotIn('# CONFIG_WIRELESS is not set', lines)
-        self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-production.list"', lines)
+        # Since recovery R4 both images also carry the installer (tools/build/y1_installer.py).
+        self.assertIn('CONFIG_INITRAMFS_SOURCE="/project/initramfs/y1-production.list /build/installer/y1-installer.list"',
+                      lines)
 
 
 class Y1FmProcAsound(unittest.TestCase):
