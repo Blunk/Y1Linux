@@ -1,0 +1,1417 @@
+# Y1 power (system milestone D)
+
+> Part of the [single Y1 build](../knowledge/y1-hardware.md#single-build--2026-11-09). The step builds named
+> below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
+> on the player; their files are folded into that build.
+
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). **D7c** VPROC sleep voltage: button and timer wakes at 0.85 V PASS on the owner's Y1; a night asleep -2.1 %/h, the sleep voltage's own saving not measurable ([§19](#19-d7c-vproc-sleep-voltage--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
+Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
+`busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
+low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
+has its own admission.
+
+## 1. Evidence
+
+Offline analysis of the stock 3.0.2 kernel (agent notes `out/y1-power-notes.md`; "CONFIRMED" means seen in the
+image's code or data, not on the device) and of the Y2's tree.
+
+- **The Y1 has no power button.** The centre button is the MT6323 power key (`docs/knowledge/y1-hardware.md`),
+  so it is also the only way to switch on from off, apart from plugging in USB.
+- **Stock power-off** (`mt_power_off` c03a8c34, CONFIRMED): `rtc_bbpu_power_down` unlocks the RTC write
+  interface (`0x8036` = `0x586a`, then `0x9136`, each followed by a write trigger), sets bit 5 of `RTC_CON`
+  `0x803e` if `PDN1` `0x802c` & `0x1f00` is zero, then writes **BBPU `0x8000` = `0x4309`** (key `0x43`,
+  `PWREN` and `AUTO` kept, bit 2 cleared so the power line drops) and triggers (`WRTGR` `0x803c` = 1, poll
+  `0x8000` bit 6). It then loops; while a charger is present (`CHRDET`) it takes a watchdog reset in
+  auto-restart mode, and LK presumably enters its power-off charging mode (LK path not traced, INFERRED).
+- **Mainline power-off** (`drivers/power/reset/mt6323-poweroff.c`, the Y2's production path with the Y2's
+  patch 0027, which checks the write and polls atomically): BBPU = `0x4300`, `WRTGR` = 1, poll. No unlock.
+  The Y2 (same PMIC) powers off with it (full power-off retention in
+  `docs/knowledge/hardware-final-power-evidence.md`). Whether the Y1's LK leaves the RTC write interface
+  unlocked as the Y2's does is **unknown**; stage D0 reads it.
+- **The Y2's charger-present power-off** (`y2_charger_power_off`, the RGU "charger" reset and LK reason 3, behind
+  `innioasis,rgu`) is deliberately absent from the Y1 tree. Stock's Y1 path is the same kind of watchdog reset,
+  but the Y1 LK's charging mode is unverified.
+- **Stock battery gauge** (`oam_run`, CONFIRMED): software fuel gauge on OCV tables, temperature fixed at
+  25 °C, three battery IDs chosen by AUXADC channel 0 (< 0.6 V id 0, < 0.8 V id 1, else id 2; which one the
+  Y1 reads is UNRESOLVED, id 0 likely). Id 0: 4320 mV full … 3417 mV empty (full table in the notes),
+  Q_MAX 1200 mAh. Power-off voltage 3400 mV; the kernel only drops the shown percentage to 0 and Android shuts
+  down (INFERRED); the PMIC low-battery interrupt is unused.
+- **The curve is for a 4.35 V cell**, as the charging plan found (stock CV 4.325 V). The Y1 charges to
+  4.175 V under Linux, which on the id 0 curve is about 87 %.
+- **The Y2's power daemon** (`y2-platform power-daemon`, `S04y2-power`): reads `BAT0` once a second,
+  estimates SOC from `/etc/y2linux/battery-profile.json` (schema 1, ascending `[uV, %]` rows; invalid profile
+  = no estimate), applies `/etc/y2linux/power-policy.json` (critical/low/recover 3.4/3.5/3.6 V, 5 samples,
+  10 s grace), and owns shutdown: `/sbin/poweroff` and `/sbin/reboot` are its socket clients. Its shutdown
+  steps write `BAT0/watchdog_powers_off` and open `/dev/watchdog`; the first does not exist on the Y1 (no
+  `innioasis,rgu`). It needs AF_UNIX and `/run/y2`; `/data` is optional. PID1 already copies
+  `etc/y2linux` overrides from `initramfs/y1-system`.
+- **Stock CPU DVFS** (`mt_cpufreq_target`, CONFIRMED): OPPs chosen by efuse devinfo[18] bits 9:8; on every
+  level **598, 806 and 1001 MHz run at 1150 mV**; 1209 and 1300 MHz need 1250 mV. A rate change moves the CPU
+  mux (`0x10001000` bits 3:2) to a temporary source, reprograms `ARMPLL_CON1` `0x10205104`, waits 40 µs and
+  moves back. VPROC (MT6323 `0x220`) is changed only through SPM DVFS slots. Idle: WFI, multi-core idle and
+  SPM deep idle.
+- **Mainline 6.18**: `mediatek-cpufreq` has no MT6572 entry; `cpufreq-dt` would bind the fork's dtsi
+  automatically, ignore `opp-supported-hw` (offering 1209–1404 MHz) and reprogram ARMPLL with the CPU still
+  on it. The fork's `mediatek-cpufreq` has an `mt6572` entry that parks the CPU on `MPLL_D2` during the
+  relock. The Y1 PMIC wrapper's write policy does not cover VPROC or the RTC block.
+
+## 2. Stages
+
+| Stage | What | Image |
+| --- | --- | --- |
+| **D0** | Read-only baseline over SSH: RTC `0x8000`, `0x8036`, `0x802c`, `0x803e`; VPROC `0x220`; efuse speed bin; `0x10001000`, `ARMPLL_CON1`; AUXADC channel 0 (battery ID) | none |
+| **D1** | Power-off on battery, then observed with USB attached | fifteenth boot |
+| **D2** | Battery percentage and low-battery shutdown: the Y2's power daemon with a Y1 profile and policy | sixteenth boot |
+| **D3** | CPU frequency scaling 598/806/1001 MHz at LK's fixed VPROC | seventeenth boot |
+| **D4** | Tick: the Cortex-A7 architected timer, tickless idle, high-resolution timers; the GPT as broadcast | `out/y1-boot-d4` |
+| **D5** | CPU1 hotplug with power-off through the SPM's `FC1_PWR_CON` sequence; CPU1 off while the screen is dark | `out/y1-boot-d5b` |
+| **D6** | SPM deep idle on CPU0 alone: stock's dpidle firmware, CPU0 dormant, L2 retained, GPT wake, VPROC 1.05 V through the PWRAP DVFS slot (no effect: LK leaves VPROC in software mode, §19); the Y2's coordinator (§17) | admitted, D6a–D6d |
+| **D7** | Suspend: stock's suspend firmware (D7b), MT6323 sleep mode (VPROC 0.85 V when SRCLKEN drops, D7c) | D7b on at boot; D7c admitted (§19) |
+
+D1 comes first because D2's low-battery shutdown is worthless without a real power-off. D3 is last and
+riskiest: it reprograms the CPU's own PLL.
+
+## 3. D0 — baseline
+
+Reads only, with the means used for the audio stage A baseline; no build, no flash. It decides: whether
+mainline's unlocked BBPU write can work (`0x8036` state), that VPROC is at 1150 mV (`0x220` = `0x48`) before D3,
+the efuse level, and the battery ID for D2's table.
+
+## 4. D1 — power-off
+
+- Kernel: the fourteenth fragment plus `POWER_RESET`, `POWER_RESET_MT6323`; the Y2's patch 0027 copied into
+  `kernel/patches-y1` (manifest hashes); a `power-controller { compatible = "mediatek,mt6323-pwrc"; }` node
+  under the PMIC. No RTC driver, no RGU, no `innioasis,rgu`.
+- PMIC writes at power-off only: BBPU `0x8000` = `0x4300`, `WRTGR` `0x803c` = 1 (the Y2's values).
+- Test 1 (battery): over SSH, `nohup sh -c 'sleep 20; sync; busybox poweroff' &`, then unplug USB. Expect the
+  screen and backlight off within 30 s. After 10 minutes, a long press of the centre button boots LK and Linux;
+  the boot OCV and `BAT0` voltage are compared with the value before (a halted-but-on player drains visibly).
+- Test 2 (USB attached): the same with USB left in. Recorded only: stays off, restarts, or LK charging mode.
+  No code follows from it in D1; a charger-present path is its own later admission.
+- If the player does not switch off (D0 shows the RTC interface locked, or the write does not take), the
+  fallback is stock's unlock sequence, which is a new admission. Recovery is a USB plug or the watchdog.
+
+## 5. D2 — battery percentage and low-battery shutdown
+
+- `initramfs/y1-system/etc/y2linux/battery-profile.json` from the stock table for the D0 battery ID,
+  `provisional: true`, `source` naming the stock address. **Owner choice:** keep stock's curve (a full Linux
+  charge shows about 87 %) or rescale the window 3417–4175 mV to 0–100 % (recommended: the shown percentage then
+  means the usable charge). `design_capacity_uah` from Q_MAX.
+- `power-policy.json`: the Y2's schema-2 values (critical 3.4 V = stock's power-off voltage), provisional.
+- `S04y2-power` added to `y1-services`. Before the build, the daemon's shutdown steps are audited for the Y1:
+  a missing `watchdog_powers_off` or `S90reborn`/`S41y2-connectivity` must be skipped, not abort the shutdown;
+  if the daemon fails closed there, a narrow tolerance is the code change (Y2 behaviour unchanged, test added).
+- Test: `y2-platform` power status shows voltage and SOC; `/sbin/poweroff` through the daemon powers off as
+  in D1; the low-battery path with a synthetic policy override (critical above the present voltage) in
+  `/run`, not by draining the pack; charging keeps working.
+
+## 6. D3 — CPU frequency scaling
+
+- Precondition: D0 reads VPROC at 1150 mV. All three admitted rates are 1150 mV on every efuse level, so **no
+  voltage change**: the `proc` supply is a fixed 1.15 V regulator with no hardware behind it.
+- Driver: the fork's `mediatek-cpufreq` MT6572 entry ported as a `patches-y1` overlay (intermediate
+  `MPLL_D2` during the relock); `cpufreq-dt` kept off. A Y1 OPP table with only 598000, 806000 and 1001000 kHz;
+  default governor `schedutil`; no `CPU_IDLE` (WFI stays the idle).
+- Test: `scaling_available_frequencies` lists the three rates; each set with `userspace` and checked through a
+  timed loop and `ARMPLL_CON1`; a ten-minute load on both cores with the governor switching; charging,
+  display, audio and SSH unaffected. A hang ends in the watchdog reset.
+
+## 7. Risks
+
+A power-off that only halts (D1 checks the drain). With USB attached, the PMIC may re-power the player or
+leave it off without charging (D1 test 2 only observes). The wrong battery ID gives a wrong percentage
+(D0 reads it; the profile is provisional). A PLL relock fault hangs the CPU (watchdog reset; the image is
+undone by restoring the fourteenth boot).
+
+## 8. Out of scope
+
+VPROC scaling of a running CPU and rates above 1001 MHz (deep idle and suspend are planned in §16, each with its
+own admission), the RGU/LK charging-mode path, an RTC driver and clock, the Y2DATA partition (milestone B) and the player UI (milestone E).
+
+## 9. Admission
+
+| Stage | Item | Bound |
+| --- | --- | --- |
+| D0 | **Read the power registers** | reads only, listed in §2; no write, no image |
+| D1 | **Power off the PMIC** | BBPU `0x4300` and `WRTGR` 1 at power-off only, mainline's driver with the Y2's patch 0027; no RTC unlock, no RGU, no other PMIC write |
+| D2 | **Run the power daemon** | Y2 daemon unchanged except a tolerance for missing Y2-only files; Y1 profile and policy in the RAM overlay; shutdown through D1's path only |
+| D3 | **Scale the CPU clock** | 598/806/1001 MHz only, CPU mux and ARMPLL through the fork's driver with the intermediate clock; no VPROC or other PMIC write |
+| D4 | **Tickless idle** | kernel configuration only (arch timer, `NO_HZ_IDLE`, `HIGH_RES_TIMERS`); no register write outside the timers' own drivers; BOOTIMG only |
+| D5 | **Power CPU1 off** | stock's `FC1_PWR_CON`/`CPU_FC1_L1_PDN` sequence and `BOOT_SLV_CFG`/`ADDR` (§16); CPU1 only, every poll bounded |
+| D6 | **Deep idle on CPU0** | §17, D6a–D6d as bounded there; admitted by the owner 2026-11-16 |
+
+## 10. D0 result — 2026-11-05
+
+Owner-approved. Fourteenth boot over SSH, reads only: PMIC registers by offset from the regmap debugfs file
+(the full dump reads every PMIC register and took over a minute, so it was stopped), MMIO with `devmem`
+(`evidence-private/2026-11-05-y1-power-d0/regs.txt`). Battery 3.846 V, not charging.
+
+| Read | Value | Meaning |
+| --- | --- | --- |
+| RTC_PROT `0x8036` | `0x9136` | the second unlock key: LK left the RTC write interface unlocked (INFERRED from the stock sequence) |
+| BBPU `0x8000` | `0x000d` | `PWREN`, power line on (bit 2), `AUTO` |
+| PDN1 `0x802c` / RTC_CON `0x803e` | `0x0000` / `0x0426` | stock's `RTC_CON` bit 5 already set; nothing to add before the BBPU write |
+| VPROC VOSEL `0x21e`–`0x224` | `0x48` each | **1150 mV** ((0x48 × 6.25) + 700): D3's precondition holds |
+| Efuse `0x10009180` | `0x2800` | speed bin (bits 9:8) **0**: stock's widest table (up to 1300 MHz); the fork's offset (INFERRED as stock's devinfo[18]) |
+| CPU mux `0x10001000` | `0x4` | bits 3:2 = 1: the CPU runs from ARMPLL |
+| `ARMPLL_CON1` `0x10205104` | `0x0009a000` | PCW `0x9a000`, post-divider /1: **1001 MHz** (26 MHz × PCW / 2^14), with the VCO at 1001 MHz |
+| Battery ID (AUXADC ch 0) | not read | the Y1 IIO device exposes channels 4–7 and the die temperature only; a conversion needs a write, outside D0 |
+
+Consequences: **D1** can use mainline's unlocked BBPU write as on the Y2. **D2** uses battery id 0 (provisional; the
+ids differ mainly in the last few percent: empty at 3417, 3400 or 3327 mV). **D3** needs no voltage change, but
+LK runs ARMPLL at /1 with its VCO at the bottom of the fork's 1000–1800 MHz range; 598 and 806 MHz need the /2
+post-divider (VCO 1196 and 1612 MHz), as stock's formula does, so the driver's PLL path must be checked for that.
+
+## 11. D1 build — 2026-11-05
+
+Owner-approved. `kernel/config/y1-fifteenth-boot.config`: the fourteenth fragment plus `POWER_RESET`,
+`POWER_RESET_MT6323` (no `RTC_CLASS`); `kernel/patches-y1/0030-mt6323-poweroff-atomic.patch`, the Y2's 0027
+byte for byte (manifest hashes as the Y2's); `innioasis-y1-fifteenth-boot.dts`: the fourteenth tree plus
+`power-controller { compatible = "mediatek,mt6323-pwrc"; }` under the PMIC; PID1 and initramfs as the fourteenth
+(`y1-init` `f00d5397…` unchanged). Build `out/y1-fifteenth-boot-1`, BOOTIMG sha256
+`716f0c69210f7232c9cc70331ac366d16b74affe53d6ea7633ed8a953c17197e` (`0x323000` bytes).
+
+## 12. D1 run — 2026-11-05
+
+The image as flashed reports `6.18.56-y1-fourteenth-boot`: the fifteenth fragment kept the fourteenth's
+`CONFIG_LOCALVERSION` (cosmetic; the device tree model reads "fifteenth-boot"). `mt6323-pwrc` bound; no new warning.
+SSH host keys are new at every boot (RAM, as planned until milestone B), so each boot replaces the entry in
+`out/y1-ssh/known_hosts`.
+
+- **Test 2, USB attached** (the owner did not unplug in time; `evidence-private/2026-11-05-y1-power-d1-*`):
+  `busybox poweroff` at 16:05:06; the player came straight back: Innioasis logo, Linux booting, SSH up about 15 s
+  later. No charging screen. The boot OCV read the same 3.852 V as the boot before, so the PMIC most likely
+  never lost power (INFERRED). With a charger present the mainline path is a restart, not an off state; the
+  stock path (a watchdog reset into LK's charging mode) is the later, separately admitted option.
+- **Test 1, battery only:** `busybox poweroff` at 16:11:02 with USB unplugged; the screen went dark and the
+  player stayed off. The owner held the centre button at about 16:13:50 (about 3 minutes off, not the planned 10);
+  it switched on through LK into Linux. The PMIC had really been off: the boot OCV register was sampled
+  afresh (`0x724` `0xc979` before, `0xc476` after; `voltage_ocv` 3.852 V before, 3.858 V after, the pack
+  rested), BBPU back at `0x000d`. Charging normal on that boot (450 mA source, no fault).
+  **Power-off on battery: PASS.**
+- **Unrelated finding, the charger:** on the first boot of this image the charger latched `fault=0x1` (I/O) at
+  5.4 s, `charger inhibit not verified: -1` (the Y1 PMIC wrapper's policy refused a write of the stop
+  sequence, `-EPERM`); the following stop succeeded (`stop_error=0`), but the fault stays latched until the
+  cable is removed, so the player did not charge on that boot. The next boot charged normally (450 mA
+  source, no fault). D0's "Not charging" on the fourteenth boot is likely the same. Open: which register was
+  refused (the driver reports only the error code).
+
+## 13. D2 build — 2026-11-05
+
+Owner-approved ("make the power daemon D2"); the percentage choice is the plan's recommendation (rescaled,
+like the Y2's own profile, which also ends at 4.175 V = 100 %).
+
+- **Profile** (`initramfs/y1-power/etc/y2linux/battery-profile.json`, provisional): stock battery id 0, DOD → SOC,
+  rescaled so 4.175 V (stock 87.3 %) is 100 %: 23 rows from 3.417 V = 0 % (checked against the daemon's
+  `ascending_table` rules: 2–128 rows, strictly ascending voltage and SOC, 0 and 100 at the ends);
+  `design_capacity_uah` 1048000 (Q_MAX 1200 mAh × 0.873); no resistance table (stock's `r_profile` not extracted);
+  the Y2's filter, rest and offset values.
+- **Policy** (`power-policy.json`, provisional): the Y2's values; the 3.4 V floor is also stock's Y1 power-off
+  voltage.
+- **Audit of the daemon's shutdown on the Y1** (`coordinator/steps.rs`): every step records its result and
+  continues. `watchdog_powers_off` fails (no `innioasis,rgu`: "powers_off_unavailable") and `/dev/watchdog` is
+  armed: a stalled shutdown ends in a **restart**, not off. `long_press_reset` is absent (step fails, harmless).
+  `S90reborn stop` (the Y2's) finds no supervisor; the daemon then kills `reborn` by identity. The radio stops
+  find no Y1 radio (rfkill and `18070000.connectivity` absent; `bluetoothctl` without D-Bus). The daemon assumes
+  the Y2's 31 s watchdog; the Y1's is 15 s (the fork's `timeout-sec`): the shutdown's duration is measured
+  before deciding whether that matters.
+- **Scripts:** `S03y1-data` creates Reborn's RAM `/data` before `S04y2-power` (its journals live there);
+  `S90y1-reborn` keeps a `data` action and stops restarting Reborn once `/run/y2/shutdown.json` exists. PID1
+  installs the three new files under `Y1_TWENTIETH_BOOT`; the service list gains `S03y1-data S04y2-power`.
+- Kernel unchanged (the nineteenth's config and tree, new names). Build `out/y1-twentieth-boot-1`, BOOTIMG sha256
+  `335369e9a0ad18600319e128fc8fb2ddd31b98738b27f327672800a7a49c9449` (`0x33a800` bytes).
+
+## 14. D2 run — 2026-11-05
+
+`evidence-private/2026-11-05-y1-power-d2/`. Twentieth boot (build 1): the daemon runs under `platform-supervise`;
+`/run/y2/power.json`: 94 %, charging, `voltage_estimate`, provisional, 976 mAh of 1048 mAh; the owner sees the
+percentage and the charging mark in Reborn. Reborn's Settings have no Restart or Power Off in this version (they
+are on the "service" page that the Y2 opens with its power key, absent on the Y1), so the shutdown tests used
+`/sbin/reboot` (the daemon's client), USB attached:
+
+- **Restart 1:** intent pending at once; no acknowledgement, so the 10 s grace ran out; the 13 steps then ran in
+  about 0.2 s (watchdog armed; failed harmlessly: the two Y2 boot-journal steps, `long_press_reset` absent;
+  `watchdog_powers_off` not attempted for a restart); the player came back into Reborn by itself. The owner saw
+  Reborn's shutdown screen. **The shutdown is far inside the Y1's 15 s watchdog; no timeout change needed.**
+- **Restart 2**, Reborn's log recorded too: Reborn presented its shutdown transition (75 frames) and its
+  acknowledgement was refused, `ack_client_identity_changed`: the daemon accepts it only from the pid in
+  `/run/reborn/process.pid`, which the Y2's `reborn-supervise` writes and `S90y1-reborn` did not. Fix: the Y1 loop
+  starts Reborn in the background, writes its pid there, waits and removes it.
+- **Restart 3** (the fix installed live): acknowledgement `Ready` 3.1 s after the request; the steps followed at
+  once. Rebuild `out/y1-twentieth-boot-2`, BOOTIMG sha256
+  `e2621cf1199142292da82b9edf12cab68b288916700a66a3279c06c270d13236` (`0x33a800` bytes).
+
+## 15. Baseline tools and D3 build — 2026-11-15
+
+Owner-approved ("do the baseline script and D3 build").
+
+- **Drain baseline** (before D3 is flashed, so the two can be compared): `tools/development/y1-power-baseline.py
+  start <label>` copies `tools/development/y1-power-log.sh` to `/data/power-baseline/` and starts it detached; it
+  waits for the USB cable to be pulled, samples every 60 s (BAT0 voltage, the daemon's filtered voltage and
+  percentage, the charger's unvalidated sense-resistor estimate, backlight, `/proc/stat`, cpu0 rate, wlan0) and
+  stops when the cable returns, at 3.50 V or after the hour limit. `report` fetches the TSV and prints the
+  voltage and percentage slopes, CPU busy share and screen-on share. Reads only; the one write is the TSV.
+  Dry run on the owner's Y1 (fake USB flag, `/tmp`): every column filled.
+- **Kernel**: `kernel/patches-y1/0042-mt6572-cpufreq.patch` adds an `mediatek,mt6572` entry to mainline's
+  `mediatek-cpufreq` (1.15 V ceiling, no SRAM rail, no CCI); the fragment gains `CPU_FREQ`, `CPU_FREQ_STAT`, the
+  schedutil default and the performance/powersave/userspace governors; `CPUFREQ_DT` stays off.
+- **Deviations from §6**: (1) the intermediate parent is the **26 MHz crystal** (`cpu_mux` parent 0), not the fork's
+  `mpll_d2`: MAINPLL's rate depends on the DRAM type and was never read on the Y1, so its half could exceed
+  1001 MHz. (2) ARMPLL gets its own post-divider table (`clk-mt6572-apmixedsys.c`, `y1_armpll_div_table`): with the
+  shared table clk-pll would relock 1001 MHz at /2 with a 2002 MHz VCO; now 1001 MHz is /1 (PCW `0x9a000`, LK's
+  value), 806 and 598 MHz /2 (VCO 1612/1196 MHz, PCW `0xf8000`/`0xb8000`, exact). WHPLL (GPU) keeps the shared
+  table. (3) the fork's OPP table (with `opp-supported-hw` but no speed-bin reader, which would drop every OPP) is
+  not used: `y1_cpu_opp_table` lists 598/806/1001 MHz at 1.15 V. (4) VPROC is a `regulator-fixed` "vproc" at
+  1.15 V (always-on, not boot-on: the packaging check forbids it), admitted in `y1_package.REGULATORS`.
+- **RECOVERY** carries the same tree (the packaging invariant: it differs only in bootargs and write windows). The
+  D3 test writes **BOOTIMG only**, so the installed RECOVERY stays the fallback at LK's fixed rate.
+- Build `out/y1-boot-d3` (Y2ROOT `out/y1-root-asound`), BOOTIMG sha256
+  `c3af5551b9e2e0ee17fca391b071ba1b896a2c2e986a89a5d97539f6180fe5b8`, RECOVERY
+  `bc50a248b661ca6a75b246b68ff0f1fab4cea2a94976b7feec719dcf580f6ab3`. Not flashed.
+- **Test** (`tools/development/y1-cpufreq-check.sh`, over SSH): driver `mtk-cpufreq` on policy0 with CPUs 0–1; the
+  three rates set with `userspace`, each read back from sysfs and decoded from `ARMPLL_CON1` with the mux on
+  ARMPLL, a fixed shell loop timed at each; optional soak (both cores busy, governor alternating, 10 minutes);
+  ends on schedutil. Then charging, display, audio, Wi-Fi and SSH as usual, and a drain run with the same label
+  as the baseline.
+
+First idle run (old kernel, 2026-11-15, `out/power-baseline/idle-screenoff-wifi-on-bt-on-20261115-125559.tsv`):
+started at 3.63 V, already at the daemon's 2 %, and hit the 3.50 V stop after 0.72 h (-190 mV/h in the cell's
+tail). Not usable as a drain baseline; the one number that stands is idle CPU busy at 2.9 % (both cores,
+screen off, Wi-Fi and BT on). The player then ran on until it went flat and cold-booted on replug.
+`start` now refuses below 3.9 V without `--force`. Rerun from a full charge.
+
+D3 on the player (2026-11-15, BOOTIMG `c3af5551…` written with mtkclient, RECOVERY unchanged):
+`y1-cpufreq-check.sh` with a 10-minute soak **PASS**. mtk-cpufreq binds both cores; 598/806/1001 MHz each set,
+read back and decoded from ARMPLL_CON1 (1001 MHz `0x8009A000` at /1, 806 MHz `0x810F8000` and 598 MHz `0x810B8000`
+at /2), mux 1 throughout. A fixed shell loop takes 6.78 / 8.47 / 11.42 s, in proportion to the rate. 1092 governor
+transitions under load, no fault; schedutil settles at 598 MHz when idle. Charging, Wi-Fi, Bluetooth, audio card
+and Reborn as before; the kernel log has only the known boot messages. The drain comparison was dropped (owner).
+
+## 16. Idle states, D4–D7 — 2026-11-15
+
+The owner chose idle states over VPROC scaling for D4 onward. Stock runs 598, 806 and 1001 MHz at 1150 mV on
+every speed bin, so a lower running VPROC has no vendor basis (and the Y2 forbids unmeasured undervolting);
+stock's power saving is in idle and sleep.
+
+**Evidence (MediaTek's 3.4.5 GPL drop, `drsami/mt6572_kernel` `c4b775c`, `mediatek/platform/mt6572/kernel/core/`;
+read, not built):**
+
+- `mt_idle.c` tries MCDI, then deep idle (dpidle), then WFI. MCDI/SODI is compiled out (`SPM_MCDI_FUNC`
+  commented, `spm_mcdi_init` not registered), so stock uses **WFI and dpidle only**.
+- dpidle needs **exactly one online CPU** (CPU1 hotplugged out), a clock mask that blocks on the UARTs, USB,
+  APDMA, I2C, PWM, display/camera/MDP CGs and others (MSDC, thermal and AUXADC excluded), and at least
+  54 500 13-MHz ticks (about 4.2 ms) to the next timer. It moves AUD_INTBUS to 26 MHz, enables the PWRAP's
+  clock, arms GPT4 as the wake timer (the arch timer stops), clones the GIC into CIRQ, loads the 493-word
+  `spm_pcm_dpidle` firmware and powers CPU0 down in DORMANT mode (L1 flushed, L2 retained).
+- The dpidle firmware selects PWRAP DVFS slot 2 (`AP_DVFS_CON_SET` `0x10006604`), **VPROC 1.05 V** (`0x220` =
+  `0x38`), on entry and slot 1 (1.15 V) on exit. Stock programs the slots in `mt_cpufreq_pdrv_probe`: 0 =
+  1.25 V, 1 = 1.15 V, 2 = 1.05 V, 6/7 = `TOP_CKPDN0` set/clear.
+- Suspend uses the 576-word `spm_pcm_suspend` (CPU and infra off, 26 MHz off); VPROC then falls to **0.85 V** by
+  the MT6323's own sleep mode (`0x222` `VPROC_VOSEL_SLEEP` `0x18`, `0x230[8]` `VSLEEP_EN`, `0x216[1]`,
+  `0x120[4]` `SRCLKEN_HW_MODE`), not by DVFS.
+- CPU1 power-off: `spm_mtcmos_ctrl_cpu1` through `FC1_PWR_CON` (`0x10006218`) with `CPU_FC1_L1_PDN` (`+0x264`),
+  status bit 11 in `PWR_STATUS`/`PWR_STATUS_S` (`+0x60c`/`+0x610`); power-up through `BOOT_SLV_CFG`/`ADDR`
+  (`0x10001400`).
+- SPM: base `0x10006000`, key `0x0b16 << 16`, IRQs SPI 72/73; load and kick in `spm_init_pcm`/`spm_kick_pcm`.
+
+**Measured on D3 (old tick):** idle with the screen off wakes CPU0 100 times a second (GPT `timer@10008000`)
+and CPU1 100 times through broadcast IPIs, plus about 55 IPIs and 11 MUSB interrupts a second with USB
+attached. `CONFIG_ARM_ARCH_TIMER` was off, inherited from the Y2's first-boot fragment with no Y1 reason; the
+fork dtsi already has the `arm,armv7-timer` node at 13 MHz.
+
+**Stages:**
+
+- **D4 — tick.** Arch timer, `NO_HZ_IDLE`, `HIGH_RES_TIMERS` (as the Y2's production fragment); the GPT stays
+  registered as the broadcast device D6 will need. Configuration only. Test: boots; `current_clocksource` and
+  `/proc/timer_list` show `arch_sys_counter` and per-CPU `arch_sys_timer`; idle interrupt rate well below
+  100/s per CPU; `sleep 10` takes 10 s against the host; audio, Wi-Fi, Bluetooth, charging and cpufreq as on D3.
+  Build `out/y1-boot-d4` (Y2ROOT `out/y1-root-asound`), BOOTIMG sha256
+  `8d310738e8e5af54284ce119e7fcc4b9d3c3bfd1efa181bc8e86fd1ee7c6a5dd`. The fragment's old
+  `# CONFIG_HIGH_RES_TIMERS is not set` (kept only because the periodic tick was the qualified state) is gone;
+  flash BOOTIMG only, as for D3.
+- **D4 run (2026-11-15): boot loop.** After the logo the preloader enumerates, the kernel's USB gadget never
+  does, and the watchdog restarts the player: an early hang. D3's BOOTIMG was written back. Cause (INFERRED, no
+  console): the arch counter does not run. Mainline's `mediatek_timer_init` enables GPT6 to ungate the arch
+  timer only on MT6589/MT7623/MT8135/MT8127, and the Y2 needed `kernel/platform/local-timer.c` (stock's
+  `mt_gpt_init`/`ca7_timer` contract with a counter check and a GPT fallback) for the same reason. D4 needs the
+  Y1's stock GPT6/arch-timer preparation and a checked fallback before it can run again.
+- **D4 fix (0043).** Stock's `mt_gpt.c` defines `CONFIG_HAVE_SYSCNT` "used for CA7 system counter":
+  `setup_syscnt()` runs GPT6 (`0x10008060`) free at 13 MHz, divider 1 (`CON` `0x31`, `CLK` `0`), exactly
+  mainline's `GPT6_CON_MT65xx` write, whose SoC list lacks the MT6572; LK leaves GPT6 at `0` (read on D3).
+  Overlay 0043 on `arch/arm/mach-mediatek/mediatek.c` does that write for `mediatek,mt6572` and then requires
+  the arch counter to advance within a factor of two of GPT6 over 13 000 GPT6 ticks (about 1 ms, timed by GPT6
+  since `udelay` is not calibrated yet); otherwise it sets the `arm,armv7-timer` node's status to `disabled` and
+  the GPT stays the only timer. mainline's GPT driver uses only GPT1/GPT2.
+- **D4a run** (arch timer, periodic tick; BOOTIMG `31c24586…`): boots; `mt6572: GPT6 13001 ticks, arch counter
+  13000 ticks`; clocksource `arch_sys_counter`; per-CPU `arch_timer` interrupts, broadcast IPIs 0;
+  `sleep 30` = 30.02 s on the player's uptime.
+- **D4b run** (plus `NO_HZ_IDLE`, `HIGH_RES_TIMERS`; build `out/y1-boot-d4b`, BOOTIMG sha256
+  `ce0d4d1c300040aa86c648f448aace8abf372b4a945bae176aae841f5d5c2bc4`): **PASS**. `hres_active` 1 on both CPUs;
+  `y1-cpufreq-check.sh` PASS (loop 6.80 / 8.46 / 11.46 s); `sleep 60` = 60.01 s; charging, Wi-Fi, Bluetooth,
+  audio card and Reborn as before; no lockup or clocksource warning. Screen off, USB attached and charging,
+  2 min after boot: CPU0 102 and CPU1 46 timer interrupts/s (D3: 100 + 100 broadcast). CPU0 keeps a high rate
+  because of its wakers, not the tick: the charger's worker (`kworker/u11:0-y2-charger`) about 75 context
+  switches/s from its 1 s poll, `S45y1-mtp`'s 1 s shell loop about 17/s (some 15 forks per round), the power
+  daemon about 11/s. Those are separate work (drivers and userspace), not D4.
+- **D5 build (0044).** Overlay on `arch/arm/mach-mediatek/platsmp.c`, `CONFIG_HOTPLUG_CPU`. `cpu_die` on CPU1:
+  stock's `cpu_enter_lowpower` as mainline's `v7_exit_coherency_flush(louis)` (SCTLR.C off, L1 clean and
+  invalidate, ACTLR.SMP off), the flush called through a register because clang's assembler rejects the macro's
+  `bl` here ("unsupported relocation type"); disassembly checked: no stack access between C off and the WFI
+  loop. `cpu_kill` on CPU0: stock's `spm_mtcmos_ctrl_cpu1(STA_POWER_DOWN)` (APMCU1 WFI in `SLEEP_TIMER_STA`,
+  then CLK_DIS, SRAM_CKISO, ISO, SRAM_ISOINT_B off, RST_B off, `CPU_FC1_L1_PDN` with ACK, PWR_ON, PWR_ON_S, FC1
+  off in both status registers). Online again: `BOOT_SLV_CFG` `0x13800001`, `BOOT_SLV_ADDR` = the kernel's
+  secondary entry, then the power-on sequence; the boot ROM jumps in. Every poll is bounded (10 ms); a CPU1
+  left in an unknown state is not booted again. Build `out/y1-boot-d5`, BOOTIMG sha256
+  `527271ac81747c28dcecf3751ad0cd21057f1395181b80efb33d8c8bea67209b`.
+- **D5 run (2026-11-15): PASS for the mechanism.** Offline: `FC1_PWR_CON` `0x4d` -> `0x32`, `PWR_STATUS` and
+  `PWR_STATUS_S` `0x3fff` -> `0x37ff` (bit 11 off), `CPU_FC1_L1_PDN` `0x101`; online restores `0x4d`/`0x3fff`/`0`.
+  200 idle cycles in 23.6 s and 100 cycles with both CPUs spinning while the userspace governor stepped
+  598/1001/806 MHz every 0.3 s: 0 failures, no kernel message. One minute with CPU1 off: Wi-Fi pings, Reborn
+  runs, CPU0 112 timer interrupts/s. Afterwards cpufreq check PASS, charging, Bluetooth and the audio card as
+  before. The policy was open at this point.
+- **D5b policy (owner's choice: the screen-off rule).** The backlight driver (`kernel/platform/backlight.c`, shared
+  with the Y2 but inert there) takes the CPU named by the DT property `innioasis,screen-off-offline-cpu` offline
+  through `remove_cpu()` when the screen goes dark (`bl_power` or brightness 0), and brings it back through
+  `add_cpu()` when it lights, from a work item on `system_unbound_wq`. The Y1 DTS sets `<1>`. Build
+  `out/y1-boot-d5b`, BOOTIMG sha256 `64cbc6440e03cfd775316850fbbebc9d0ef00595b7ab478852332253a7eb3abe`.
+- **D5b run (2026-11-16): PASS.** `bl_power` 4/0 by hand, five times: `online` `0` with `PWR_STATUS` `0x37ff` and
+  `FC1_PWR_CON` `0x32`, then `0-1` with `0x3fff`. Reborn's own screen timeout set `bl_power` 4 and CPU1 went
+  offline within 5 s. 50 cycles with both CPUs spinning: 0 failures, no kernel message. With CPU1 off, a
+  3 s `aplay` ran without error. Afterwards cpufreq check PASS (1 min soak), Wi-Fi up, charging, `bluetoothd`
+  and Reborn running.
+- **D5 — CPU1 power-off.** `HOTPLUG_CPU` with the stock `FC1_PWR_CON` sequence (a `smp_operations` cpu_kill /
+  boot path in the MT6572 platform code) and a policy that takes CPU1 offline when idle. Prerequisite for D6.
+- **D6 — deep idle.** A cpuidle state on CPU0 with stock's entry conditions (one CPU online, the clock
+  mask through CCF, residency), mainline `cpu_pm`/`cpu_suspend` for the context instead of stock's
+  `mt_dormant.c`, the dpidle firmware as data, CIRQ, GPT wake, and the PWRAP DVFS slots 1/2 with readback.
+  New admission needed: SPM, PWRAP DVFS slot and `AP_DVFS_CON_SET` writes.
+  Owner's decision (2026-11-16): D6 ports the Y2's coordinator (`kernel/platform/system-idle.c`: 30 s quiet
+  window, playback/scan/transfer leases, input and display restore, escalating hold) to the Y1 and retires the
+  D5b backlight hook. Its Y2-only inputs (`y2_cpu_safe`, CCF reclaim, local timer, boot mode) need Y1 owners.
+- **D7 — suspend.** The suspend firmware and the MT6323 sleep-mode registers above; only after D6.
+
+## 17. D6 admission — 2026-11-16
+
+**Status: admitted by the owner (2026-11-16), all four steps D6a–D6d, within the bounds below.**
+The owner decided (§16) that D6 ports the Y2's coordinator. D6 is split so that each step adds one kind of
+write, and the risky parts start disabled.
+
+**Read on the player (D5b, 2026-11-16, reads only):**
+
+- PWRAP DVFS slots `0x1000f0e4`–`0x1000f120` (`DVFS_ADR0`/`WDATA0` … `ADR7`/`WDATA7`): **all 0**. LK does not
+  program them and mainline has no owner, so D6 must write them before the SPM may request a voltage.
+- `SPM_AP_DVFS_CON_SET` `0x10006604` = `0x80000007`: slot 7 is selected, with every slot empty.
+- SPM `POWERON_CONFIG_SET` `0x10006000` = `1`; PCM not loaded; `PWR_STATUS`/`_S` `0x3fff` (CPU1 on).
+- GPT4 (`0x10008040`) `CON` = `0x31`, counting (`0x3996f3e3`). Mainline's GPT driver uses GPT1/GPT2 only, so GPT4
+  was started before Linux (INFERRED: LK). Stock's dpidle takes GPT4 as its one-shot wake timer.
+- `CA7_CACHE_CONFIG` `0x10200000` = `0x20`. Stock sets bit 4 (keep L2 on reset) for dormant and clears it
+  afterwards.
+- No cpuidle driver is registered; idle is the architecture's plain WFI.
+
+**Stock values D6 uses** (`drsami/mt6572_kernel` `c4b775c`):
+
+- `mt_cpufreq_pdrv_probe`, the live table (the `ptpod` alternative is commented out):
+  - `ADR0`–`ADR5` = `0x220` (`VPROC_VOSEL_ON`); `ADR6`/`ADR7` = `TOP_CKPDN0` set/clear.
+  - `WDATA0` = `0x58` (1.25 V), `WDATA1` = `0x48` (1.15 V), `WDATA2` = `0x38` (1.05 V, "for spm firmware"),
+    `WDATA3`–`5` = 1.15 V plus the speed-bin variation, `WDATA6`/`7` = `0x2`.
+- dpidle (`mt_spm_dpidle.c`, `mt_idle.c`):
+  - The 493-word `spm_pcm_dpidle` firmware, `pwrlevel` 0 (UART sleep handshake on), `infra_pdn` false,
+    `lock_infra_dcm`, and the wake sources KP, GPT, EINT, CCIF, USB_CD/PDN, AFE, SYSPWREQ, MD/CONN WDT,
+    CONN and THERM.
+  - `AUD_INTBUS` is moved to 26 MHz and `PMIC_SW_CG_AP` enabled ("SPM need PMIC wrapper clock").
+  - GPT4 is set one-shot to the next timer; the minimum is 54 500 13-MHz ticks.
+  - The GIC is cloned into CIRQ.
+  - CPU0 enters `DORMANT_MODE` with `BOOT_SLV_CFG` = `0x13800001` and `BOOT_SLV_ADDR` = the resume entry.
+  - `CA7_CACHE_CONFIG` bit 4 is set.
+- The firmware selects slot 2 on entry and slot 1 on exit (§16). Stock's own PWRAP stress test checks each
+  request by reading `0x220` back (`0x38`, then `0x48`).
+
+**What is ported from the Y2:**
+- `system-idle-policy.h`, the pure decision logic, is ported unchanged.
+- `system-idle.c`'s sampling and park/restore loop is ported with Y1 inputs: the backlight's `screen_dark`, a
+  playback lease from the ALSA PCM state, and no Y2 boot or CPU-safety modes. It replaces the D5b backlight
+  hook.
+- The ordering and fallbacks of `idle.c` and `spm.c`'s `y2_spm_dormant_idle`: `cpu_pm_enter`,
+  `cpu_cluster_pm_enter`, `cpu_suspend`, the readback of every arm write, restore on every path, and a
+  `broken` latch.
+- The MT6582 constants (479-word firmware, event vectors, `CON` bits) are **not** reused. Every MT6572 value
+  comes from the stock files above.
+
+| Step | What | Writes (beyond D5) | Starts |
+| --- | --- | --- | --- |
+| **D6a** | Coordinator port: CPU1 parks after the Y2's 30 s quiet window with the screen dark and no playback; input, display or load restores it | none (Linux hotplug through D5's path) | enabled |
+| **D6b** | Program the PWRAP DVFS slots with stock's table; prove the handshake with **slot 1 only** (1.15 V, today's voltage) | `DVFS_ADR0`–`7`/`WDATA0`–`7` once at boot; `AP_DVFS_CON_SET` low 3 bits = 1 | enabled (one request at boot) |
+| **D6c** | cpuidle state 1 on CPU0: dpidle firmware with `cpu_pdn` = 0 (CPU0 keeps its state in WFI; the firmware lowers VPROC to 1.05 V and raises it on wake) | SPM PCM load/kick/clean as stock; GPT4 one-shot; CIRQ; `AUD_INTBUS` mux; `PMIC_SW_CG_AP` | **disabled**; enabled by hand through sysfs |
+| **D6d** | The same with `cpu_pdn` = 1: CPU0 dormant, L2 retained, resume through the boot ROM | `BOOT_SLV_CFG`/`ADDR` for CPU0, `CA7_CACHE_CONFIG` bit 4 | **disabled**; enabled by hand through sysfs |
+
+**Bounds:**
+
+- **PWRAP slots:**
+  - Only stock's table, compiled in as constants.
+  - Each `ADR`/`WDATA` is written and read back before any request. A mismatch leaves deep idle off for the
+    boot.
+  - Only slots 1 and 2 may be selected at all.
+  - Linux itself only ever requests slot 1, which is today's 1.15 V, and checks `0x220` reads `0x48`.
+  - Slot 2 (1.05 V) is requested only by stock's firmware while CPU0 is idle.
+  - No direct PMIC write to `0x220`, no other VPROC value, no VCORE slot use.
+- **Entry conditions:** stock's, enforced in C.
+  - CPU0 is the only CPU online (D6a).
+  - The screen is dark and nothing is playing.
+  - cpufreq at or below 1001 MHz, at 1.15 V.
+  - At least 54 500 GPT ticks to the next timer.
+  - Stock's clock-mask blockers (UARTs, USB, APDMA, I2C, PWM, display/MDP and others) are read from the CG
+    registers as reads.
+- **USB:** with the gadget connected, the USB clock blocks entry exactly as in stock. The D6c/D6d tests
+  therefore run over Wi-Fi SSH with USB unplugged.
+- **Failure latch:** any arm readback mismatch, a non-zero PCM debug register, a CIRQ or timer restore fault,
+  or a resume through the wrong path sets `broken`. The CPU then stays in plain WFI until reboot.
+- **GPT4:** taken by the idle driver only after a check at probe that no Linux driver owns it; its prior
+  `CON`/`CLK` are recorded and restored on remove.
+- **Off by default:** D6c and D6d start disabled. A hang or reset reboots into the same image with deep idle
+  off, so recovery needs no reflash. The RGU watchdog already resets a hung player (§7).
+
+**Risks:**
+
+- **A wrong slot address could write another PMIC register.**
+  - Guarded by the constant table and readback.
+  - Slot 7's `TOP_CKPDN0_CLR` with data `0x2` is stock's own value.
+- **Resuming at 1.05 V and 1001 MHz could crash CPU0** if the exit request did not complete.
+  - Stock's firmware waits for the PWRAP acknowledge.
+  - D6c tests this with the CPU powered, before D6d powers it off.
+  - INFERRED until the D6c run.
+- **The UART sleep handshake** (`pwrlevel` 0) is the step that broke the Y2's C3 at first.
+  - The Y1 has no console on UART, but the SPM still asks.
+  - D6c records the acknowledge count.
+- **The arch timer stops in dormant.**
+  - The state carries `CPUIDLE_FLAG_TIMER_STOP`, so the GPT broadcast from D4 takes over.
+
+**Tests:**
+
+- **D6a:**
+  - CPU1 parks within about 35 s of the screen going dark.
+  - Input, display wake or a playback start restores it before acknowledging.
+  - Reborn's timeout drives it.
+  - D5's health checks pass.
+- **D6b:**
+  - The boot log shows all 16 slot readbacks matching and the slot 1 request reading `0x220` = `0x48`.
+  - `AP_DVFS_CON_SET` reads `…1`.
+- **D6c, then D6d, each over Wi-Fi with USB unplugged:**
+  - **Enable through sysfs:**
+    - entries and residency rise;
+    - wake reasons are recorded;
+    - the restore-failure count stays 0.
+  - **Timing:** `sleep 60` takes 60 s against the host.
+  - **Workload:**
+    - Wi-Fi ping holds over 10 min;
+    - a button press wakes the screen;
+    - charging state still updates on replug.
+  - **After the run:** the cpufreq check passes.
+  - **Soak:** 1 h screen-off with no `broken`.
+- **Drain (all steps):** after D6d, `y1-power-baseline.py` from 3.9 V or more, compared with D3's screen-off
+  run.
+
+**D6a build.** `kernel/y1/system-idle.c` (added as `drivers/soc/mediatek/y1-system-idle.c`,
+`CONFIG_INNIOASIS_Y1_IDLE`, overlays 0045/0046): the Y2's coordinator with the Y2's unchanged
+`system-idle-policy.h`. Its inputs are:
+- the backlight's dark state;
+- a stream lease from the Y1 AFE's trigger (bit 0 playback, bit 1 FM/capture), which is atomic: setting it
+  queues a restore;
+- input events;
+- cpufreq transitions.
+
+Two inputs are fixed: the Y2's timer handoff is 1, since D4's arch timer and GPT broadcast need none, and the
+Y2's boot and CPU-safety modes do not exist on the Y1. The D5b backlight hook and its DTS property are gone,
+and `backlight.c` is back to its pre-D5 code except that `y2_backlight_dark` is also built for the Y1. The
+Y2's `system-idle.h` gains the Y1 symbol and the lease stub, so the Y2 build is unchanged. The policy's
+constants are the Y2's: 400 milli-cores quiet is 20 % of the Y1's two cores. Build `out/y1-boot-d6a`,
+BOOTIMG sha256 `0da782fafffdf1ba242107d0b7d9a4f12ba6719dbe1604973128f2c2b98d180a`.
+
+**D6a run (2026-11-16): PASS.**
+- **Parking:** with the screen dark, CPU1 parked after a 31 s quiet window (`FC1_PWR_CON` `0x32`,
+  `PWR_STATUS` `0x37ff`).
+- **Screen on:** `bl_power` 0 restored CPU1 before the backlight write.
+- **Re-parking:** dark again, CPU1 parked after the 60 s hold plus 30 s quiet (93 s).
+- **Playback:** `aplay` restored CPU1 at once (`leases=0x1`) and held it online for 45 s of dark playback;
+  the lease cleared on stop.
+- **Button:** a button press restored CPU1. The input and display paths were not separated within the
+  watcher's 50 ms.
+- **Health checks:** cpufreq check PASS; Reborn, `bluetoothd`, the audio card and charging fine; no kernel
+  warning.
+- **USB:** the cable was off the host for part of the run, which went over Wi-Fi.
+
+**D6b build.** `kernel/y1/deep-idle.c` (added as `drivers/soc/mediatek/y1-deep-idle.c`,
+`CONFIG_INNIOASIS_Y1_DEEP_IDLE`): it writes stock's slot table and reads it back, then requests slot 1 as
+stock's `spm_dvfs_ctrl_volt` does and reads `VOSEL_ON` `0x220` and `NI_VPROC_VOSEL` `0x224` back. Two
+preconditions come first: `VOSEL_ON` must already read `0x48`, and the wrapper's arbiter must have
+`DVFSINF` (bit 4) enabled; it reads `0x7f` on the Y1, like the Y2's implemented mask.
+
+The first image ran from `late_initcall` before the PMIC wrapper's deferred probe (MT6323 at 0.683 s, the
+call at 0.678 s). It stopped at stage `pmic` and wrote nothing (slots 0, selector `0x80000007`
+unchanged), as the guard intends. The table is now written from a work item that retries every 200 ms
+for up to 10 s. Build `out/y1-boot-d6b`, BOOTIMG sha256 `d10a6732cb8e8e7f8a33a04e28b39636578ce8652a63c7af47be3252974b9e69`.
+
+**D6b run (2026-11-16): PASS.**
+- **Boot log:** `DVFS slots ready, slot 1 acknowledged after 0 polls, VPROC 0x48/0x48` at 0.55 s, on the
+  first try.
+- **Slot readback:** `0x1000f0e4`–`0x1000f120` hold `0x220/0x58`, `0x220/0x48`, `0x220/0x38`, then
+  `0x220/0x48` for slots 3–5, `0x104/0x2` and `0x106/0x2`.
+- **Selector:** `AP_DVFS_CON_SET` reads `0x80000001`.
+- **Health checks:** cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and `aplay` fine; charging; no kernel
+  warning.
+- **Limit:** the acknowledge bit was already set from LK and read set on the first poll, and 1.15 V is
+  today's value. The request is therefore shown to do no harm, not shown to have been performed. D6c's
+  wake path, slot 2 then slot 1, is the first observable voltage change.
+
+**D6c blockers (2026-11-16).** Stock's deep idle requires every clock in its condition mask gated
+(`CLK_GATING_CTRL0` `0x10000020` mask `0x000F002F`, `CTRL1` `0x10000024` mask `0x8021FEFD`; gate bit set = off).
+
+On the Y1 with the screen dark, read over 60 s, six of those clocks stayed on. Each is listed with what
+held it (debugfs `clk_summary`) and where it is handled:
+- MFG_MM (CTRL0 bit 2): the MFG power domain, which the `mfgcfg` syscon keeps on (no runtime PM) while the
+  GPU itself is suspended. Step B3.
+- APDMA (CTRL1 bit 2) and BTIF (bit 12): the connectivity driver, while the radio chip is powered. Step B2.
+- UART0 (bit 10): the serial console. Step B1.
+- USB (bit 13): musb with the cable attached. The deep-idle tests run with USB unplugged.
+- SEJ (bit 21): no user; LK leaves it on and `clk_ignore_unused` keeps it on. Step B1.
+
+The owner chose to clear the blockers before D6c and keep stock's mask unchanged, so nothing loses
+function: each owner gates its clock only while idle.
+
+**B1 (no serial console, SEJ off).**
+- Both images' bootargs drop `earlycon console=ttyS0,921600n8`; the packager's rule that RECOVERY differs
+  only in `y2.recovery=1` and the windows stays. `stdout-path` remains and is unused, because `console=tty0`
+  is on the command line.
+- PID1's text goes to `/dev/kmsg` (`dmesg`) instead of `ttyS0`; the user shell stays on the USB serial port.
+- `deep-idle.c` takes the SEJ clock once and releases it.
+
+Build `out/y1-boot-b1`, BOOTIMG sha256 `bdbafd7f1221318310f12f77af1f11172b63019e96fb52522ccf037f1eb974eb`.
+
+**B1 run (2026-11-16): PASS.**
+- `/proc/consoles` lists `tty0` only, and `ttyS0` is runtime-suspended.
+- `uart0` and `sej` have enable count 0, and CTRL1 now reads `0xd8efcefb` (bits 10 and 21 set). The CTRL1
+  blockers left are APDMA, BTIF and USB.
+- PID1's lines appear in `dmesg`.
+- cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and charging fine.
+- `aplay` found the PCM held open by Reborn, with no stream running; this is unrelated to B1.
+
+**B3 (MFG domain off while the GPU is suspended).**
+- `clk-mt6572-mfg.c` sets `need_runtime_pm`, as mainline's mt8183 mfgcfg does. The clock core then powers
+  the domain around every access to the MFG gates, `clk_summary` included.
+- With that alone the domain stayed on. The power controller's `sync_state` was pending on `1000e000.smi`,
+  `10203000.iommu` and `14010000.larb`, which have no driver on the Y1 (`CONFIG_MTK_SMI` and
+  `CONFIG_MTK_IOMMU` off), and genpd keeps every domain on until `sync_state` runs.
+- The Y1 DTS therefore disables those three nodes; their `iommus` references were already deleted. MFG is
+  the only domain genpd registers on the Y1, so nothing else changes.
+
+Build `out/y1-boot-b3`, BOOTIMG sha256 `22c514cff7382c9e1b164a4db4d5651d4569a49d2f222cf671b58eec2f311ec0`.
+
+**B3 run (2026-11-16): PASS.**
+- **Domain off:** genpd shows `mfg` `off-0` with both devices suspended; `PWR_STATUS` reads `0x3fef` (bit 4
+  off), and CTRL0 reads `0xffcfff7f`, so MFG_MM is gated and no CTRL0 blocker is left.
+- **Power cycles:** 10 runtime on/off cycles of the GPU each read the Mali GP version `0x0b070101` while on,
+  and the domain went off after each.
+- **Real GPU work:** a Reborn restart ran GPU jobs on the domain that had been off (GP/PP interrupts 95 to
+  139), with no Lima error or MMU fault, and the domain went off again afterwards.
+- **Screen wakes:** five wakes rendered without the GPU, as before.
+- **Health checks:** cpufreq check PASS; Wi-Fi, `bluetoothd` and charging fine; no kernel warning.
+
+**Blockers left:** CTRL1 APDMA and BTIF (radio link, B2) and USB (cable).
+
+**B2 (radio link clocks): no change needed (2026-11-16).** The connectivity owner holds BTIF and APDMA while the
+radio chip is powered, and powers the chip off once no function (BT, Wi-Fi, FM) is held.
+
+On the player, with Reborn's settings: Bluetooth off released BT (functions `0x9` to `0x8`), and Wi-Fi off
+soft-blocked `y2-wifi` (functions `0x0`). The chip powered off 1 s later (`powered=0`), and CTRL1 read
+`0xd8efdeff`: BTIF and APDMA gated, USB the only blocker left. Both radios came back on (`0x9`, no error).
+
+`bluetoothctl power off` and `ip link set wlan0 down` alone do not release anything, because the platform
+switches Bluetooth back on and Wi-Fi is held until rfkill. So deep idle (D6c) can enter when both radios are
+off in Reborn, the screen is dark and USB is unplugged. Deep idle with radios on would need MediaTek's STP
+power-saving protocol, which is not in the GPL drop. It is out of scope.
+
+
+**B4 (USB clock off without a cable), 2026-11-16.** The plan above assumed that unplugging the cable frees the
+USB clock. The source says it does not:
+- CTRL1 bit 13 is `CLK_TOP_USB` (`clk-mt6572-topckgen.c`). Mainline's MUSB glue (`drivers/usb/musb/mediatek.c`)
+  enables it in probe and releases it only on remove.
+- The Y1's T-PHY forces a valid session (0015, the Y2-style fix for a PHY that does not sense VBUS), so the
+  controller never sees a disconnect and MUSB's own runtime PM never suspends either.
+
+So with stock's mask, deep idle could never enter on the Y1, cable or not. Stock clears this the way B4 does:
+on the charger's disconnect, `mt_usb_disconnect` puts the PHY in its save-current state and gates the USB
+clock, and `mt_usb_connect` reverses it.
+
+- **VBUS source:** the charger's `y2-usb-presence` supply (`ONLINE` = CHRDET, from its interrupt and its 1 s
+  poll). The Y1 DTS names it on `&usb` with `innioasis,vbus-supply-name`; without the property the glue
+  behaves as today (the Y2 does not use this glue).
+- **Cable out:** the glue's work item calls `phy_power_off`. The T-PHY already clears `RG_VBUSVALID`/`AVALID`
+  and sets `RG_SESSEND`; 0015 now also clears its forced `RG_BVALID`, so the forced session ends and the
+  gadget gets a real disconnect. The glue then drops its runtime-PM vote. When MUSB autosuspends (500 ms
+  after its session ends), the glue's `runtime_suspend` gates the three USB clocks.
+- **Cable in:** the glue takes its vote (`runtime_resume` turns the clocks on before any register access),
+  then `phy_power_on` forces the session again, which is today's boot path.
+- **Boot:** the glue holds its vote at probe, as today. If the supply reads offline, the first evaluation
+  releases it. A boot with the cable in is unchanged.
+- **Not changed:** the recovery image uses the same kernel and DTB. Its USB path is the same as a boot with
+  the cable in, and a replug uses the path tested here.
+
+**Tests:**
+- **Read first (cable in, then out, over Wi-Fi):** CTRL1 bit 13 and `clk_summary` `usb` before the build, to
+  confirm the clock stays on today.
+- **Cable out:** within 2 s `usb` has enable count 0, CTRL1 bit 13 is set, musb is `suspended` in
+  `/sys/devices/…/power/runtime_status`, and the kernel log shows the gadget disconnect.
+- **Cable in:** the USB link (10.42.0.1), SSH, MTP and the charger's "configured" 450 mA return. Repeat 20
+  plug cycles.
+- **Boot without the cable:** the clock is off. Then plug in: everything returns.
+- **Health checks:** cpufreq check PASS; Wi-Fi, Reborn, `bluetoothd` and charging fine.
+
+Build `out/y1-boot-b4usb` (Y2ROOT `out/y1-root-asound`; overlays 0015 and 0047, the `&usb` property), BOOTIMG
+sha256 `e9ab1d74708e3df6e02ed4034264b25312e3804ac25e63fbe41c604a7137ced5`. Flash BOOTIMG only, as for B1/B3.
+
+**B4 run (2026-11-16): PASS.**
+- **Before B4 (B3 image, cable in):** `usb` enable count 2 (`11100000.usb`), CTRL1 `0xd8efcefb` (bit 13 clear),
+  glue and musb `active`.
+- **Flash:** mtkclient after `poweroff` over SSH, then `mtk.py reset` from DA mode. On that first start the PMIC
+  read no charger until 15.96 s (`pmic at boot: 0x000=0001`). The glue followed it (clocks off at 0.57 s, on at
+  15.96 s) and `usb0` came up. A normal reboot with the cable in read CHRDET at 0.75 s and logged no VBUS change,
+  so this is the DA reset, not B4.
+- **Plug cycles (five, sampled each second over Wi-Fi):** each unplug gave `VBUS gone`, then within about 1 s
+  `usb` enable count 0, CTRL1 bit 13 set (`0xd8efeefb`), glue and musb `suspended`. Each replug restored count 2,
+  `active`, the host's `usb0`, SSH and MTP (`umtprd`), and `y1-usb-input` online at 500 mA (configured by
+  the PC) with the charger charging.
+- **Boot without the cable (reboot over Wi-Fi):** `VBUS gone` at 0.72 s, `usb` enable count 0, CTRL1
+  `0xd8e9eefb`, glue and musb `suspended`.
+  Plugging in then gave `VBUS present`, `usb0`, SSH, MTP and 500 mA, as after a cycle.
+- **Health checks:** cpufreq check PASS (1 min soak); Reborn, `bluetoothd`, `wpa_supplicant` and the audio card
+  fine; no kernel warning.
+
+**Blockers left: none in stock's mask** once both radios are off in Reborn, the screen is dark and the cable is
+out. D6c is next.
+
+**B5 (MMSYS clocks), 2026-11-16, owner's choice before D6c.** Stock's mask (`mt_idle.c` `dpidle_condition_mask`,
+`drsami/mt6572_kernel` `c4b775c`) also covers MMSYS: `MMSYS_CG_CON0` `0x14000100` mask `0x003fffff` and
+`CON1` `0x14000110` mask `0x7f` (gate bit set = off). Its CTRL1 mask is `0x80a9fefd`: the plan's
+`0x8021fefd` plus the reserved bits 19 and 23, which already read gated.
+
+Read on the player (B4 image, screen dark, DRM CRTC `active=0`): CON0 `0xffff7f90`, CON1 `0xffffffef`. Eight
+clocks of the mask stay on, each with enable count 0, kept only by `clk_ignore_unused` as LK left them:
+- **Not used by the Y1's display path** (OVL → RDMA → COLOR → BLS → DSI): DISP_WDMA, CMDQ, SMI_CMDQ,
+  MDP_BLS_26M, and the DBI engine (CON1 bit 4, which had no CCF gate). `deep-idle.c` takes each once and
+  releases it, as SEJ in B1, and counts them in `unused_released`. `clk-mt6572-mm.c` gains the stock gate
+  `CLK_MM_DISP_DBI_ENGINE` (24).
+- **Used by the live display but owned by no driver:** SMI common and LARB0 (OVL's framebuffer fetch; their
+  nodes have no driver since B3), and DISP_BLS (between COLOR and DSI). Gating them would stop scan-out.
+  The Y1 DTS lists them after OVL's own clock, and 0019 enables them with OVL's clock and disables them
+  with it. So they run whenever the CRTC does and are off while it is disabled.
+
+**Tests:**
+- **Screen dark:** CON0 and CON1 read every mask bit gated, and `unused_released` = 6 (SEJ and the five).
+- **Screen on:** the picture returns at every wake, 20 times (dark through Reborn's timeout, lit through
+  `rebornctl action screen_wake`; `bl_power` alone only switches the backlight and leaves the CRTC running).
+  The clocks of the three path blocks show enable count 1 while lit and 0 while dark.
+- **Health checks:** cpufreq check PASS; Reborn, Wi-Fi, `bluetoothd`, the audio card and charging fine.
+
+**B5 run (2026-11-16): PASS.**
+- **Flash:** mtkclient after `poweroff`. `mtk.py reset` left the player in DA (`0e8d:2001`) until a replug.
+- **Boot:** `unused_released` = 6, OVL bound, D6b slots ready as before. Lit: CON0 `0xffdffe4c`, CON1
+  `0xfffffffc`; `mm_smi_common`, `mm_smi_larb0` and `mm_disp_bls` each have enable count 1 and are owned by
+  `ovl@14007000`.
+- **Dark (Reborn's timeout, CRTC `active=0`):** CON0 and CON1 read `0xffffffff`, so every mask bit is gated, and
+  the three path clocks are at 0.
+- **20 wake cycles** (`rebornctl action screen_wake`, then Reborn's timeout, which went dark after 29 s each
+  time):
+  - lit: CRTC `active=1`, 44 to 45 OVL frame interrupts per second, `bl_power` 0, path clocks 1;
+  - dark: CON0 and CON1 `0xffffffff`, path clocks 0;
+  - 0 failures.
+- **Health checks:** the cpufreq check passed with a 1-minute soak, run over Wi-Fi. Reborn, `bluetoothd`,
+  `wpa_supplicant` and the Y2Audio card were all running.
+- **Open:** the first run of the cpufreq check, over USB, ended with the player restarted and the cable showing
+  no VBUS. It came back up on Wi-Fi after 9 minutes, booted without VBUS (`VBUS gone` at 0.96 s), and logged no
+  panic or watchdog line. Its output was lost to buffering. The repeat over Wi-Fi passed with no restart, so the
+  check did not cause it. The cause is unknown, so charging was not checked on this boot.
+
+**D6c build (2026-11-16).** `kernel/y1/deep-idle.c` gains a cpuidle driver for CPU0 (`y1_idle`, menu governor,
+`CONFIG_CPU_IDLE`):
+- **States:** state 0 is WFI. State 1 is `DPIDLE`, with `CPUIDLE_FLAG_TIMER_STOP | CPUIDLE_FLAG_OFF`, a 5 ms
+  target residency and 300 µs exit latency. It is disabled until
+  `/sys/devices/system/cpu/cpu0/cpuidle/state1/disable` is set to 0.
+- **Firmware:** `kernel/y1/dpidle-pcm.h` holds stock's 493 words unchanged.
+
+The state 1 path is stock's `spm_go_to_dpidle` with `cpu_pdn` = 0:
+- **Admission:** refuses unless all of these hold:
+  - CPU0 is the only CPU online and FC1 is off in both power-status copies;
+  - the D6b slots are ready;
+  - the screen is dark and no AFE stream runs (`y1_system_idle_quiet`, D6a);
+  - every bit of stock's four clock masks is gated and `pmic_wrap` is on;
+  - the next timer event is at least 54 500 GPT ticks away.
+- **Interrupts:** the enabled SPIs are saved, and an enabled one already pending refuses entry. The others are
+  masked and only the SPM's (GIC 104) stays enabled.
+- **CIRQ:** cloned from the saved enables. Stock clones after masking, which leaves only the SPM channel latching.
+- **PCM:** armed and kicked as stock (UART sleep request, R0/R7 sync, the four vectors, `AP_STANBY_CON`
+  `0x1b0010`, wake sources without SYSPWREQ, no PCM timer or WDT).
+- **Before WFI:** `AUD_INTBUS` goes to clk26m, and GPT4 is set one-shot at 13 MHz.
+- **After WFI:**
+  - the wake status is read;
+  - GPT4 is stopped, its enable cleared and its status acked before the GIC is unmasked (all GPTs share one
+    line and timer-mediatek acks only GPT1);
+  - the PCM is cleaned as stock (without the modem's CCCI workaround);
+  - the CIRQ is flushed into the GIC's pending bits, and the GIC enables are restored and read back.
+- **Latch (`dpidle_broken`, with `dpidle_stage`):** set by any of these:
+  - a readback mismatch when arming, cleaning or restoring the CIRQ or GIC;
+  - a PCM assert (`REG_DATA_INI` ≠ 0);
+  - a DVFS selector other than slot 1 after wake;
+  - 16 UART timeouts in a row.
+- **Counters** (`/sys/module/y1_deep_idle/parameters/`):
+  - `dpidle_entries`, `_normal`, `_aborts`, `_unknown`, `_gpt_wakes`;
+  - `_uart_acks`, `_uart_timeouts`;
+  - `_refusals` (cpu, slots, quiet, clocks, timer, pending, uart, broken);
+  - the last wake event (R12), event status, R13 and DVFS register;
+  - the SPM registers and GPT4 as found at boot.
+- **GPT4:** on the B5 image it reads CON `0x31` (free-running, IRQ off), LK's timer, which stock's
+  `mt_gpt_init` resets. The driver resets it in the same way. It refuses to register the state if GPT4's
+  interrupt is enabled or it runs in a mode other than free-run.
+- **Radios:** with Wi-Fi up, CTRL1 reads `0xd8efeefb` (APDMA and BTIF on, B2), so the state cannot enter while
+  an SSH session over Wi-Fi is open. The tests therefore run as a script on the player
+  (`tools/development/y1-dpidle-run.sh`). It does the following and writes its log to `/data/logs`, read
+  afterwards:
+  - switches both radios off through Reborn and enables the state;
+  - waits with the screen dark, comparing the monotonic clock with the PMIC RTC;
+  - restores the state and the radios.
+- **SPM at boot (B5 image):** no PCM program (`IM_LEN` `0xff`, `IM_PTR` 0), `CLK_CON` `0xa0000000`, `PCM_CON1`
+  `0xc00`, `AP_DVFS_CON` `0x80000001`, R13 `0x081008fb` (UART sleep acknowledge already set).
+
+Build `out/y1-boot-d6c`: BOOTIMG `057679ae6727d85139ca1bbdfdbb617af7d2a566b8c500f44baa715dafd95afa`, 49 warnings as
+before.
+
+**D6c run 1 (2026-11-16, build `057679ae…`): no deep idle; fix found.**
+- **Boot:** `y1_idle` registers with the menu governor, `DPIDLE` starts disabled, the slots are ready, and GPT4
+  reads `0x31` at boot and 0 after the reset.
+- **Smoke test, cable in:** 1425 refusals in 30 s, all for the CPU condition, with no entry.
+- **Unattended run** (12 min, cable out, both radios off, screen dark):
+  - from the first minute, CPU1 was parked, every clock condition was met and CTRL1 read `0xd8effeff`;
+  - 4.85 million entries took 341 s in total, about 70 µs each;
+  - every one ended with event status 0 (`unknown`), and no GPT4 wake;
+  - the UART acknowledged every time;
+  - no latch, and the DVFS selector stayed at slot 1 (`0x80000001`).
+- **Timekeeping:** the player's uptime advanced 851.31 s against the host's 851.30 s.
+- **Cause:** the GIC showed IRQ 104 (SPM, SPI 72) pending while the SPM's ISR status read 0. Stock requests
+  that line `IRQF_TRIGGER_LOW`, which sets its sysirq polarity-invert bit (`0x10200108` bit 8). No Linux
+  driver requests it on the Y1, so the idle line read as asserted and WFI returned at once.
+  - Setting the bit by hand cleared the pending state, and it stayed clear.
+  - `deep-idle.c` now sets the bit while armed and restores it with the GIC enables (read back).
+  - The FSM status (`dpidle_last_fsm`) is now recorded too.
+- **Fixed build:** `out/y1-boot-d6c2`, BOOTIMG `de2bb31ddfb42afdd60a6f75b91f641d592cbdbea28f79040a91eeb914cc4e6f`.
+
+**D6c run 2 (2026-11-16, build `de2bb31d…`): enters and wakes safely; every exit reports a sleep abort.**
+Same unattended run (12 min, cable out from minute 1, both radios off, screen dark).
+- **Entries:** 8658, with 381 s in the state (about 44 ms per entry), out of about 520 s with the cable out.
+  - Refusals: 2896 for clocks (USB still in), 5644 for the CPU condition (before CPU1 parked), 1 for an
+    enabled interrupt pending.
+  - No latch; UART acknowledged 8658 of 8658.
+  - The DVFS selector after every wake was slot 1 (`0x80000001`).
+- **Wake record:** every exit had event status `0xd0010000` (`PCM_EVENT_ABORT`, so `dpidle_aborts`, not
+  `_normal`).
+  - R12 (wake events) `0x40000810`: GPT, 26M_WAKE, AP_WAKE.
+  - R13 `0xe81208f9`, FSM `0x48490`.
+  - GPT4 never fired first: the broadcast GPT1, armed for the same event, wakes the SPM.
+- **Timekeeping:** the player's uptime advanced 1349.86 s against the host's 1349.92 s, within SSH latency.
+- **Health checks after the run:** cpufreq check PASS. Reborn, `bluetoothd`, `wpa_supplicant`, the audio card,
+  Wi-Fi and charging were all fine.
+- **Open:**
+  - **Abort status:** whether the firmware lowers VPROC to slot 2 (and lets 26 MHz sleep) before it reports
+    the abort is not shown. Stock runs this firmware with `cpu_pdn` = 1, and with the CPU's dormant power
+    kept (`CC_DISABLE_DORM_PWR`) the abort status may be its normal outcome. INFERRED.
+  - **Power:** answered by the drain comparison below: no saving shown.
+  - **Rest of the test list:** the 1 h soak is covered by the drain run below; the button wake and the ping
+    test are still to do.
+
+**D6c drain comparison (2026-11-16, build `de2bb31d…`): no saving shown.** There is no usable screen-off drain
+run from D3, so the state was switched on and off within one run.
+- **Setup:**
+  - `y1-power-baseline.py start dpidle-ab-screenoff-radios-off --interval 60 --hours 5`, cable out, screen
+    dark, both radios off, untouched;
+  - beside it, `tools/development/y1-dpidle-ab.sh` switched `state1/disable` every 30 min, starting with on.
+  - Ten 30-sample blocks, five on and five off; the run ended at its 5 h limit.
+- **Overall:** 3.970 V → 3.763 V over 5.01 h (-30.3 mV/h); the daemon's percentage fell 85 → 48. CPU busy
+  was 7.4 %, CPU1 stayed parked from the first block on, and the PMIC die temperature stayed at 27–29 °C.
+  The charger's sense estimate read 0 mA throughout, so it says nothing on battery.
+- **Deep idle in the on blocks:** 36 000–38 700 entries and 1540–1625 s in the state per 1800 s block (86–90 %),
+  every exit an abort, no latch (`dpidle_broken` N to the end). The 1 h soak is covered.
+- **Voltage slope per block (mV/h, least squares on the raw voltage):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off | 8 on | 9 off |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | Slope | -127.7 | -51.1 | -37.3 | -31.6 | -25.6 | -26.0 | -22.2 | -20.9 | -17.1 | -17.8 |
+  | Against the mean of its neighbours | – | – | +4.1 | -0.2 | +3.2 | -2.1 | +1.2 | -1.2 | +2.2 | – |
+
+  - The cell is still recovering from the unplug, so the slope flattens through the whole run and block 0
+    is mostly that recovery.
+  - Against the mean of their neighbours, the on blocks are 1–4 mV/h shallower and the off blocks 0–2 mV/h
+    steeper. The sign is consistent, but neighbouring blocks share the comparison and the difference is a
+    few mV over 30 min, close to the voltage's resolution. At most a saving of the order of 10 %;
+    not shown.
+  - CPU busy was slightly higher in the on blocks (7.9–8.1 % against 7.5 %): the entry and exit work.
+- **Reading:** this fits the abort status from run 2. If the firmware aborts before the SPM lowers VPROC and
+  stops 26 MHz, D6c is a WFI with extra work, and the saving can only come from what the firmware does before
+  the abort. INFERRED. A real gain needs a normal (non-abort) sleep. Without a current measurement, the battery
+  voltage cannot resolve differences this small.
+- **After the run:** the state was left disabled and both radios back on. By the next morning the player had
+  gone flat; it booted on the cable at 3.46 V. The shutdown itself was not logged, so a clean empty-battery
+  shutdown is INFERRED, not shown.
+
+**D6c abort diagnosis (2026-11-17, builds `b6c6cf63…` and `08fe06b5…`): the unused modem holds 26 MHz awake.**
+- **Diagnostics added to `deep-idle.c`:**
+  - `dpidle_stanby` (0600): the request-mask bits of `AP_STANBY_CON` (md_mask bits 19–20, mm_mask bits 16–17),
+    default stock's 3 and 3; written and read back on every arm, nothing else in the register changes.
+  - `CORE0/1_WFI_SEL` read back as `AP_STANBY_CON` bits 0 and 1 (devmem). The first build's readback ignored
+    this and latched `arm_readback` on its first entry, before the kick (build `0053e59b…`, fixed).
+  - Per exit: `PCM_TIMER_OUT` (last and summed), `SLEEP_ISR_STATUS`, and counts of R12 bit 12 (26M_SLP) and
+    bit 31 (AP_SLEEP).
+  - `y1-dpidle-run.sh` takes a list of `dpidle_stanby` values and runs the given minutes per value.
+- **Power domains with the screen dark and both radios off:** `PWR_STATUS` `0x3fed`/`0x37ef`: MD1 (bit 0) and
+  DIS (bit 3) on, CONN (bit 1) off with the radios off, MFG (bit 4) off. `MD1_PWR_CON` = `0xd`,
+  `PERI_PDN0_MD1_STA` = 0. Nothing in Linux powers MD1 off; stock leaves it to the modem driver.
+- **Sweeps, cable out, 4–5 min per value (all exits aborts, no latch, slot 1 after every wake):**
+
+  | `dpidle_stanby` | md / mm | Entries | 26M_SLP in R12 |
+  |---|---|---|---|
+  | `0x1b0000` (stock) | 3 / 3 | 6365 | 0 |
+  | `0x130000` | 2 / 3 (bit 19 clear) | 4261 | 4261 |
+  | `0` | 0 / 0 | 537 (cable back in after about 1 min) | 537 |
+
+  The earlier single-sample sweep agrees: every value with bit 19 set recorded 26M_WAKE and AP_WAKE, every
+  value with it clear 26M_SLP. The display and GPU bits change nothing.
+- **Reading:**
+  - Bit 19 is the MD1 request (stock: "unmask MD1 and MD2"). The modem is powered but never booted, so its
+    request stays asserted and the SPM keeps 26 MHz on. Stock's own modem driver would release it. INFERRED.
+  - `PCM_TIMER_OUT` summed to 268.9 s against 270.9 s in the state (stock value), so the PCM timer runs from
+    arm to clean and does not by itself show sleep.
+  - The abort status stays with 26 MHz asleep, so it is a separate matter, most likely the firmware's report
+    for a CPU that was not powered down (`cpu_pdn` = 0). INFERRED.
+- **Owner's choice:** of masking bit 19 for deep idle, gating `PERI_PDN0_MD1` as the Y2 did (F11), or powering
+  MD1 off at boot, the owner chose powering it off at boot (2026-11-17).
+
+**D6c MD1 off at boot (2026-11-18, build `324c5804…`): 26 MHz sleeps with stock's mask.**
+- **Change:** MD1 is a genpd domain of mainline's `mtk-pm-domains` (`MT6572_POWER_DOMAIN_MD1` = 3, a DT node
+  under `&spm` with no consumer), so genpd powers it on at probe and off at late init. Registers from stock's
+  `SYS_MD1` and `spm_mtcmos_ctrl_mdsys1`: control `0x10006284`, status bit 0, SRAM bit 8 without an acknowledge.
+- **No bus protection:** the first build (`d4c050ad…`) gave the domain stock's TOPAXI mask `0x5300`. On the
+  Y1 `INFRA_TOPAXI_PROTECTSTA1` reads `0xf000` with the enable clear (bits 12 and 14 of the mask stay set),
+  so the release wait in genpd's power-on at probe timed out (-110). That failed the whole power controller:
+  no MFG domain, and Reborn reported "graphics unavailable". Stock's power-down leaves the protection out
+  (`#if 0`, "FIXME no bus protect"), and the second build does the same.
+- **After boot:** `PWR_STATUS` `0x3fee` (bit 0 clear), `MD1_PWR_CON` `0x112` (SRAM down, isolated, clock off,
+  reset held). No errors in dmesg. Reborn healthy with Mali graphics, Wi-Fi online, Bluetooth ready.
+- **Run, cable out, 10 min, stock mask `0x1b0000`:** 12607 entries, all with 26M_SLP in R12 (6365 entries with
+  none before). 542.9 s of the 600 s in state1, CPU1 offline, no latch. Every exit still reports an abort
+  (`last_wake` `0x40001010`: GPT, 26M_SLP, AP_WAKE; event `0xd0010000`), which fits the `cpu_pdn` reading above.
+- **Next:** a drain A/B with 26 MHz really asleep; the remaining D6c tests (button wake, ping); the abort label.
+
+**D6c drain comparison with MD1 off (2026-11-18, build `324c5804…`): still no saving shown.**
+- **Setup:** as on 2026-11-16 (`dpidle-ab-md1off-screenoff-radios-off`, 60 s, 5 h, ten 30 min blocks starting
+  with on, cable out, screen dark, both radios off, untouched), MD1 off throughout.
+- **Overall:** 4.126 V → 3.854 V over 5.01 h (-51.6 mV/h); the daemon's percentage fell 99 → 70. CPU busy
+  7.2–7.5 % in every block, CPU1 parked, PMIC die 29.6–31.9 °C. The player was still running when plugged in
+  about 7 h after the run ended (radios back on).
+- **Deep idle in the on blocks:** 36 800–38 700 entries and 1540–1625 s in the state per 1800 s block, every
+  exit an abort, no latch.
+- **Voltage slope per block (mV/h):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off | 8 on | 9 off |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | Slope | -67.8 | -51.0 | -55.3 | -56.1 | -49.4 | -37.2 | -49.0 | -70.7 | -49.6 | -35.6 |
+  | Against the mean of its neighbours | – | +10.5 | -1.7 | -3.7 | -2.8 | +12.0 | +4.9 | -21.3 | +3.5 | – |
+
+  - The on blocks 2–8 average -50.8 mV/h and the off blocks 1–9 -50.1 mV/h. The off blocks scatter by
+    ±17 mV/h, far more than on 2026-11-16 at the lower charge level, so the noise swamps anything of the
+    size the first run hinted at. No saving shown, and no sign either way.
+- **MD1 itself:** the daemon's percentage fell 29 points in 5 h here against 37 on 2026-11-16 (85 → 48). The two
+  runs cover different parts of the curve and the percentage is a provisional voltage estimate, so this is
+  at most a hint that powering MD1 off saves something. INFERRED, not measured.
+- **Reading:** with 26 MHz asleep on every entry the battery voltage still shows no difference. Every exit is
+  still an abort, so the firmware most likely still skips the step that would save power (VPROC down, or the
+  sleep that a normal exit reports). INFERRED. The voltage cannot settle this; the abort status is the next
+  thing to explain.
+
+**D6c ping and button tests (2026-11-18, build `324c5804…`, MD1 off).**
+- **Ping over Wi-Fi, cable out, state1 enabled, both radios left on:** the host pinged the player once a second
+  for 600 s. 174 replies, then no route: Reborn switched Wi-Fi off after 300 s dark ("Wi-Fi blocked while the
+  player is dark and idle", its own policy, not a fault). Deep idle never entered: entries stayed at 202 906
+  and the clock-gate refusal count rose from 6 to 113 607 (Bluetooth kept CONN's clocks on after Wi-Fi went
+  off). So with a radio on, state1 stays out of the way. A 10 min ping is not possible under Reborn's idle
+  Wi-Fi block, and with the radios needing to be off for deep idle (B2) the test has nothing more to show.
+- **Button wake, cable out, radios off, 6 min:** the owner pressed a button about 2 min after the screen went
+  dark. The screen woke at once (Reborn `screen_wake` at 51528.45 s). The exit before it recorded R12
+  `0x40001020` (EINT, 26M_SLP, AP_WAKE): the press woke the SPM out of deep idle with 26 MHz asleep. 3694
+  entries, 161 s in the state, all aborts, no latch; Reborn healthy afterwards.
+- **D6c test list:** done except the abort question. Stock runs deep idle only with `cpu_pdn` = 1
+  (`mt_idle.c`: `dpidle_cpu_pdn = 1`), so whether a normal exit and a saving need the CPU powered down is a
+  D6d question, which waits for the owner.
+
+**D6d CPU0 power-down (2026-11-19, build `53e884d1…`): CPU0 powers down and resumes safely; the abort stays.**
+- **Change:** `kernel/y1/deep-idle.c` gains cpuidle state2 (DORMANT, `CPUIDLE_FLAG_OFF | RCU_IDLE`). It runs
+  the same deep-idle sequence as state1, with the kick clearing `CC_DISABLE_DORM_PWR` (stock `cpu_pdn` = 1).
+  Around it are `cpu_pm_enter` and `cpu_cluster_pm_enter` (GIC, VFP and arch timer). `BOOT_SLV_CFG`/`ADDR`
+  (0x10001400) point at `cpu_resume_arm`, and `CA7_CACHE_CONFIG` bit 4 keeps L2 across the reset. The WFI runs
+  through `cpu_suspend` with stock's dormant finisher: D-cache off and flushed, SMP off. A WFI that returns
+  goes back with -EBUSY (stock `cpu_check_dormant_abort`). The Kconfig selects `ARM_CPU_SUSPEND`.
+  `BOOT_SLV_CFG` reads back `0x1`, not the written key `0x13800001`, so the arm check compares bit 0 only.
+  The first build (`aa388569…`) compared the full key and was not run.
+- **Run 1, cable out, radios off, 3 min on state2** (`Y1_DPIDLE_STATE=2 tools/development/y1-dpidle-run.sh 3`):
+  2360 entries and 2360 resumes through `cpu_resume`, with no WFI returns. So every entry really took CPU0
+  through reset and back with its context. 107 s of the 192 s in the state, CPU1 offline, no latch
+  (`dpidle_broken` N). Reborn was healthy afterwards (same process, no warnings or RCU stalls in dmesg).
+- **Wake record:** unchanged from D6c. Every exit was still an abort: `last_wake` `0x40001010` (GPT, 26M_SLP,
+  AP_WAKE) and event `0xd0010000`. The 26 MHz sleep was counted on every exit. So `cpu_pdn` is not what makes
+  the firmware report an abort, and the D6c reading above (abort as the normal outcome with dormant power kept)
+  is ruled out.
+- **Next:** find the firmware condition that reports the abort, by comparing the R13/FSM debug values with
+  stock's `spm_dpidle_after_wfi` path. Then run a drain A/B on state2 against state1.
+
+**D6d abort found (2026-11-19, build `8a930c35…`): the display's standby request holds the AP awake.**
+- **Firmware reading:** decoded from stock's dpidle PCM program (`mt_spm_dpidle.c`, v16-24).
+  - Writes to R14 are waits. The label in bits 16–23 is what `PCM_EVENT_REG_STA` keeps: `0xd0010000` is the
+    abort label and `0x90100000` the normal one.
+  - The main program waits at PC 261 for the AP's WFI. It then powers CPU0 and L2 down (`FC0_PWR_CON`,
+    `CPU_PWR_CON`, `L2_DAT_SLEEP_B`), unless `CLK_CON` bit 14 (`CC_DISABLE_DORM_PWR`) is set.
+  - It then loops at PC 309–323. Any wake source while in the loop goes to the abort path. The loop repeats
+    while R12 bit 30 (AP_WAKE) is set, and while R13 bit 4 is set.
+  - Only after that does it run the sleep sequence and wait for the wake with the normal label (PC 379).
+  - Every D6c/D6d exit carried AP_WAKE: the AP standby condition (`AP_STANBY_CON`) was never met, so the
+    firmware sat in that loop until the GPT woke it, and reported an abort.
+- **Change:** `dpidle_stanby` now also takes the SCU and L2C idle masks (bits 6 and 5) and the cores whose WFI
+  counts (bits 0–1, written to `CORE0/1_WFI_SEL`). The default `0x1b0003` is stock's.
+- **Sweeps on state2, cable out, both radios off** (`y1-dpidle-run.sh`, 2–3 min per value). Every value
+  resumed CPU0 on every entry, with no WFI returns and no latch.
+
+  | `dpidle_stanby` | What is unmasked | Exits | Result |
+  |---|---|---|---|
+  | `0x1b0003` (stock) | all, both cores | 3619 | all aborts |
+  | `0x1b0001` | all, CPU0 only | 3667 | all aborts |
+  | `0x1b0061` | MD and MM, CPU0 only, no SCU/L2C | 3801 | all aborts |
+  | `0x61` | CPU0 only | 1567 | all normal |
+  | `0x60` / `0` | nothing (with or without SCU/L2C) | 2502 / 2518 | all normal |
+  | `0x180061` | MD1 and MD2 | 1444 | all normal |
+  | `0x080061` / `0x100061` | MD1 / MD2 | 2404 / 371 | all normal |
+  | `0x030061` | MM (bits 16 and 17) | 2574 | all aborts |
+  | `0x010061` | bit 16 only | 1294 | all aborts |
+  | `0x020061` | bit 17 only | 2505 | all normal |
+  | `0x1a0003` | stock without bit 16 | 2532 | all normal |
+  | `0x190003` | stock without bit 17 | 2474 | all aborts |
+
+  - Normal exits record event `0x90100000` and R12 `0x10` (GPT only). Aborts record `0xd0010000` and
+    `0x40001010` as before.
+- **Reading:**
+  - Bit 16 is the display request (stock's enum: value 1 is `MFG_MASK`, so bit 17 is MFG and bit 16 DISP).
+  - With the screen dark, the DIS power domain stays on in Linux (`PWR_STATUS` bit 3, D6c abort diagnosis),
+    and its request keeps the AP standby condition false. Stock powers DIS down when its last clock goes
+    off, so it never saw this. INFERRED.
+  - Neither CPU1's WFI nor the SCU/L2C checks matter.
+  - Deep idle already refuses to enter unless every MMSYS clock is gated (`dp_gates`), so the display engine
+    is clock-gated whenever the request would be masked.
+- **Not yet shown:** that a normal sleep saves power (26M_SLP no longer appears in R12 on a normal exit; the
+  firmware switches the clock itself in its sleep sequence), and the health of a long run with bit 16 masked.
+- **Owner's choice (2026-11-19):** mask the DISP request in deep idle for now. The `dpidle_stanby` default is
+  `0x1a0003` (stock's value without bit 16), build `out/y1-boot-d6d4`, BOOTIMG
+  `f9910360db33ed49dbd177519842a26e124878acd69b100d5d2523647411ca77`.
+- **Later option (D6e, not started):** power the DIS domain off while the screen is dark, as stock does, and put
+  the request mask back to stock's.
+  - **Gain:** it removes the masked request, and the display subsystem's leakage while dark.
+  - **Needs:** the display driver releasing the domain on blank (genpd runtime PM on OVL/RDMA/DSI and the
+    panel), and a clean re-init of DSI and the panel on unblank.
+  - **Risk:** display resume (black screen or a stuck DSI), which the button-wake test must cover.
+  - **Decide:** after the D6d drain comparison shows whether deep idle saves power at all.
+- **Next:** check the new default on the player, then run a drain comparison of state2 against state1 (or off).
+
+**D6d drain comparison (2026-11-19, build `f9910360…`): the first saving shown.**
+- **Setup:**
+  - `y1-power-baseline.py start dpidle-ab-d6d-normal-screenoff-radios-off --interval 60 --hours 5`, cable out,
+    screen dark, both radios off, untouched;
+  - beside it, `Y1_DPIDLE_STATE=2 tools/development/y1-dpidle-ab.sh` (now takes the state) switched state2
+    every 30 min, starting with on;
+  - `dpidle_stanby` `0x1a0003`, MD1 off.
+  - The owner ended the run after 3.71 h: seven full blocks and 13 min of an eighth (off).
+- **Overall:** 4.090 V → 3.934 V (-39.3 mV/h); the daemon's percentage fell 97 → 79. CPU busy was 7.4 %.
+- **Deep idle in the on blocks:**
+  - 36 300–38 500 entries and about 1540–1620 s in the state per 1800 s block;
+  - every exit normal (149 893 normal, 0 aborts), every entry resumed through `cpu_resume`;
+  - no latch, CPU1 parked.
+  - Afterwards Reborn was the same process and dmesg had no warnings.
+- **Voltage slope per block (mV/h, least squares on the raw voltage):**
+
+  | Block | 0 on | 1 off | 2 on | 3 off | 4 on | 5 off | 6 on | 7 off (13 min) |
+  |---|---|---|---|---|---|---|---|---|
+  | Slope | -37.2 | -47.9 | -28.0 | -58.1 | -25.5 | -43.7 | -20.8 | -63.7 |
+  | Against the mean of its neighbours | – | -15.3 | +24.9 | -31.3 | +25.4 | -20.5 | +32.9 | – |
+
+  - Every on block is shallower than both of its neighbours, by 25–33 mV/h. On blocks 2–6 average
+    -24.8 mV/h, off blocks 1–5 -49.9 mV/h.
+  - The voltage drop per 30 min block was 9–19 mV on and 21–29 mV off. Block 0 includes the recovery after
+    the unplug and is still shallower than block 1.
+  - Both D6c runs (aborts) showed at most a few mV/h, inside the noise. This difference is about ten times
+    that, with the same sign in every block.
+- **Reading:** a normal deep-idle sleep with CPU0 powered down roughly halves the voltage slope with the screen
+  dark and the radios off. That is consistent with a halved idle current, but the cell's voltage is not a
+  current measurement, so the size is INFERRED. A current measurement (or a full discharge with the state
+  on, against the 2026-11-18 run) would size it.
+- **Next:** enable state2 by default (it still starts disabled), then a long soak with normal use (button wake,
+  playback start, charging). D6e (DIS off while dark) is decided after that.
+
+**D6d on at boot (2026-11-19, build `1932a292…`).** State2 (DORMANT) no longer carries `CPUIDLE_FLAG_OFF`, so it is
+enabled at boot; state1 (DPIDLE, D6c) still starts disabled. After boot: state2 `disable` 0, `dpidle_stanby`
+`0x1a0003`, stage `ready`, no latch, Reborn healthy. With the cable in it refuses (CPU1 online), as before.
+`y1-dpidle-run.sh` and `y1-dpidle-ab.sh` now put the state's `disable` back as they found it instead of
+disabling it. Next: the soak with normal use (button wake, playback start, charging, Wi-Fi and Bluetooth
+switched back on).
+
+**D6d soak in normal use (2026-11-19/20, build `1932a292…`): healthy, but deep idle never entered.**
+- **Owner's report:** the player behaved normally ("seems fine").
+- **After 8.3 h of uptime:**
+  - no latch, Reborn the same process since boot, no warnings in dmesg;
+  - **0 entries**: `dpidle_refusals` `5065,0,0,641311,…`, almost all for the clock condition.
+- **Cause:**
+  - Reborn had Bluetooth on (an audio device paired) and Wi-Fi associated. CTRL1 read `0xd8efcefb`, so APDMA
+    (bit 2) and BTIF (bit 12) were on, plus bit 13.
+  - That is B2: the connectivity owner holds the radio link clocks while any radio function is held, and deep
+    idle with a radio on needs MediaTek's STP sleep protocol, which is out of scope.
+  - Reborn's dark-idle Wi-Fi block does not release Bluetooth, so the chip stays powered.
+- **Reading:**
+  - The saving measured on 2026-11-19 needs both radios off. In normal use with Bluetooth on, D6d costs
+    nothing and gives nothing.
+  - Ways to reach it: Reborn releasing Bluetooth while dark and idle with no connected device, as it already
+    does for Wi-Fi; or the STP sleep protocol (out of scope). Owner's choice.
+
+## 18. D7 system sleep — 2026-11-21
+
+**Status: D7b admitted by the owner (2026-11-21): "go straight to D7b"; Bluetooth is dropped for a sleep as on
+the Y2; Reborn is not changed. D7c (MT6323 sleep mode) was admitted later the same day (§19); D7d (INFRA power-down)
+is not admitted.**
+
+**Why.** D6d saves power only with both radios off, and in normal use Bluetooth stays on, so deep idle never
+entered in the 8.3 h soak (§17, last entry). The Y2 solves this with full system sleep: Reborn asks the shared
+sleep helper (`y2-platform` `sleep request`, on a short Power press and after 60 s dark and idle), the helper
+switches the radios off, quiesces Reborn and writes `mem` to `/sys/power/state`, and the SPM's suspend firmware
+powers the CPU down with DRAM in self-refresh. The Y1 runs the same Reborn and helper; until now the helper
+refused (`physical_qualification_required`) because the Y1 kernel had no suspend at all.
+
+**Stock values D7b uses** (`drsami/mt6572_kernel` `c4b775c`, `mt_spm_suspend.c`, `mt_spm_pcm.c`,
+`mt_dormant.c`):
+- `spm_pcm_suspend`, "pcm_suspend_v26-42", 576 words, IM_LEN 576 (stock's MT6572 convention; the Y2 programs
+  its 597 words as 596), event vectors 26M_WAKE/0, 26M_SLP/33, AP_WAKE/61, AP_SLEEP/113.
+- `pcm_config_suspend`: `PWR_LVNA` (`APMCU_PWRCTL` = 0xff), UART sleep handshake, R0/R7 sync, md_mask
+  MDCONN_UNMASK and mm_mask MMALL_MASK with the SCU and L2C masks and REDUCE_AND (`AP_STANBY_CON` 0x180070),
+  both cores' WFI, the 26 MHz settle (99 less the MD settle), `cpu_pdn` 1, `lock_infra_dcm`.
+- `SHUTDOWN_MODE`: `CA7_CACHE_CONFIG` bit 4 clear, so the reset invalidates the flushed L2.
+- Wake sources KP, EINT, USB_CD, THERM (stock's CCIF, MD_WDT and CONN serve the modem and the radios, which are
+  off; SYSPWREQ is bypassed as in stock). WAKE_ID numbers are the MT6572's (SYSPWREQ is 7 there, not 24).
+- The firmware's DVFS requests use slots 4–7 of D6b's table (1.15 V and `TOP_CKPDN0` set/clear).
+- Not stock: the PCM timer and watchdog. Stock writes the timer as all ones and arms no watchdog; D7b takes
+  the Y2's maintenance wake (30 min, `sleep_maintenance_s`, 10–1800 s for a test) and PCM watchdog wake 30 s
+  later, so every sleep is bounded. D6c showed the PCM timer counting through deep idle with 26 MHz asleep.
+
+**What D7b ports from the Y2** (unchanged unless named):
+- The helper and its receipts, guard and quarantine (userspace, shared). One platform change: the sleep proof
+  compares the journal's `pcm_length` with the player's own firmware length (`Player::suspend_pcm_length`,
+  596 or 576) instead of 596.
+- The sleep journal `kernel/platform/pm-journal.c` (`/sys/firmware/y2_pm`), built for the Y1 by
+  `kernel/y1/pm-journal.c` on a reserved DRAM page (`0x9fbff000`, `kernel/y1/sleep.h`, DTS `no-map`). The Y2
+  keeps it in stock's RAM-console SRAM; the MT6572's equivalent is unknown without the stock kernel. DRAM keeps it
+  through the sleep; across a watchdog reset its retention is unproven (`retention=reserved_dram_unproven`; the
+  journal's own self-test and a warm reboot can show it). The guard file on `/data` quarantines a failed attempt
+  either way.
+- The PM core's stage marks and callback trail (Y2 overlays 0059, 0060, 0067 as Y1 0050–0052), and synchronous
+  device suspend.
+- The MT6323 wake order (Y2 0024–0026 as Y1 0014's PM ops, 0048, 0049): wake masks are written in the PMIC's
+  late suspend, after the key driver armed its wake. Upstream writes them at `PM_SUSPEND_PREPARE`, before that,
+  so the centre button could not wake the player. The RTC-alarm check is skipped without an RTC driver (the Y1
+  has none; a set `RTC_IRQ_EN` is LK's or stock's, not Linux's).
+- The RGU backstop (Y2 0037 as part of Y1 0007): the helper arms 30 s around the `mem` write, the backstop pauses
+  inside the SPM sleep and a stall elsewhere resets the player. On the Y1 the RGU is LK's, fed by the watchdog
+  core (nothing opens `/dev/watchdog`); upstream suspend does not stop such a watchdog, so without this a sleep
+  longer than 15 s would end in a reset.
+- The workload leases (`kernel/platform/workload.c`, `/dev/y2-workload`, added as `workload.c` so its leases are at `/sys/module/workload` as on the Y2), which the helper requires to see no
+  library scan or transfer. Reborn already opens the device; on the Y1 its leases now also apply the Y2's
+  cpufreq floors and bring CPU1 back as on the Y2.
+
+**New on the Y1:**
+- `kernel/y1/deep-idle.c` gains the suspend path, sharing D6's arm/kick/clean, GIC mask, CIRQ clone and
+  power-off code (the arm is now one function for both programs):
+  - `.enter` refuses unless CPU0 alone with CPU1 powered off, the DVFS table ready and the PMIC wrapper clock
+    on; masks the GIC to the SPM line (an enabled interrupt already pending refuses with `-EBUSY`), clones
+    CIRQ, points `BOOT_SLV_ADDR` at `kernel/y1/resume-vector.S` (it stamps the journal, then `cpu_resume`),
+    arms the suspend program with readback, and calls `cpu_suspend` with D6d's power-off finisher after the
+    journal's last mark and the backstop's pause.
+  - No `cpu_pm` calls: syscore already saved the GIC, VFP and arch timer (as on the Y2). A syscore resume
+    registered after `cpu_pm`'s replays CIRQ into the restored GIC and checks the restored enables.
+  - After the wake: the wake registers, slot 1 requested again, stock's clean (`SW_INT_CLEAR` 0xf).
+  - Sleep time: if the arch counter covered less than half of the PCM timer's span it stood still and the
+    difference is injected (`timekeeping_inject_sleeptime64`, which needs `RTC_CLASS`/`RTC_HCTOSYS`; there is
+    still no RTC driver). Whether the counter runs is to be seen.
+  - `state` on `10006000.power-controller`: the fields the helper reads (`system_sleep_abi`, `broken`,
+    `maintenance_seconds`, `timer_wake`, `ticks32k`, `wake`) and the Y1's counters.
+  - Any readback mismatch, PCM assert or restore fault latches `sleep_broken` for the boot.
+- The MT6572 pinctrl's EINT suspend (`mtk_paris_pinctrl_pm_ops`): only wake-armed EINTs stay unmasked.
+- DTS: `wakeup-source` on the centre button (the Y2's Power), the journal page reserved.
+- Config: `SUSPEND`, `PM_DEBUG` (`/sys/power/pm_test`), `INNIOASIS_Y1_SLEEP`, `RTC_CLASS`, `RTC_HCTOSYS`.
+
+**Wake sources:** the centre button (PMIC key through EINT16), the USB cable (CHRDET and USB_CD), the
+maintenance timer, the PCM watchdog. The wheel is not one (as on the Y2: it sleeps and is masked).
+
+**Bounds:**
+- **Off by default:** `/sys/module/y1_deep_idle/parameters/sleep_enabled` starts 0, so the helper reads
+  `system_sleep_abi=0` and refuses Reborn's automatic sleep as before. An owner test writes 1; a later build
+  turns it on after the tests, as D6d did.
+- INFRA stays powered; no PMIC sleep-mode write (D7c); VPROC stays 1.15 V through the sleep.
+- Every SPM write is read back before the kick; a failure before the kick unwinds and refuses.
+- A sleep fault latches sleep off for the boot; the helper's guard then quarantines the image.
+
+**Risks:**
+- **A hang with no power button.** Covered by the backstop around the kernel's steps, the PCM timer and
+  watchdog wakes around the SPM sleep, and the cable wake. If the SPM never wakes at all, only the cable (USB_CD)
+  is left; the first runs are with the owner at hand.
+- **The PCM timer may not wake with the suspend firmware** (stock never used it). The first test uses a short
+  `sleep_maintenance_s`; without a timer wake the maintenance loop cannot run and the button and cable are the
+  wakes.
+- **Device resume:** eMMC (the guard allows CMD5 and power-off notification), SD, display (dark, CRTC off),
+  USB, audio, the connectivity core. Each is a first.
+- **The arch counter** may stop in the sleep: handled by the injection, checked against the host.
+
+**Tests (owner at hand, cable out, over Wi-Fi until the radios go off, then over USB after the wake):**
+1. Boot: `state` shows `system_sleep_abi=0`, `/sys/power/state` lists `mem`, `y2_pm/backstop_s` shows
+   `provider=1`, `y2_pm/retention` and `reset_status` read; D6d and the D5/D6 health checks as before.
+2. `sleep_maintenance_s` 60, `sleep_enabled` 1, then `y2-platform sleep request`: the player sleeps; a timer
+   wake after about 60 s re-enters; the centre button wakes it to Reborn's screen. Receipt
+   `product.kernel_completed` and `wake_reason` power; journal `stage=EXIT`, `reset_resume_entry=0x59325253`,
+   `pcm_length=576`.
+3. Uptime against the host across a 10 min sleep; `injected_ns` and `counter_ns` recorded.
+4. Cable plug wakes it; charging resumes.
+5. Wi-Fi and Bluetooth back, a headset reconnects, playback starts.
+6. 20 cycles (button), then an hour's sleep with the 30 min maintenance wake.
+7. Drain: a night asleep against the D6d screen-off slope.
+
+**D7b build (2026-11-21).** Build `out/y1-boot-d7b3` (Y2ROOT `out/y1-root-b268`), BOOTIMG sha256
+`05b3eb19ddf6e4c4122849ff299b2dc423f1495cab2f75c0e458d448f7c52742`, RECOVERY
+`56243326fcdae8bf4db4d85691f9bcd37b9e23a11473b9176d69eca2d54acae8`. Sleep starts disabled
+(`sleep_enabled` 0). The platform's per-player `pcm_length` needs a Y2ROOT built from a commit with it; until
+then the test binds a cross-built `y2-platform` over the installed one in RAM (gone at reboot). Not yet run on
+the player.
+
+**D7b run 1 (2026-11-21, build `05b3eb19…`, cable out, radios off by hand).**
+- **Boot:** `state` present with `system_sleep_abi=0`, `/sys/power/state` lists `mem`, `pm_test` `[none]`,
+  backstop `provider=1`, journal at `0x9fbff000`, DVFS slots and D6d ready. `/dev/y2-workload` missing: the
+  shared `workload.c` registered only on the Y2, and its added name put its leases under `y2_workload`. Fixed
+  (machine check takes the Y1; added as `workload.c`).
+- **Cable in:** every attempt refused at device prepare by the charger (`-16`, `failed_stage=DPM_PREPARED`), the
+  Y2's rule while charging; abort path and journal correct.
+- **`pm_test devices`, cable out: PASS.** Every device suspended and resumed (rc 0).
+- **Real sleep: refused before any kick, `arm_readback`.** `SPM_CLK_SETTLE` reads 128 (0x80) for the MD part,
+  above stock's 99, so the settle step refused; sleep latched off for the boot, nothing else changed. Stock's
+  unsigned `99 - 128` underflows; the AP part is now 0 (settle 128 ticks, 3.9 ms).
+- Build `out/y1-boot-d7b5`, BOOTIMG `745180a611ca60721df53b19db78e8a8583880a767dc54c651f5645b559ada92`, RECOVERY
+  `e74d59705961e524217c183518331a8a94c1609ab59d2f3accc4d2be169ddd05`.
+
+**D7b run 2 (2026-11-21, build `745180a6…`, cable out, radios off by hand, `sleep_maintenance_s` 60).**
+- `pm_test` devices, platform, processors and core: all rc 0, journal `stage=EXIT error=0`.
+- **Real sleep: PASS for the SPM path.** `resumes=1`, `normal=1`, event `0x90100000`, `wake=0x1` (PCM timer),
+  `ticks32k` 1 966 091 (60.0 s), no PCM assert, no latch; journal `stage=EXIT error=0 pcm_length=576
+  reset_resume_entry=0x59325253`, so the boot ROM resumed CPU0 through `y1_cpu_resume`. The PCM timer wakes the
+  suspend firmware. `/dev/y2-workload` present with Reborn's leases. No kernel warning; the radio chip and Wi-Fi
+  came back.
+- **Clock: FAIL.** Uptime advanced 0.5 s and wall time 1 s across the 60 s sleep: the arch counter read lower
+  after the wake than before (it restarts while the cluster is off; GPT6 still `CON` 0x31), so the "covered at
+  least half" check passed on a wrapped difference and nothing was injected. Fixed: a counter that went back
+  counted nothing, and the PCM span is injected; the raw counter values are now in `state`.
+- Build `out/y1-boot-d7b6`, BOOTIMG `445cf35e46b0626db9889378695abbdfeec5184d93580de9c1bafd241808700b`, RECOVERY
+  `7ad11a0ac5bf0e5ca6ef10f4976cc320ca71540ac4295bb17814b7d1a9023d6e`.
+- Open: whether D6d's deep idle also restarts the counter (it keeps the cluster on; run 1 of D6c matched the host
+  over 851 s, with every exit an abort).
+
+**D7b run 3 (2026-11-21, build `445cf35e…`, two 60 s sleeps in a row).** Both real: `entries=2 resumes=2
+normal=2`, timer wakes, `ticks32k` 1 966 091 each, journal `EXIT`/`576`/`0x59325253`. Clock: the first sleep lost
+its 60 s, the second was injected (uptime +60.6 s); the player ended 60 s behind the host. The recorded counter
+was the virtual one (`CNTVCT`, about 1.6e19: `CNTVOFF` is undefined after the CPU reset and nothing sets it on a
+Y1 that boots in SVC), while Linux reads the physical counter (`arm,cpu-registers-not-fw-configured`); so the
+"did the counter cover the sleep" test was meaningless. Fixed without the counter: the DTS marks the timer
+`arm,no-tick-in-suspend` (timekeeping takes no sleep time from it) and every completed sleep injects the PCM
+timer's span; `state` records `arch_timer_read_counter` before and after for diagnosis. Build
+`out/y1-boot-d7b7`, BOOTIMG `9a68e28b4ec71e8be07c65e1e56382001552af9db84de81a5c92a051a0166072`, RECOVERY
+`e957a3a1a84736c4a494ba1a62b64a27083c1c964564321dd17ed06cc0e765d7`.
+
+**D7b run 4 (2026-11-21, build `9a68e28b…`, two 60 s sleeps): PASS, clock included.** `entries=2 resumes=2
+normal=2`, timer wakes, journal `EXIT error=0`. The physical counter Linux reads advanced 2.0 ms across each
+60 s sleep (26 000 ticks): it stops in suspend. Each sleep injected 60.000 s; uptime advanced 60.5 s per sleep,
+and the player's wall clock matched the host to the second at the end (1795267402 both).
+
+**D7b run 5 (2026-11-21, build `9a68e28b…`, test `y2-platform` bound in RAM, `sleep_maintenance_s` 600): the
+product path, PASS.** Cable out, `y2-platform sleep request` over Wi-Fi; the owner pressed the centre button
+after about 1.5 min and the screen woke.
+- Receipt: `requested` → `reborn_prepared` → `quiescing_radios` → `syncing` → `kernel_suspend` (1.9 s after the
+  request) → `kernel_resumed` → `screen_restored` → `restoring_radios` → `complete_result_0`; `product.state`
+  `restored`, `kernel_completed` true, `wake_reason` `power` (mtk-pmic-keys IRQ count 0 → 2), `reborn_prepared`
+  and `reborn_restore` true, `suspended_seconds` 99.4.
+- SPM: normal exit, `wake=0x20` (EINT: the PMIC key through EINT16), `ticks32k` 3 257 628; journal `COMPLETE`,
+  `pcm_length=576`, `reset_resume_entry=0x59325253`; guard `pending:false`. 99.4 s injected into the clocks.
+- After the wake: Bluetooth and Wi-Fi back (`functions=0x9`), no kernel warning. One `charger check ... error=-5`
+  line at the unplug, 2 min before the request, is the charger's own (not on the sleep path); to be watched.
+- Earlier Reborn's own automatic sleep requests were refused with `physical_qualification_required` while
+  `sleep_enabled` was 0, as intended.
+
+**D7b run 6 (2026-11-21, same setup): cable wake.** `sleep request`, then the owner plugged the cable in after
+about 2 min. Kernel: a normal sleep (`entries=4 resumes=4 normal=4`), `wake=0x20` (EINT: CHRDET through the PMIC),
+`ticks32k` 3 799 768 (116 s), the USB link back at once. Helper: after the kernel returned, its handshake read of
+`/sys/power/wakeup_count` blocked (the charger holds a wakeup source while it charges, `pm_stay_awake` in the shared
+`mt6323-charger.c`), so after 2 s it recorded `product_refused` `wakeup_count_busy` and restored with the screen
+dark (its rule for a refused sleep), `product.kernel_completed` true. The player is awake and charging; the
+screen stays dark until a press. This is the shared helper's behaviour with the shared charger driver, not a Y1
+kernel fault; the receipt calls a completed sleep "refused". Left as on the Y2; noted for the platform.
+
+**D7b on at boot (2026-11-21).** `sleep_enabled` now starts 1, so Reborn's automatic sleep (60 s dark and idle)
+and the short centre press reach the helper. Committed on branch `y1-d7b-sleep` with the platform's per-player
+`pcm_length`; Y2ROOT `out/y1-root-d7b8` and BOOTIMG/RECOVERY `out/y1-boot-d7b8` are built from that commit.
+Remaining: automatic sleep, the 30 min maintenance wake, about 20 cycles, a night's drain against D6d.
+
+**D7b run 7 (2026-11-21, committed build: Y2ROOT `out/y1-root-d7b8` rootfs `14eaf0dd…4f79b37a`, BOOTIMG
+`6a60ef2048ee66467ef45d309e90cc2badf632f94a3baa96aca3b605c91bad22`, RECOVERY `93b88234…0fc7b1f`, commit
+`28684f73`; ANDROID, BOOTIMG and RECOVERY written and read back): automatic sleep, PASS.** No test binary, sleep
+on at boot (`system_sleep_abi=1`, maintenance 1800 s). Cable out, player untouched: Reborn requested the sleep
+by itself after its dark-idle delay; `kernel_suspend` 1.9 s later, 143.8 s asleep, the owner's centre press woke
+it (`wake=0x20`, `wake_reason` power), `product.state` restored, Bluetooth and Wi-Fi back (`functions=0x9`), the
+clock matching the host.
+
+## 19. D7c VPROC sleep voltage — 2026-11-21
+
+**Status: admitted by the owner (2026-11-21, "start d7c"). On the owner's Y1: `pm_test platform`, a button wake and a
+timer wake PASS (runs 1–3 below); a 12.6 h night asleep fell -13.6 mV/h, -2.1 %/h (run 4); the `vproc_sleep` 0
+night shows no measurable difference, so that saving is system sleep's (run 5).**
+
+**What.** Stock lowers VPROC (the CPU cluster and SoC core) to 0.85 V while the suspend firmware has released
+SRCLKEN with 26 MHz, through the MT6323's own sleep mode, not through DVFS. D7b sleeps at 1.15 V.
+
+**Stock (`drsami/mt6572_kernel` `c4b775c`, `pmic_mt6323.c` `PMIC_INIT_SETTING_V1`, "20130328_0.85v"):** written once
+at boot: `0x212[5:4]` `QI_VPROC_VSLEEP` 2, `0x216[1]` `VPROC_VOSEL_CTRL` 1 (hardware mode), `0x21c` `VPROC_SFCHG_FRATE`
+0x17, `FEN` 1, `REN` 1, `0x222` `VPROC_VOSEL_SLEEP` 0x18 (0.85 V), `0x230[1:0]` `VPROC_TRANSTD` 3, `0x230[8]`
+`VPROC_VSLEEP_EN` 1, and `0x120[4]` `RG_SRCLKEN_HW_MODE` (`TOP_CKCON0`) 1. These eight VPROC fields are the Y2 FM
+kernel's exactly (`kernel/platform/vproc-sleep-policy.h`, Y2 POWER-FINAL-13, `tests/test_vproc_sleep.py`). On the Y2
+`0x120[4]` already read 1 from the boot chain (golden capture 2026-10-11); on the Y1 it is to be read.
+
+**What D7c ports from the Y2:** the table, the plan and the restore order of `vproc-sleep-policy.h`, unchanged (added
+to the Y1 build as `drivers/soc/mediatek/vproc-sleep-policy.h`): only while the PMIC is in software mode with
+`VOSEL` (`0x21e`) and the bank readback `NI_VPROC_VOSEL` (`0x224`) at 0x48 (1.15 V); `VOSEL_ON` preset to that selector
+so the mode switch itself changes nothing, the mode bit written last; afterwards `NI_VPROC_VOSEL` must still read
+0x48. Every word saved first and written back in reverse order (the mode bit first), each read back. A refused or
+failed apply leaves 1.15 V and the sleep goes on, as on the Y2.
+
+**Different on the Y1 (`kernel/y1/deep-idle.c`):**
+- **Where.** The Y2 writes the fields inside `->enter()` with interrupts off through its own wrapper driver. The Y1
+  uses mainline's `mtk-pmic-wrap`, whose regmap takes a mutex and polls with sleeps, so D7c applies them in
+  `suspend_ops->prepare_late` (after every device's noirq suspend, interrupts on) and restores them in `->wake`
+  (after `syscore_resume` and CPU1's return, before any device's noirq resume).
+- **Deep idle refuses in between** (`vproc_armed`, new refusal reason `sleep`, the ninth `dpidle_refusals` entry).
+  `prepare_late` runs before `cpuidle_pause()` and `->wake` after `cpuidle_resume()`, and deep idle's firmware also
+  releases SRCLKEN (§17), so D6d would otherwise run at 0.85 V, which it was never qualified at. The flag is set
+  before the first PMIC write and cleared only after a verified restore.
+- **`0x120[4]` is a precondition, not a write:** without SRCLKEN hardware mode the PMIC would not see SRCLKEN drop,
+  and switching it would change more than VPROC (the 26 MHz buffer and VTCXO follow it). Unset refuses
+  (`vproc_stage=srclken_software`).
+- **A failed restore** latches sleep off (`sleep_stage=vproc_restore`) and leaves deep idle refused for the boot; the
+  helper's guard then quarantines the image.
+- `vproc_sleep` (`/sys/module/y1_deep_idle/parameters/vproc_sleep`, default 1) switches the step off for an A/B
+  night. `state` gains one line: `vproc_sleep`, `vproc_stage`, `vproc_armed`, `vproc_entries`, `vproc_restores`,
+  `vproc_refusals`, `vproc_failures`, `vproc_error` and the four PMIC words read at the last plan (`vproc_ckcon0`,
+  `vproc_control`, `vproc_software`, `vproc_actual`).
+
+**Not in D7c:** VSYS sleep mode (the Y2's group 8), the LDO `LP_SEL` bits, `RG_OSC_HW_MODE`, VTCXO control, VPROC in
+hardware mode outside a sleep (stock's boot-time setting, which would also lower deep idle), INFRA power-down (D7d).
+
+**Open question the first read answered (test 1 below: software mode):** whether LK leaves VPROC in software mode. If `0x216[1]` is already 1,
+the plan refuses (`not_software_1150mv`) and the Y1 already runs in hardware mode; then D6b–D6d's slot 2 (1.05 V on
+`VOSEL_ON`) took effect, while in software mode it changed nothing (the slot table writes `VOSEL_ON`, the PMIC
+uses `VOSEL`). Either way D6d's results stand; only what they mean for VPROC differs.
+
+**Risks:**
+- **No wake at 0.85 V.** The cluster is powered down in the sleep and L2 flushed (SHUTDOWN_MODE), so nothing
+  retains state on VPROC; on wake SRCLKEN rises, the PMIC returns to `VOSEL_ON` (1.15 V) during the 26 MHz settle
+  (128 ticks, 3.9 ms; the ramp of 300 mV takes well under 1 ms) before the boot ROM resumes CPU0. A hang is covered
+  as in D7b by the PCM watchdog, the RGU backstop and the cable wake; the first runs are with the owner at hand.
+- **A restore that fails** leaves VPROC in hardware mode at 1.15 V while awake (SRCLKEN high): safe to run, and
+  sleep and deep idle stay off until reboot.
+
+**Test 1, read-only (2026-11-21, on the running D7b build `6a60ef20…`, regmap debugfs `1000f000.pwrap`, one line
+each):** `0x120` `0x0031` (`RG_SRCLKEN_EN`, `RG_SRCLKEN_HW_MODE`, `RG_OSC_HW_MODE` set: the precondition holds), `0x212`
+`0x0003`, `0x216` `0x0000` (**software mode**), `0x21c` `0x0505`, `0x21e`/`0x220`/`0x224` `0x48` (1.15 V), `0x222` `0x48`,
+`0x230` `0x0000`. So the plan admits, and VPROC has been in software mode all along: D6b–D6d's slot 2 (1.05 V written
+to `VOSEL_ON`) never lowered VPROC in deep idle; the PMIC used `VOSEL` (1.15 V) throughout. D6d's saving (§17) came
+without any voltage change. The same read showed `entries=3 normal=3`, last `wake=0x20` after 893 s asleep.
+
+**Build `out/y1-boot-d7c1`** (Y2ROOT `out/y1-root-d7b8`, unchanged): BOOTIMG sha256
+`235d53aa03d5fb974cfe5e967a5b3c7e0c433a1a40bbfb90c70dc8510e4c1b37`, RECOVERY
+`535c87dee4d98d0346fab2c6d852b5f6d4bf0896430a07c4b7cf696eeea57d38`; the DTB and kernel config are D7b8's. Flash BOOTIMG only.
+
+**Tests (owner at hand, cable out for real sleeps, Wi-Fi then USB):**
+1. Read-only, on the running D7b build: PMIC `0x120`, `0x212`, `0x216`, `0x21c`, `0x21e`, `0x220`, `0x222`, `0x224`,
+   `0x230` from the regmap debugfs file. Decides whether D7c can arm at all.
+2. Boot D7c: `state` shows `vproc_sleep=1 vproc_stage=not_attempted`; D6d, D7b and the health checks as before.
+3. `pm_test platform`, cable out: `prepare_late` applies and `->wake` restores without a sleep: `vproc_entries` =
+   `vproc_restores` = 1, `vproc_failures` 0, `vproc_actual` 0x48, `vproc_armed` 0; PMIC words equal to step 1.
+4. A real sleep (`sleep_maintenance_s` 60, `sleep request`): timer wake and a button wake, counters as in 3, journal
+   `EXIT`, clock matches the host, Wi-Fi and Bluetooth back.
+5. `dpidle_refusals` ninth entry stays 0 outside a sleep; deep idle entries continue after the wake.
+6. A night asleep against D7b's (run 7 onward), then the same with `vproc_sleep` 0 for the A/B.
+
+**D7c runs (2026-11-21, build `235d53aa…` flashed and read back, cable out, over Wi-Fi):**
+- **Boot (test 2): PASS.** `vproc_sleep=1 vproc_stage=not_attempted`, `system_sleep_abi=1`, DVFS slots ready, ninth
+  `dpidle_refusals` entry 0, no `y1-deep-idle` error.
+- **Run 1, `pm_test platform` (test 3): PASS.** The first attempt with the radios on was refused at device suspend by
+  the connectivity owner (`-16`), before `prepare_late`, as in D7b. With both radios rfkill-blocked (chip
+  `powered=0` after 2 s): `vproc_entries=1 vproc_restores=1 vproc_failures=0`, `vproc_actual` 0x48 after apply and
+  restore, and every PMIC word after the cycle equal to before (`0x216` 0, `0x222` 0x48, `0x230` 0). Deep idle
+  refused 499 times with reason `sleep` during the 5 s window, so the guard holds. Radios back.
+- **Run 2, product path, button wake (test 4): PASS.** `y2-platform sleep request`; asleep 106.4 s at the stock
+  sleep voltage, the owner's centre press woke it (`wake=0x20`), normal exit; `vproc_entries=2 vproc_restores=2`,
+  no failure; journal `COMPLETE error=0 pcm_length=576 reset_resume_entry=0x59325253`; receipt `restored`,
+  `kernel_completed` true, `wake_reason` power; 106.4 s injected, wall clock equal to the host's; Bluetooth and
+  Wi-Fi back (`functions=0x9`); no kernel warning. (Maintenance was 1800 s here: the test script put it back too
+  early, since the request returns once queued.)
+- **Run 3, timer wake: PASS for the kernel.** `sleep_maintenance_s` 60: a normal exit after 60.000 s
+  (`wake=0x1`, `ticks32k` 1 966 091), `vproc_entries=3 vproc_restores=3`, journal `COMPLETE error=0`, clock equal to
+  the host's, radios back. The helper then restored and completed (`complete_result_0`, `wake_reason` unknown)
+  instead of sleeping again, so the owner's later press found the player awake. That is the shared helper's
+  maintenance handling, not D7c; on the Y1 it had only run with 600 s and 1800 s maintenance before. Open.
+- **Run 4, the night (test 6, 2026-11-21/22): PASS, the first night in system sleep.**
+  - **Setup:** the `y1-power-log.sh` logger (`d7c-sleep-night-vproc1`, 60 s interval, 14 h cap), started over Wi-Fi.
+    Cable out, untouched, `vproc_sleep` 1, maintenance 1800 s. The product path put the player to sleep after the
+    dark-idle delay. The owner ended the run by plugging the cable in after 12.64 h.
+  - **Sleep:** 24 maintenance wakes logged, the player asleep about 95 % of the time (2 244 s awake of 45 487 s; CPU busy
+    6.4 % while awake).
+  - **Counters at the end (since boot):** SPM `entries=28 normal=28 aborts=0 restore_failures=0`;
+    `vproc_entries=29 vproc_restores=29 vproc_failures=0`, `vproc_actual` 0x48; `suspend_stats` 29 successes, 1 fail
+    (run 1's radio refusal). No kernel warning. The last wake was the cable (`wake=0x20` after 704 s).
+  - **Drain:** 3.952 V → 3.796 V; least squares on the raw voltage -13.6 mV/h (the daemon's filtered voltage
+    -14.0 mV/h; the settled second sample of each wake -14.0 mV/h). The daemon's percentage fell 82 → 57 (-2.1 %/h).
+    By thirds: -19.3, -11.2, -7.7 mV/h.
+  - **Against earlier nights:** D3's screen-off, radios-off run over almost the same voltage range (2026-11-16, 3.970 →
+    3.763 V) fell -30.3 mV/h, 85 → 48 % (-7.4 %/h). D6d's deep-idle blocks fell -24.8 mV/h, at 4.09–3.93 V.
+    Tonight's slope is less than half of D3's at equal charge, and the percentage falls about 3.5 times slower.
+  - **Reading:** system sleep with the stock sleep voltage roughly halves the voltage slope again against D6d. At
+    -2.1 %/h a full charge would last about two days asleep with 30 min maintenance wakes. The size is INFERRED, as in
+    §17: the cell's voltage is not a current. No D7b night (1.15 V asleep) exists, so this run does not split D7b's share
+    from D7c's. The `vproc_sleep` 0 night does that.
+- **Run 5, the B night (`vproc_sleep` 0, 2026-11-22): no difference measurable.**
+  - **Setup:** as run 4 on the same boot, `vproc_sleep` 0 set through sysfs, logger `d7c-sleep-night-vproc0`. The
+    owner unplugged at 05:25, straight from charging, and ended the run with the cable after 6.83 h.
+  - **Sleep:** 14 sleeps, all normal (SPM `entries` 28 → 42, `aborts=0`); `vproc_entries` stayed 29, so no sleep
+    touched the PMIC. 1 160 s awake. No kernel warning.
+  - **Drain:** 3.892 V → 3.782 V, 62 → 53 %. The first 30 min is the cell relaxing after the charge (the daemon's
+    filtered voltage 3.969 → 3.836 V), which spoils the whole-run slopes (raw -11.3, filtered -13.9 mV/h,
+    -1.36 %/h). The percentages are not comparable for the same reason.
+  - **Same voltage window, daemon's filtered voltage, 3.79–3.85 V:** run 4 (0.85 V asleep) -8.6 mV/h over 6.3 h;
+    run 5 (1.15 V asleep) -8.4 mV/h over 5.3 h.
+  - **Reading:** the sleep voltage makes no difference this method can see. With CPU0 and CPU1 powered off in
+    `SPM_CPU_SHUTDOWN_INFRA_RETAINED`, VPROC feeds only the retained logic, so stock's 0.3 V drop saves leakage on
+    a small domain. That saving is below what a cell-voltage slope resolves, so it is not shown, not shown absent.
+    Run 4's halving against D3 and D6d is therefore system sleep's (D7b's), not D7c's.
+  - `vproc_sleep` set back to 1 afterwards (the build default).
+- **Decision for the owner:** keep D7c on. It matches stock, has run 29 apply and restore cycles without a failure,
+  and costs nothing measurable. Or turn it off by default as unproven. A current measurement would settle the size.
+- **Open:** the helper's re-entry after a maintenance wake.
+

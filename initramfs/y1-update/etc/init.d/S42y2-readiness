@@ -1,0 +1,19 @@
+#!/bin/sh
+# Innioasis Y1 override of the Y2's S42y2-readiness (docs/planning/Y1-RECOVERY-PLAN.md, R4b): the Y2's service
+# daemon under its readiness supervisor, which /etc/y2linux/service-policy.json restricts to its network part
+# (Wi-Fi and time, docs/planning/Y1-WIFI-PLAN.md, W6) and its update part (the daily check once Wi-Fi is online,
+# the health acknowledgement of an installed update, with y1-update-core). The Y2's USB gadget, SD card and storage
+# work never run here: the Y1 keeps its MTP gadget (S45y1-mtp).
+# Only on the Y1's own Y2DATA (the loop S03y1-data recorded; Reborn's RAM /data is none), and only with a platform
+# that knows the policy: an older one would run the Y2's whole service.
+case "$1" in
+ start)
+	[ ! -e /data/system/platform/maintenance-pending ] || exit 1
+	dev=$(cat /run/y2-data-device 2>/dev/null) && grep -q "^$dev /data ext4 " /proc/mounts || exit 0
+	grep -q service-policy.json /usr/sbin/y2-platform || exit 0
+	mkdir -p /run/y2
+	start-stop-daemon -S -q -b -m -p /run/y2/readiness-supervisor.pid -x /usr/libexec/y2/readiness-supervise
+	;;
+ stop) start-stop-daemon -K -p /run/y2/readiness-supervisor.pid 2>/dev/null || : ;;
+ *) exit 2 ;;
+esac

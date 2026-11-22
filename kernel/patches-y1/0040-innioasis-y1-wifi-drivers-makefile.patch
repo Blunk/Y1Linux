@@ -1,0 +1,11 @@
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -123,6 +123,8 @@
+ obj-$(CONFIG_WATCHDOG)		+= watchdog/
+ obj-$(CONFIG_MD)		+= md/
+ obj-$(CONFIG_BT)		+= bluetooth/
++# The Innioasis Y1 builds the Y2 fullmac (kernel/platform/connectivity/wifi) for its Wi-Fi.
++obj-$(CONFIG_BT_INNIOASIS_Y1_WIFI)	+= y2/connectivity/wifi/
+ obj-$(CONFIG_ACCESSIBILITY)	+= accessibility/
+ obj-$(CONFIG_ISDN)		+= isdn/
+ obj-$(CONFIG_EDAC)		+= edac/

@@ -1,0 +1,29 @@
+--- a/drivers/bluetooth/Kconfig
++++ b/drivers/bluetooth/Kconfig
+@@ -3,6 +3,26 @@
+ menu "Bluetooth device drivers"
+ 	depends on BT
+ 
++config BT_INNIOASIS_Y1
++	bool "Innioasis Y1 MT6572 connectivity (Bluetooth)"
++	depends on BT=y && ARCH_MEDIATEK && OF && REGULATOR && PM
++	select FW_LOADER
++	select MFD_SYSCON
++	select CRYPTO_LIB_SHA256
++	help
++	  The Innioasis Y1's MT6572 CONSYS radio core over BTIF/STP as a
++	  standard HCI device: the Y2's connectivity owner with the MT6572
++	  power-on and one ROM patch. Probes only from a DT node.
++
++config BT_INNIOASIS_Y1_WIFI
++	bool "Innioasis Y1 MT6572 connectivity (Wi-Fi)"
++	depends on BT_INNIOASIS_Y1 && CFG80211=y && RFKILL=y
++	help
++	  The Wi-Fi function of the same radio core: the Y2's MT6582
++	  fullmac (drivers/y2/connectivity/wifi, the driver MediaTek builds
++	  for the MT6572) as a child of the Y1 connectivity owner. Without
++	  the node's "wifi" window and interrupt it creates no device.
++
+ config BT_INTEL
+ 	tristate
+ 	select REGMAP

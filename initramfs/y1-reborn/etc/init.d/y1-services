@@ -1,0 +1,5 @@
+# Innioasis Y1: the Y2 boot scripts that are safe on Y1 hardware (docs/planning/Y1-SYSTEM-PLAN.md §2), with
+# USB networking and SSH (docs/planning/Y1-NETWORK-PLAN.md) and Reborn's first UI (docs/planning/
+# Y1-REBORN-PLAN.md, stage R2): S90y1-reborn instead of the Y2's S90reborn, which needs Y2DATA, the power
+# daemon and the Y2 supervisor.
+Y1_SERVICES="S00y2-runtime S01syslogd S02klogd S02sysctl S03y2-time S11modules S20y2-usb S25y2-display S40network S50crond S50y1-dropbear S90y1-reborn"

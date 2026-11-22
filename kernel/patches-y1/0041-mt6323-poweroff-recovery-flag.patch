@@ -1,0 +1,135 @@
+--- a/drivers/power/reset/mt6323-poweroff.c
++++ b/drivers/power/reset/mt6323-poweroff.c
+@@ -14,24 +14,112 @@
+ #include <linux/platform_device.h>
+ #include <linux/mfd/mt6397/core.h>
+ #include <linux/mfd/mt6397/rtc.h>
++#include <linux/mutex.h>
+ #include <linux/reboot.h>
+ 
+ struct mt6323_pwrc {
+ 	struct device *dev;
+ 	struct regmap *regmap;
+ 	u32 base;
++	struct mutex pdn1_lock;
+ };
+ 
++/*
++ * Innioasis Y1 (docs/planning/Y1-RECOVERY-PLAN.md): the RTC PDN1 recovery flag. With bits 5:4 = 01 the stock
++ * LK starts the RECOVERY partition and clears the flag again (stock rtc_mark_recovery writes the same).
++ */
++#define Y1_RTC_PDN1		0x002c
++#define Y1_PDN1_RECOVERY_MASK	0x0030
++#define Y1_PDN1_RECOVERY	0x0010
++
++static int mt6323_pdn1(struct mt6323_pwrc *pwrc, unsigned int *pdn1)
++{
++	return regmap_read(pwrc->regmap, pwrc->base + Y1_RTC_PDN1, pdn1);
++}
++
++/* PDN1 with bits 5:4 replaced, through the RTC write trigger, read back. */
++static int mt6323_pdn1_set_recovery(struct mt6323_pwrc *pwrc, bool on)
++{
++	unsigned int old, val, want;
++	int ret;
++
++	mutex_lock(&pwrc->pdn1_lock);
++	ret = mt6323_pdn1(pwrc, &old);
++	want = (old & ~Y1_PDN1_RECOVERY_MASK) | (on ? Y1_PDN1_RECOVERY : 0);
++	if (!ret)
++		ret = regmap_write(pwrc->regmap, pwrc->base + Y1_RTC_PDN1, want);
++	if (!ret)
++		ret = regmap_write(pwrc->regmap, pwrc->base + RTC_WRTGR_MT6323, 1);
++	if (!ret)
++		ret = regmap_read_poll_timeout(pwrc->regmap, pwrc->base + RTC_BBPU, val,
++					       !(val & RTC_BBPU_CBUSY), MTK_RTC_POLL_DELAY_US,
++					       MTK_RTC_POLL_TIMEOUT);
++	if (!ret)
++		ret = mt6323_pdn1(pwrc, &val);
++	if (!ret && val != want)
++		ret = -EIO;
++	mutex_unlock(&pwrc->pdn1_lock);
++	if (ret)
++		dev_err(pwrc->dev, "recovery flag %s failed: %d\n", on ? "set" : "clear", ret);
++	else
++		dev_info(pwrc->dev, "recovery flag %s (PDN1 0x%04x -> 0x%04x)\n", on ? "set" : "cleared", old, val);
++	return ret;
++}
++
++static ssize_t recovery_flag_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct mt6323_pwrc *pwrc = dev_get_drvdata(dev);
++	unsigned int pdn1;
++	int ret = mt6323_pdn1(pwrc, &pdn1);
++
++	if (ret)
++		return ret;
++	return sysfs_emit(buf, "%d\n", (pdn1 & Y1_PDN1_RECOVERY_MASK) == Y1_PDN1_RECOVERY);
++}
++
++static ssize_t recovery_flag_store(struct device *dev, struct device_attribute *attr, const char *buf,
++				   size_t count)
++{
++	bool on;
++	int ret = kstrtobool(buf, &on);
++
++	if (!ret)
++		ret = mt6323_pdn1_set_recovery(dev_get_drvdata(dev), on);
++	return ret ? ret : count;
++}
++static DEVICE_ATTR_RW(recovery_flag);
++
++/* The whole register, for the evidence of what LK left (read-only). */
++static ssize_t pdn1_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	unsigned int pdn1;
++	int ret = mt6323_pdn1(dev_get_drvdata(dev), &pdn1);
++
++	return ret ? ret : sysfs_emit(buf, "0x%04x\n", pdn1);
++}
++static DEVICE_ATTR_RO(pdn1);
++
++static struct attribute *mt6323_pwrc_attrs[] = {
++	&dev_attr_recovery_flag.attr,
++	&dev_attr_pdn1.attr,
++	NULL,
++};
++ATTRIBUTE_GROUPS(mt6323_pwrc);
++
+ static int mt6323_do_pwroff(struct sys_off_data *data)
+ {
+ 	struct mt6323_pwrc *pwrc = data->cb_data;
+ 	unsigned int val;
+ 	int ret;
+ 
+-	regmap_write(pwrc->regmap, pwrc->base + RTC_BBPU, RTC_BBPU_KEY);
+-	regmap_write(pwrc->regmap, pwrc->base + RTC_WRTGR_MT6323, 1);
++	ret = regmap_write(pwrc->regmap, pwrc->base + RTC_BBPU, RTC_BBPU_KEY);
++	if (!ret) ret = regmap_write(pwrc->regmap, pwrc->base + RTC_WRTGR_MT6323, 1);
++	if (ret) {
++		dev_emerg(pwrc->dev, "poweroff request failed: %d\n", ret);
++		return NOTIFY_DONE;
++	}
+ 
+-	ret = regmap_read_poll_timeout(pwrc->regmap,
++	ret = regmap_read_poll_timeout_atomic(pwrc->regmap,
+ 					pwrc->base + RTC_BBPU, val,
+ 					!(val & RTC_BBPU_CBUSY),
+ 					MTK_RTC_POLL_DELAY_US,
+@@ -65,6 +153,8 @@
+ 	pwrc->base = res->start;
+ 	pwrc->regmap = mt6397_chip->regmap;
+ 	pwrc->dev = &pdev->dev;
++	mutex_init(&pwrc->pdn1_lock);
++	platform_set_drvdata(pdev, pwrc);
+ 
+ 	ret = devm_register_sys_off_handler(pwrc->dev,
+ 					    SYS_OFF_MODE_POWER_OFF,
+@@ -88,6 +178,7 @@
+ 	.driver         = {
+ 		.name   = "mt6323-pwrc",
+ 		.of_match_table = mt6323_pwrc_dt_match,
++		.dev_groups = mt6323_pwrc_groups,
+ 	},
+ };
+ 

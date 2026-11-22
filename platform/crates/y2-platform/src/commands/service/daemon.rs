@@ -6,6 +6,13 @@
 //! --cleanup`, the hourly time floor (#53), the daily `update auto-check`, `report work`, `update
 //! health-ack` and `boot-stage application_ready`.
 //!
+//! An image whose player has its own USB and storage services (the Innioasis Y1:
+//! docs/planning/Y1-WIFI-PLAN.md, W6) names `/etc/y2linux/service-policy.json`; then each pass keeps
+//! only its network part (`network.json` with the DNS probe and the self-heal, `coexistence.json`, the
+//! Wi-Fi power policy, `time-status.json`, ntpd once Online and the hourly time floor), and with
+//! `"updates": true` its update part (the daily `update auto-check` and `update health-ack`;
+//! docs/planning/Y1-RECOVERY-PLAN.md, R4b).
+//!
 //! Below a fixture root the loop does not wait and ends after `Y2_DAEMON_TICKS` passes, and the
 //! children are recorded, never started (process.rs; tests/platform_cases/service.py
 //! `daemon_ticks`).
@@ -119,12 +126,46 @@ fn application_drawn(root: &Root) -> bool {
     !waiting
 }
 
+/// The image's service policy (module comment). Present, it restricts the service to its network
+/// part unless it says exactly `{"schema": 1, "network_only": false}`, and adds the update part only
+/// with schema 1 and `"updates": true`: a file that cannot be read never starts the Y2's USB, storage
+/// or update work on another player.
+const POLICY: &str = "/etc/y2linux/service-policy.json";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Policy {
+    network_only: bool,
+    updates: bool,
+}
+
+impl Policy {
+    fn read(root: &Root) -> Policy {
+        const WHOLE: Policy = Policy {
+            network_only: false,
+            updates: true,
+        };
+        if root.path(POLICY).symlink_metadata().is_err() {
+            return WHOLE;
+        }
+        let policy = root.json_object(POLICY);
+        let schema = policy.get("schema") == Some(&json!(1));
+        if schema && policy.get("network_only") == Some(&Value::Bool(false)) {
+            return WHOLE;
+        }
+        Policy {
+            network_only: true,
+            updates: schema && policy.get("updates") == Some(&Value::Bool(true)),
+        }
+    }
+}
+
 /// What the loop keeps between passes.
 struct Service {
     root: Root,
     monitor: EventMonitor,
     recovery: WifiRecovery,
     usb: UsbService,
+    policy: Policy,
 }
 
 impl Service {
@@ -139,7 +180,9 @@ impl Service {
         let mut coexistence = Coexistence::default();
         let mut channel_mask = ChannelMask::default();
         let mut radio_policy_timer = Timer::default();
-        let mut settled = false;
+        // Without the update part there is no update to wait for: the dark maintenance cadence from
+        // the start.
+        let mut settled = !self.policy.updates;
         let mut drawn_recorded = false;
         // It cannot change while the service runs.
         let boot_id = root.boot_id();
@@ -159,7 +202,9 @@ impl Service {
             let dark = display_dark(root);
             let (mut interval, maintenance) = cadence(dark, settled);
             self.monitor.poll();
-            self.usb.tick()?;
+            if !self.policy.network_only {
+                self.usb.tick()?;
+            }
             let mut value = wifi(root, None);
             if value.state == "Associating" {
                 let since = *associating_since.get_or_insert(before);
@@ -205,26 +250,38 @@ impl Service {
                 &super::time_status(root),
                 false,
             )?;
-            reconcile = media_reconcile(root, reconcile, before);
-            verify = media_verify(root, verify, before);
+            if !self.policy.network_only {
+                reconcile = media_reconcile(root, reconcile, before);
+                verify = media_verify(root, verify, before);
+            }
             if value.state == "Online" && ntp_timer.due(before, 60.0) && !ntp_running(root) {
                 command::run(root, &["/etc/init.d/S43y2-time", "start"], 1.0);
             }
             let due = maintenance_timer.due(before, maintenance);
-            (firmware_scan, firmware_ready) =
-                radio_firmware(root, firmware_scan, firmware_ready, due);
-            if due {
+            if !self.policy.network_only {
+                (firmware_scan, firmware_ready) =
+                    radio_firmware(root, firmware_scan, firmware_ready, due);
+            }
+            if due && !self.policy.network_only {
                 // The space policy and its bounded cleanup (64 files, 8 MiB) look at Y2DATA only, which
                 // this daemon reads every pass anyway: in process, no y2-platform start each pass.
                 // The SD card (whose statvfs can hang in D state) is not touched.
                 let _ = crate::commands::storage::space_policy(root, true);
+            }
+            if due {
                 // A restart without Wi-Fi resumes near this clock (#53); hourly.
                 match remember_time(root) {
                     Err(Failure::Os { .. }) | Ok(()) => {}
                     Err(other) => return Err(other),
                 }
+            }
+            if due && self.policy.updates {
                 update_check = daily_update_check(root, &value, update_check);
+            }
+            if due && !self.policy.network_only {
                 reports = Some(error_reports(root, &value, reports, before)?);
+            }
+            if due && self.policy.updates {
                 settled = settled
                     || health_settled(&command::run(
                         root,
@@ -238,7 +295,7 @@ impl Service {
             // Once no update waits for health (whose acknowledgement records the stage itself), the
             // stage follows Reborn's first frame within a pass instead of on the next maintenance pass
             // up to 30 s later: it arms the runtime power features and lets a sleep enter.
-            if settled && !drawn_recorded {
+            if settled && !drawn_recorded && !self.policy.network_only {
                 drawn_recorded = application_drawn(root);
             }
             if matches!(
@@ -284,10 +341,17 @@ pub fn serve(root: &Root) -> Outcome {
         monitor: EventMonitor::new(root),
         recovery: WifiRecovery::new(root),
         usb: UsbService::new(root),
+        policy: Policy::read(root),
     };
     let mut result = service.serve(ticks);
-    // finally: the USB service stops first; its error replaces the loop's.
-    if let Err(error) = service.usb.stop() {
+    // finally: the USB service (never started in the network part) stops first; its error replaces
+    // the loop's.
+    let stopped = if service.policy.network_only {
+        Ok(())
+    } else {
+        service.usb.stop()
+    };
+    if let Err(error) = stopped {
         result = Err(error);
     }
     service.monitor.close();

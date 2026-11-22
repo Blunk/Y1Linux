@@ -1153,7 +1153,7 @@ kalFirmwareImageMapping (
 
         /* <1> Open firmware */
         i4Ret = y2_conn_request_firmware(prHifInfo->Dev,
-                                 "mediatek/mt6582/WIFI_RAM_CODE_MT6582",
+                                 Y2_CONN_FW "WIFI_RAM_CODE_MT6582",
                                  &prGlueInfo->prFw);
 
         if (i4Ret) {

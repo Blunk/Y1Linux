@@ -5,14 +5,16 @@
 //! the owner's `system.img` like the radio files: taken along when that image installs the radio
 //! firmware, and from a later copy on a player that has its radio firmware already (the leftover
 //! pass, which deletes that copy anyway). Wi-Fi and Bluetooth never depend on them; a player
-//! without them has no FM radio and says how to get it.
+//! without them has no FM radio and says how to get it. They go into the image's own firmware
+//! directory (`Reviewed::target`: the Y2's `/data/firmware/mt6582`, the Y1's `mt6572`); the Y1's
+//! and the Y2's packages carry the same two files, so either package's image supplies them.
 // SPDX-License-Identifier: GPL-2.0-only
-use super::{fs, sha256_hex, Ext4, Image, OpenOptions, Path, Root, TARGET};
+use super::{fs, sha256_hex, Ext4, Image, OpenOptions, Path, Reviewed, Root};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 
-/// Stock `/etc/firmware/mt6627` (identical in the original and the v3.2.0 FM package; v2 to v5
-/// there are empty). The thresholds of `/etc/fmr/mt6627_fm_cust.cfg` equal the kernel's defaults,
+/// Stock `/etc/firmware/mt6627` (identical in the Y2's original and v3.2.0 FM packages and in the
+/// Y1's 3.0.2 package; v2 to v5 there are empty). The thresholds of `/etc/fmr/mt6627_fm_cust.cfg` equal the kernel's defaults,
 /// so that file is not taken.
 pub const FM_FILES: [(&str, u64, &str); 2] = [
     (
@@ -28,7 +30,7 @@ pub const FM_FILES: [(&str, u64, &str); 2] = [
 ];
 const STOCK_DIRECTORY: &str = "/etc/firmware/mt6627";
 
-fn reviewed(name: &str, data: &[u8]) -> bool {
+fn genuine(name: &str, data: &[u8]) -> bool {
     FM_FILES
         .iter()
         .any(|(n, size, sha)| *n == name && data.len() as u64 == *size && sha256_hex(data) == *sha)
@@ -43,14 +45,14 @@ fn pair(directory: &Path) -> Option<Vec<(&'static str, Vec<u8>)>> {
             let info = path.symlink_metadata().ok()?;
             (info.file_type().is_file() && info.len() == *size).then_some(())?;
             let data = fs::read(&path).ok()?;
-            reviewed(name, &data).then_some((*name, data))
+            genuine(name, &data).then_some((*name, data))
         })
         .collect()
 }
 
 /// Cheap check: both files there with their sizes.
-pub fn present(root: &Root) -> bool {
-    let target = root.path(TARGET);
+pub fn present(root: &Root, reviewed: &Reviewed) -> bool {
+    let target = root.path(&reviewed.target);
     FM_FILES.iter().all(|(name, size, _)| {
         target
             .join(name)
@@ -77,11 +79,11 @@ fn write(directory: &Path, files: &[(&'static str, Vec<u8>)]) -> std::io::Result
 
 /// Take the pair from a stock `system.img` into the installed radio firmware's directory. True
 /// when both are in place afterwards. Never an error: FM is optional.
-pub(super) fn take(root: &Root, image: &Path) -> bool {
-    if present(root) {
+pub(super) fn take(root: &Root, reviewed: &Reviewed, image: &Path) -> bool {
+    if present(root, reviewed) {
         return true;
     }
-    let target = root.path(TARGET);
+    let target = root.path(&reviewed.target);
     let read = || -> Option<Vec<(&'static str, Vec<u8>)>> {
         let mut image = Ext4::new(Image::open(image).ok()?).ok()?;
         FM_FILES
@@ -90,7 +92,7 @@ pub(super) fn take(root: &Root, image: &Path) -> bool {
                 let data = image
                     .read(&format!("{STOCK_DIRECTORY}/{name}"), *size)
                     .ok()?;
-                reviewed(name, &data).then_some((*name, data))
+                genuine(name, &data).then_some((*name, data))
             })
             .collect()
     };
@@ -125,15 +127,17 @@ mod tests {
         carry(&old, &new);
         assert!(fs::read_dir(&new).unwrap().next().is_none());
         // The size check alone is what status polling uses.
-        fs::create_dir_all(fixture.path(TARGET)).unwrap();
-        assert!(!present(&fixture.root));
+        let reviewed = Reviewed::stock();
+        let target = fixture.path(&reviewed.target);
+        fs::create_dir_all(&target).unwrap();
+        assert!(!present(&fixture.root, &reviewed));
         for (name, size, _) in FM_FILES {
-            fs::write(fixture.path(TARGET).join(name), vec![0u8; size as usize]).unwrap();
+            fs::write(target.join(name), vec![0u8; size as usize]).unwrap();
         }
-        assert!(present(&fixture.root));
+        assert!(present(&fixture.root, &reviewed));
         // An image that is not one: nothing taken, nothing raised.
         fixture.put("/image", "not a system image");
-        fs::remove_file(fixture.path(TARGET).join(FM_FILES[0].0)).unwrap();
-        assert!(!take(&fixture.root, &fixture.path("/image")));
+        fs::remove_file(target.join(FM_FILES[0].0)).unwrap();
+        assert!(!take(&fixture.root, &reviewed, &fixture.path("/image")));
     }
 }

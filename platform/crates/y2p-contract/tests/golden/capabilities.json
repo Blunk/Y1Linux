@@ -389,7 +389,7 @@
    "reason": "physical qualification pending"
   },
   "ota": {
-   "channel": "GitHub Releases (SchulzCode/Y2Linux), daily check, never automatic install",
+   "channel": "GitHub Releases (Blunk/Y1Linux), daily check, never automatic install",
    "enabled": true,
    "experimental": false,
    "health_deadline_seconds": 180,

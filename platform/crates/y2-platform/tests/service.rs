@@ -162,3 +162,78 @@ fn removed_firmware_is_noticed_at_the_next_maintenance_pass() {
     fixture.put("/media/sd/Firmware/system.img", "x");
     assert!(started(&tick(&fixture), &scan));
 }
+
+/// The Innioasis Y1 (docs/planning/Y1-WIFI-PLAN.md, W6): with the image's service policy a pass keeps
+/// its network part (network.json Online after the DNS probe, the time status) and starts no media,
+/// firmware, update or report work and records no USB transfer; an unreadable policy restricts too.
+#[test]
+fn a_network_only_image_keeps_the_network_part_alone() {
+    for policy in [r#"{"schema": 1, "network_only": true}"#, "not json"] {
+        let mut fixture = fixture();
+        fixture.put("/etc/y2linux/service-policy.json", policy);
+        online(&mut fixture);
+        let run = tick(&fixture);
+        assert_eq!(
+            fixture.json("/run/y2/network.json")["state"],
+            json!("Online"),
+            "{policy}"
+        );
+        assert!(fixture.path("/run/y2/time-status.json").exists());
+        let platform: Vec<_> = run
+            .calls
+            .iter()
+            .filter(|c| c["argv"][0] == json!(PLATFORM))
+            .collect();
+        assert!(platform.is_empty(), "{policy}: {platform:?}");
+        assert!(!fixture.path("/run/y2/usb-transfer.json").exists());
+    }
+    // Saying so explicitly keeps the whole service (as without the file).
+    let fixture = fixture();
+    fixture.put(
+        "/etc/y2linux/service-policy.json",
+        r#"{"schema": 1, "network_only": false}"#,
+    );
+    assert!(started(&tick(&fixture), &["media", "reconcile"]));
+}
+
+/// The Y1's update part (docs/planning/Y1-RECOVERY-PLAN.md, R4b): with `"updates": true` a pass
+/// also starts the daily check once Online and asks for the health acknowledgement, and still starts
+/// no media, firmware or report work; the key counts only in a schema 1 policy.
+#[test]
+fn a_network_only_image_with_updates_keeps_the_update_part_too() {
+    for (policy, updates) in [
+        (
+            r#"{"schema": 1, "network_only": true, "updates": true}"#,
+            true,
+        ),
+        (
+            r#"{"schema": 1, "network_only": true, "updates": "yes"}"#,
+            false,
+        ),
+        (
+            r#"{"schema": 2, "network_only": true, "updates": true}"#,
+            false,
+        ),
+    ] {
+        let mut fixture = fixture();
+        fixture.put("/etc/y2linux/service-policy.json", policy);
+        online(&mut fixture);
+        let run = tick(&fixture);
+        let platform: Vec<_> = run
+            .calls
+            .iter()
+            .filter(|c| c["argv"][0] == json!(PLATFORM))
+            .map(|c| c["argv"].clone())
+            .collect();
+        let expected = if updates {
+            vec![
+                json!([PLATFORM, "update", "auto-check"]),
+                json!([PLATFORM, "update", "health-ack"]),
+            ]
+        } else {
+            vec![]
+        };
+        assert_eq!(platform, expected, "{policy}");
+        assert!(!fixture.path("/run/y2/usb-transfer.json").exists());
+    }
+}

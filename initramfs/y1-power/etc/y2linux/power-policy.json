@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "enabled": true,
+  "provisional": true,
+  "source": "Innioasis Y1: the Y2's provisional values; 3.4 V floor = stock Y1 SYSTEM_OFF_VOLTAGE (mt_battery_update_status 0xc037a348) (docs/planning/Y1-POWER-PLAN.md, D2)",
+  "critical_uv": 3400000,
+  "low_uv": 3500000,
+  "recover_uv": 3600000,
+  "critical_samples": 5,
+  "grace_seconds": 10,
+  "warning_soc": 20,
+  "critical_soc": 10,
+  "shutdown_soc": 5
+}

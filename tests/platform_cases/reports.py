@@ -64,7 +64,7 @@ def archive(report_id, created, members=()):
             info = tarfile.TarInfo(name)
             info.size, info.mtime, info.mode = len(data), 1761000000, 0o600
             tar.addfile(info, io.BytesIO(data))
-    return gzip.compress(raw.getvalue(), compresslevel=6, mtime=0)
+    return gzip.compress(raw.getvalue(), compresslevel=0, mtime=0)  # stored: the same bytes with any zlib
 
 
 # The three reports fixture() queues: A and B made "in the future" (never too old to send), C long ago.

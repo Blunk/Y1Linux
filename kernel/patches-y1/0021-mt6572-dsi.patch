@@ -1,0 +1,64 @@
+--- a/drivers/gpu/drm/mediatek/mtk_dsi.c
++++ b/drivers/gpu/drm/mediatek/mtk_dsi.c
+@@ -193,6 +193,13 @@
+ 	bool has_size_ctl;
+ 	bool cmdq_long_packet_ctl;
+ 	bool support_per_frame_lp;
++	/*
++	 * Innioasis Y1: DSI_PHY_TIMECON0..3 as written, in place of the ones computed from the lane rate. At
++	 * the MT6572's 195 Mbit/s the computed HS trail is 3 cycles and the panel loses the last pixel of
++	 * every line (the right column shows one colour); LK's and stock's values (HS trail 12) do not.
++	 * The computed timing still sets the horizontal blanking.
++	 */
++	const u32 *phy_timecon;
+ };
+ 
+ struct mtk_dsi {
+@@ -283,6 +290,13 @@
+ 		  FIELD_PREP(CLK_HS_POST, timing->clk_hs_post) |
+ 		  FIELD_PREP(CLK_HS_EXIT, timing->clk_hs_exit);
+ 
++	if (dsi->driver_data->phy_timecon) {
++		timcon0 = dsi->driver_data->phy_timecon[0];
++		timcon1 = dsi->driver_data->phy_timecon[1];
++		timcon2 = dsi->driver_data->phy_timecon[2];
++		timcon3 = dsi->driver_data->phy_timecon[3];
++	}
++
+ 	writel(timcon0, dsi->regs + DSI_PHY_TIMECON0);
+ 	writel(timcon1, dsi->regs + DSI_PHY_TIMECON1);
+ 	writel(timcon2, dsi->regs + DSI_PHY_TIMECON2);
+@@ -1241,6 +1255,7 @@
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret, "Failed to register DSI host\n");
+ 
++	writel(0, dsi->regs + DSI_INTSTA);
+ 	ret = devm_request_irq(&pdev->dev, irq_num, mtk_dsi_irq,
+ 			       IRQF_TRIGGER_NONE, dev_name(&pdev->dev), dsi);
+ 	if (ret) {
+@@ -1274,6 +1289,17 @@
+ 	.reg_shadow_dbg_off = 0x190
+ };
+ 
++/* LK's live DSI_PHY_TIMECON0..3 on the Y1 (stock st7701_hvga_dsi_vdo_boe at 195 Mbit/s per lane). */
++static const u32 mt6572_dsi_phy_timecon[4] = { 0x0c040202, 0x110a0308, 0x0c0a0000, 0x00041101 };
++
++static const struct mtk_dsi_driver_data mt6572_dsi_driver_data = {
++	.reg_cmdq_off = 0x180,
++	.reg_vm_cmd_off = 0x130,
++	.has_shadow_ctl = false,
++	.has_size_ctl = false,
++	.phy_timecon = mt6572_dsi_phy_timecon,
++};
++
+ static const struct mtk_dsi_driver_data mt8183_dsi_driver_data = {
+ 	.reg_cmdq_off = 0x200,
+ 	.reg_vm_cmd_off = 0x130,
+@@ -1302,6 +1328,7 @@
+ 
+ static const struct of_device_id mtk_dsi_of_match[] = {
+ 	{ .compatible = "mediatek,mt2701-dsi", .data = &mt2701_dsi_driver_data },
++	{ .compatible = "mediatek,mt6572-dsi", .data = &mt6572_dsi_driver_data },
+ 	{ .compatible = "mediatek,mt8167-dsi", .data = &mt2701_dsi_driver_data },
+ 	{ .compatible = "mediatek,mt8173-dsi", .data = &mt8173_dsi_driver_data },
+ 	{ .compatible = "mediatek,mt8183-dsi", .data = &mt8183_dsi_driver_data },

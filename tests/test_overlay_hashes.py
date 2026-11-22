@@ -14,14 +14,28 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [Path('/src'), ROOT / '.cache/sources/linux-6.18']
+# The Y2 set (kernel/patches) and the Y1 set (kernel/patches-y1); patches are relative to their manifest.
+MANIFESTS = sorted(ROOT.glob('kernel/patches*/manifest.json'))
 
 
 class OverlayHashes(unittest.TestCase):
+    def test_added_files_match_their_manifest_hashes(self):
+        for manifest in MANIFESTS:
+            for spec in json.loads(manifest.read_text()).get('added', []):
+                digest = hashlib.sha256((ROOT / spec['source']).read_bytes()).hexdigest()
+                self.assertEqual(digest, spec['sha256'], spec['source'])
+
     def test_patches_reproduce_manifest_results(self):
         source = next((s for s in SOURCES if (s / 'Makefile').exists()), None)
         if source is None:
             self.skipTest('pinned Linux source unavailable')
-        specs = json.loads((ROOT / 'kernel/patches/manifest.json').read_text())['overlays']
+        for manifest in MANIFESTS:
+            with self.subTest(manifest=str(manifest.relative_to(ROOT))):
+                self.check_manifest(source, manifest)
+
+    def check_manifest(self, source, manifest):
+        specs = json.loads(manifest.read_text())['overlays']
+        patches = manifest.parent
         with tempfile.TemporaryDirectory() as temp:
             for spec in specs:
                 work = Path(temp) / 'file'
@@ -30,11 +44,11 @@ class OverlayHashes(unittest.TestCase):
                 # reverse the patch first, then check both directions.
                 if hashlib.sha256(work.read_bytes()).hexdigest() == spec['result_sha256']:
                     subprocess.run(['patch', '--batch', '--fuzz=0', '-R', str(work)],
-                                   input=(ROOT / 'kernel/patches' / spec['patch']).read_bytes(),
+                                   input=(patches / spec['patch']).read_bytes(),
                                    check=True, capture_output=True)
                 self.assertEqual(hashlib.sha256(work.read_bytes()).hexdigest(), spec['base_sha256'], spec['path'])
                 subprocess.run(['patch', '--batch', '--fuzz=0', str(work)],
-                               input=(ROOT / 'kernel/patches' / spec['patch']).read_bytes(),
+                               input=(patches / spec['patch']).read_bytes(),
                                check=True, capture_output=True)
                 self.assertEqual(hashlib.sha256(work.read_bytes()).hexdigest(), spec['result_sha256'],
                                  spec['patch'])

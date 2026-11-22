@@ -1,0 +1,3 @@
+# Innioasis Y1: the Y2 boot scripts that are safe on Y1 hardware (docs/planning/Y1-SYSTEM-PLAN.md §2).
+# rcS and rcK run only these; every other S?? script of the Y2 stays off on the Y1.
+Y1_SERVICES="S00y2-runtime S01syslogd S02klogd S02sysctl S03y2-time S11modules S25y2-display S50crond"

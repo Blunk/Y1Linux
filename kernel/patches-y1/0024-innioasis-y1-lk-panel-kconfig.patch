@@ -1,0 +1,16 @@
+--- a/drivers/gpu/drm/panel/Kconfig
++++ b/drivers/gpu/drm/panel/Kconfig
+@@ -942,6 +942,13 @@
+ 	  FullHD (1080x1920) DSI panel as found in Dragonboard Display Adapter
+ 	  Bundle.
+ 
++config DRM_PANEL_INNIOASIS_Y1_LK
++	tristate "Innioasis Y1 panel as initialised by LK"
++	depends on OF && DRM_MIPI_DSI
++	help
++	  Say Y here to drive the Innioasis Y1's ST7701S DSI panel as the
++	  bootloader left it: a fixed mode, no reset and no commands.
++
+ config DRM_PANEL_SITRONIX_ST7701
+ 	tristate "Sitronix ST7701 panel driver"
+ 	depends on OF

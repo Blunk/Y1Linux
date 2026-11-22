@@ -3,7 +3,7 @@
 //! Reborn's acknowledgement.
 // SPDX-License-Identifier: GPL-2.0-only
 use super::{Product, ProductState, Receipt, WakeSource};
-use y2p_core::suspend_text::fields;
+use y2p_core::{player::Player, suspend_text::fields};
 
 /// `reason or fallback`.
 fn either(reason: Option<&str>, fallback: Option<String>) -> Option<String> {
@@ -13,13 +13,15 @@ fn either(reason: Option<&str>, fallback: Option<String>) -> Option<String> {
     }
 }
 
-/// The product state after `stage` (`result` the record's, `boot_id` the boot that wrote it).
+/// The product state after `stage` (`result` the record's, `boot_id` the boot that wrote it,
+/// `player` the one whose suspend firmware length the kernel journal must show).
 pub fn transition(
     value: &Receipt,
     stage: &str,
     result: Option<i64>,
     boot_id: Option<&str>,
     reason: Option<&str>,
+    player: Player,
 ) -> Product {
     use ProductState::*;
     let mut p = crate::commands::sleep::product(value, boot_id);
@@ -50,7 +52,7 @@ pub fn transition(
             && p.same_boot == Some(true)
             && matches!(&value.pm_test, Some(Some(mode)) if mode == "none")
             && k("reset_resume_entry") == Some("0x59325253")
-            && k("pcm_length") == Some("596")
+            && k("pcm_length") == Some(player.suspend_pcm_length())
             && !matches!(k("wake"), None | Some("0") | Some("0x0"));
         p.kernel_completed = completed;
         if completed {

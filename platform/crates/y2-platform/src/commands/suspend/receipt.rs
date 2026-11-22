@@ -26,6 +26,7 @@ use std::{
 };
 use y2p_core::{
     lenient,
+    player::Player,
     root::{parse_int, read},
     suspend_text::Regex,
     Root,
@@ -413,8 +414,16 @@ pub fn record(root: &Root, s: Stage) -> Result<Receipt, E> {
             .collect();
         value.resume = Some(Moment::now(root, Some(texts)));
         value.cycles = Some(value.cycles.unwrap_or(0) + 1);
-        // Only returned reset-path PCM596 entry counts, never a PM test/abort.
-        let completed = transition(&value, s.stage, s.result, current.as_deref(), None);
+        // Only a returned reset-path entry of the player's suspend PCM counts, never a PM test or
+        // abort.
+        let completed = transition(
+            &value,
+            s.stage,
+            s.result,
+            current.as_deref(),
+            None,
+            Player::of(root),
+        );
         if completed.kernel_completed {
             let text = match spm.get("ticks32k") {
                 Some(Value::String(t)) => t.clone(),
@@ -461,6 +470,7 @@ pub fn record(root: &Root, s: Stage) -> Result<Receipt, E> {
         value.result,
         value.current_boot_id.as_deref(),
         s.reason.as_deref(),
+        Player::of(root),
     );
     if s.stage == "complete_result_0"
         && !matches!(
@@ -540,16 +550,47 @@ mod tests {
             "wake_irqs_before": {"power": 2, "rtc": 1}, "wake_irqs_after": {"power": 4, "rtc": 1},
             "product": {"state": "sleeping", "request_boot_id": "b"}}))
             .unwrap();
-        let p = transition(&receipt, "kernel_resumed", Some(0), Some("b"), None);
+        let p = transition(
+            &receipt,
+            "kernel_resumed",
+            Some(0),
+            Some("b"),
+            None,
+            Player::Y2,
+        );
         assert_eq!(p.state, Some(ProductState::Waking));
         assert!(p.kernel_completed);
         assert_eq!(p.wake_reason, Some(WakeSource::Power));
-        let refused = transition(&receipt, "refused_charger_active", Some(2), Some("b"), None);
+        // The Y1's journal shows its own firmware length (576); the Y2's 596 proves nothing there.
+        let y1 = transition(
+            &receipt,
+            "kernel_resumed",
+            Some(0),
+            Some("b"),
+            None,
+            Player::Y1,
+        );
+        assert!(!y1.kernel_completed);
+        let refused = transition(
+            &receipt,
+            "refused_charger_active",
+            Some(2),
+            Some("b"),
+            None,
+            Player::Y2,
+        );
         assert_eq!(
             (refused.state, refused.reason.as_deref()),
             (Some(ProductState::Refused), Some("charger_active"))
         );
-        let other = transition(&receipt, "complete_result_0", Some(0), Some("c"), None);
+        let other = transition(
+            &receipt,
+            "complete_result_0",
+            Some(0),
+            Some("c"),
+            None,
+            Player::Y2,
+        );
         assert_eq!(other.reason.as_deref(), Some("same_boot_not_proven"));
     }
 

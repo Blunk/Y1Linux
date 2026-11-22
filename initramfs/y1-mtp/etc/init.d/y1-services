@@ -1,0 +1,5 @@
+# Innioasis Y1: the Y2 boot scripts that are safe on Y1 hardware (docs/planning/Y1-SYSTEM-PLAN.md §2), with
+# USB networking and SSH (docs/planning/Y1-NETWORK-PLAN.md), Reborn (docs/planning/Y1-REBORN-PLAN.md), the Y2's
+# power daemon (docs/planning/Y1-POWER-PLAN.md, D2), Y2DATA (docs/planning/Y1-DATA-PLAN.md) and MTP
+# (docs/planning/Y1-MTP-PLAN.md): S45y1-mtp adds MTP to PID1's gadget once Y2DATA is mounted.
+Y1_SERVICES="S00y2-runtime S01syslogd S02klogd S02sysctl S03y2-time S03y1-data S04y2-power S11modules S20y2-usb S25y2-display S40network S45y1-mtp S50crond S50y1-dropbear S90y1-reborn"

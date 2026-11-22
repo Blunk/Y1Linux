@@ -1,0 +1,114 @@
+"""The Innioasis Y1's update service in the normal system (docs/planning/Y1-RECOVERY-PLAN.md, R4b): the Y2's
+service daemon in its network and update parts, started by the Y1's S42y2-readiness only on the Y1's own Y2DATA;
+S03y1-data records that device as the Y2's initramfs does. Since R6 the Y1 reports the root's capabilities, OTA
+included."""
+import json
+import os
+import re
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+S42 = ROOT / 'initramfs/y1-update/etc/init.d/S42y2-readiness'
+POLICY = ROOT / 'initramfs/y1-update/etc/y2linux/service-policy.json'
+LISTING = (ROOT / 'initramfs/y1-production.list').read_text()
+PID1 = (ROOT / 'initramfs/y1-system.h').read_text()
+
+
+def services():
+    text = (ROOT / 'initramfs/y1-bluetooth/etc/init.d/y1-services').read_text()
+    return text.split('Y1_SERVICES="')[1].split('"')[0].split()
+
+
+class Y1UpdateService(unittest.TestCase):
+    def test_the_policy_names_the_network_and_update_parts(self):
+        self.assertEqual(json.loads(POLICY.read_text()), {'schema': 1, 'network_only': True, 'updates': True})
+        daemon = (ROOT / 'platform/crates/y2-platform/src/commands/service/daemon.rs').read_text()
+        self.assertIn('const POLICY: &str = "/etc/y2linux/service-policy.json";', daemon)
+        self.assertIn('updates: schema && policy.get("updates") == Some(&Value::Bool(true)),', daemon)
+
+    def test_pid1_installs_s42_and_the_policy(self):
+        for path, mode, source in [
+                ('/etc/y2linux/service-policy.json', '0644', '/project/initramfs/y1-update/etc/y2linux/service-policy.json'),
+                ('/etc/init.d/S42y2-readiness', '0755', '/project/initramfs/y1-update/etc/init.d/S42y2-readiness')]:
+            self.assertIn(f'file /y1-system{path} {source} {mode} 0 0\n', LISTING)
+            self.assertIn(f'{{ "{path}", {mode} }},', PID1)
+        self.assertTrue(os.access(S42, os.X_OK))
+
+    def test_s42_runs_after_data_power_and_wifi(self):
+        listed = services()
+        self.assertIn('S42y2-readiness', listed)
+        for before in ('S03y1-data', 'S04y2-power', 'S41y2-connectivity'):
+            self.assertLess(listed.index(before), listed.index('S42y2-readiness'))
+        self.assertLess(listed.index('S42y2-readiness'), listed.index('S90y1-reborn'))
+
+    def run_s42(self, data_device, mounts, platform=b'.../etc/y2linux/service-policy.json...', pending=False):
+        """S42 start with its paths moved below a temporary root and start-stop-daemon recorded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / 'bin').mkdir()
+            (base / 'run').mkdir()
+            (base / 'proc').mkdir()
+            (base / 'data/system/platform').mkdir(parents=True)
+            (base / 'usr/sbin').mkdir(parents=True)
+            (base / 'usr/sbin/y2-platform').write_bytes(platform)
+            (base / 'proc/mounts').write_text(mounts)
+            if data_device is not None:
+                (base / 'run/y2-data-device').write_text(data_device + '\n')
+            if pending:
+                (base / 'data/system/platform/maintenance-pending').write_text('')
+            log = base / 'calls'
+            (base / 'bin/start-stop-daemon').write_text(f'#!/bin/sh\necho "$*" >> {log}\n')
+            (base / 'bin/start-stop-daemon').chmod(0o755)
+            script = S42.read_text()
+            for path in ('/run/', '/proc/mounts', '/data/', '/usr/sbin/y2-platform'):
+                script = script.replace(path, str(base) + path)
+            result = subprocess.run(['sh', '-c', script, 'S42y2-readiness', 'start'], capture_output=True,
+                                    text=True, env={'PATH': f'{base}/bin:/usr/bin:/bin'})
+            calls = log.read_text() if log.exists() else ''
+            return result.returncode, calls
+
+    def test_s42_starts_the_supervisor_only_on_the_y1s_own_data(self):
+        data = '/dev/loop1 /data ext4 rw,nosuid,nodev,noatime 0 0\n'
+        code, calls = self.run_s42('/dev/loop1', data)
+        self.assertEqual(code, 0)
+        self.assertIn('-S -q -b -m -p', calls)
+        self.assertIn('-x /usr/libexec/y2/readiness-supervise', calls)
+        # Reborn's RAM /data (no recorded device, or another one), no /data, a platform before the policy: nothing.
+        for device, mounts, platform in [(None, data, None), ('/dev/loop1', '/dev/loop2 /data ext4 rw 0 0\n', None),
+                                         ('/dev/loop1', '', None), ('/dev/loop1', data, b'an older platform')]:
+            arguments = (device, mounts) + ((platform,) if platform else ())
+            self.assertEqual(self.run_s42(*arguments), (0, ''), (device, mounts, platform))
+        # A reset in progress: refused, as the Y2's S42.
+        self.assertEqual(self.run_s42('/dev/loop1', data, pending=True), (1, ''))
+
+    def test_s03_records_the_data_loop_and_the_updates_directory(self):
+        script = (ROOT / 'initramfs/y1-data/etc/init.d/S03y1-data').read_text()
+        body = script[script.index('mount_data() {'):script.index('\n}\n', script.index('mount_data() {'))]
+        self.assertIn('mkdir -p -m 0700 /data/music /data/reborn /data/system/platform /data/updates', body)
+        # Only after the mount and the schema check.
+        self.assertLess(body.index('mount -t ext4'), body.index('printf \'%s\\n\' "$dev" > /run/y2-data-device'))
+        self.assertLess(body.index('.y2data-schema'), body.index('/run/y2-data-device'))
+
+    def test_the_root_overlay_leaves_the_root_out_of_the_low_space_budget(self):
+        # statvfs("/") is the overlay's tmpfs upper layer: the platform's LowSpace line is 96 MiB free
+        # (y2p_core::volume::space_state); the device run read 2 MiB used at boot (R4b, §11).
+        root = (ROOT / 'initramfs/y1-root.h').read_text()
+        size = int(re.search(r'"tmpfs", MS_NOSUID \| MS_NODEV, "size=(\d+)m,mode=0755"', root)[1])
+        self.assertGreaterEqual(size - 2, 96 + 16)
+
+    def test_the_y1_reports_the_roots_capabilities_with_ota(self):
+        # R4b reported OTA off through a PID1 override until R5's device run; R6 dropped it.
+        self.assertNotIn('capabilities.json', LISTING)
+        self.assertNotIn('"/etc/y2linux/capabilities.json"', PID1)
+        self.assertNotIn('capabilities', (ROOT / 'tools/build/y1-build.sh').read_text())
+        capabilities = json.loads((ROOT / 'platform/capabilities.json').read_text())['capabilities']
+        for name in ('ota', 'automatic_bootimg_update'):
+            self.assertIs(capabilities[name]['enabled'], True)
+        self.assertIn('Blunk/Y1Linux', capabilities['ota']['channel'])
+
+
+if __name__ == '__main__':
+    unittest.main()

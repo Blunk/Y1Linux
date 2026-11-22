@@ -1,0 +1,9 @@
+--- a/drivers/soc/mediatek/Makefile
++++ b/drivers/soc/mediatek/Makefile
+@@ -9,3 +9,6 @@
+ obj-$(CONFIG_MTK_MMSYS) += mtk-mutex.o
+ obj-$(CONFIG_MTK_SVS) += mtk-svs.o
+ obj-$(CONFIG_MTK_SOCINFO) += mtk-socinfo.o
++obj-$(CONFIG_INNIOASIS_Y1_IDLE) += y1-system-idle.o
++obj-$(CONFIG_INNIOASIS_Y1_DEEP_IDLE) += y1-deep-idle.o
++obj-$(CONFIG_INNIOASIS_Y1_SLEEP) += y1-pm-journal.o y1-resume-vector.o workload.o

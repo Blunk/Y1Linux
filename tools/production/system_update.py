@@ -162,14 +162,14 @@ def distribution_gate(build, public):
 def recovery_install(build, out, stock):
     """OTA-35: the Y2 recovery image as its own one-time SPFT step. It replaces
     the stock Android recovery; BOOTIMG, the root and Y2DATA are not selected."""
-    from tools.validation.bootimg import RECOVERY_NAME
+    from tools.build.bootimage import NAMES
     directory = out/'recovery-install'
     directory.mkdir()
     image = directory/'RECOVERY.img'
     shutil.copyfile(Path(build)/'RECOVERY.img', image)
     raw = image.read_bytes()
-    require(len(raw) <= RECOVERY_TARGET['size'] and raw[:8] == b'ANDROID!' and raw[48:64] == RECOVERY_NAME,
-            'Y2 recovery image within the RECOVERY span')
+    require(len(raw) <= RECOVERY_TARGET['size'] and raw[:8] == b'ANDROID!' and
+            raw[48:64] == NAMES['y2'][1].ljust(16, b'\0'), 'Y2 recovery image within the RECOVERY span')
     scatter = directory/'MT6582_recovery_scatter.txt'
     scatter.write_text(make_recovery_scatter(stock))
     record = {'schema': 'org.y2linux.recovery-install/v1', 'target_partition': 'RECOVERY',

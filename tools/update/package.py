@@ -19,6 +19,12 @@ import struct
 import subprocess
 import zlib
 
+# Per player (docs/planning/Y1-RECOVERY-PLAN.md): the image names (tools/build/bootimage.py NAMES), the
+# BOOTIMG/RECOVERY span and the root partition, as y2-update-core and y1-update-core hold them. A Y1 manifest
+# names its device; a Y2's carries no field.
+PROFILES = {'y2': dict(names=(b'Y2Linux-M1', b'Y2Recovery-1'), boot_bytes=16 * 1024**2, root_bytes=820 * 1024**2),
+            'y1': dict(names=(b'Y1Linux-M1', b'Y1Recovery-1'), boot_bytes=6 * 1024**2, root_bytes=0x145000 * 512)}
+
 
 def sodium():
     name = ctypes.util.find_library('sodium')
@@ -157,8 +163,8 @@ def boot_name(image, expected, label):
 
 
 def build(image, versions, output, private, key_id, sequence, minimum_sequence=0,
-          allow_downgrade=False, rollback_allowed=False, bootimg=None, recovery=None, notes=''):
-    """Signed full-system package: Y2ROOT + BOOTIMG, optionally RECOVERY."""
+          allow_downgrade=False, rollback_allowed=False, bootimg=None, recovery=None, notes='', device='y2'):
+    """Signed full-system package for the player device: Y2ROOT + BOOTIMG, optionally RECOVERY."""
     output = Path(output)
     if output.exists() or not re.fullmatch(r'[a-zA-Z0-9._-]{1,64}', key_id):
         raise ValueError('fresh output directory and safe key ID required')
@@ -168,17 +174,20 @@ def build(image, versions, output, private, key_id, sequence, minimum_sequence=0
         raise ValueError('a full update needs the matching BOOTIMG')
     if not isinstance(notes, str) or len(notes) > 2000:
         raise ValueError('release notes must be short text')
+    if device not in PROFILES:
+        raise ValueError('unknown player: ' + str(device))
+    boot_bytes, root_bytes = PROFILES[device]['boot_bytes'], PROFILES[device]['root_bytes']
     image = Path(image)
-    if not 8 * 1024**2 <= image.stat().st_size <= 820 * 1024**2:
+    if not 8 * 1024**2 <= image.stat().st_size <= root_bytes:
         raise ValueError('root image extent outside Y2ROOT budget')
-    boot_name(bootimg, b'Y2Linux-M1', b'ROOTFS')
+    boot_name(bootimg, PROFILES[device]['names'][0], b'ROOTFS')
     if recovery is not None:
-        boot_name(recovery, b'Y2Recovery-1', b'RECOVERY')
+        boot_name(recovery, PROFILES[device]['names'][1], b'RECOVERY')
     output.mkdir(mode=0o700, parents=True)
-    payloads = dict(rootfs=compress_segmented(image, output / 'rootfs.ext4.gz', 820 * 1024**2),
-                    bootimg=compress(bootimg, output / 'bootimg.img.gz', 16 * 1024**2))
+    payloads = dict(rootfs=compress_segmented(image, output / 'rootfs.ext4.gz', root_bytes),
+                    bootimg=compress(bootimg, output / 'bootimg.img.gz', boot_bytes))
     if recovery is not None:
-        payloads['recovery'] = compress(recovery, output / 'recovery.img.gz', 16 * 1024**2)
+        payloads['recovery'] = compress(recovery, output / 'recovery.img.gz', boot_bytes)
     manifest = dict(schema=2, product='Y2', hardware_revision='innioasis-y2-mt6582',
                     release_version=versions['release_version'], sequence=sequence,
                     minimum_sequence=minimum_sequence, kernel=versions['kernel_version'],
@@ -189,6 +198,8 @@ def build(image, versions, output, private, key_id, sequence, minimum_sequence=0
                     key_id=key_id, signature_format='Ed25519-detached-manifest.sig',
                     allow_downgrade=allow_downgrade, rollback_allowed=rollback_allowed,
                     payloads=payloads)
+    if device != 'y2':
+        manifest['device'] = device
     raw = canonical(manifest)
     (output / 'manifest.json').write_bytes(raw)
     (output / 'manifest.sig').write_bytes(sign(raw, private))
@@ -204,6 +215,7 @@ def main():
     for arg in ('image', 'bootimg', 'versions', 'output', 'private'):
         package.add_argument('--' + arg, type=Path, required=True)
     package.add_argument('--recovery', type=Path)
+    package.add_argument('--device', choices=sorted(PROFILES), default='y2')
     package.add_argument('--notes', default='')
     candidate = sub.add_parser('candidate', help='sign the OTA package of a sealed SPFT candidate folder')
     candidate.add_argument('folder', type=Path)
@@ -240,7 +252,7 @@ def main():
         print(json.dumps(build(args.image, json.loads(args.versions.read_text()), args.output,
                                args.private, args.key_id, args.sequence, args.minimum_sequence,
                                args.development_downgrade, args.rollback_allowed, args.bootimg,
-                               args.recovery, args.notes), indent=2))
+                               args.recovery, args.notes, args.device), indent=2))
 
 
 if __name__ == '__main__':

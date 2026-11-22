@@ -13,7 +13,7 @@ document links, rather than relocating or deleting proof. See the
 [shared knowledge rules](KNOWLEDGE_BASE.md)
 and the other repository's catalog for product-wide context.
 
-Indexed pages: **353**. Explicit scope notices: **228**.
+Indexed pages: **356**. Explicit scope notices: **228**.
 
 ## Entry
 
@@ -255,6 +255,7 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Hardware Final USB DMA observations](knowledge/usb-dma-observation.md) | Retained research / scoped evidence |
 | [Host-readable USB logging — minimal path and controller gate](knowledge/usb-logging.md) | Retained research / scoped evidence |
 | [Wi-Fi, Bluetooth and firmware evidence](knowledge/wifi-bluetooth.md) | Retained research / scoped evidence |
+| [Innioasis Y1 (MT6572) hardware evidence](knowledge/y1-hardware.md) | Retained research / scoped evidence; the single Y1 build and its map from the step builds |
 | [Y2 hardware evidence baseline](knowledge/y2-hardware.md) | Retained research / scoped evidence |
 | [Y2B-245 — Real screen result and sleep failure](knowledge/y2b245-hardware-result.md) | Retained research / scoped evidence |
 | [DEV-02 live platform qualification — 2026-09-10](knowledge/y2linux-dev02-live-qualification.md) | Retained research / scoped evidence |
@@ -359,6 +360,24 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Error reports](ERROR-REPORTS.md) | User guide: save a report, send it, what is in it and what never is |
 | [Ideas that won't be built, and why](NOT-PLANNED.md) | User guide: requests declined so far with the reason and the issue, linked from the issue forms |
 | [Y2Linux 1.0 Beta 8.40 report](validation/Y2-LINUX-1.0-BETA-8.40.md) | Beta 8.40 (Baseline 154): power off on a charger opens the charging screen (F46) |
+| [Y1 charging plan](planning/Y1-CHARGING-PLAN.md) | Read-only PMIC observation boot, then a first PC-port charging boot on the shared Y2 charger; Y1 vs Y2 stock values; staged admission |
+| [Y1 display plan](planning/Y1-DISPLAY-PLAN.md) | Fork MT6572 DRM data vs the Y2 MT6582 stack; offline stage, read-only display register dump, first DRM milestone adopting LK's panel |
+| [Y1 backlight plan](planning/Y1-BACKLIGHT-PLAN.md) | Brightness and screen-off on MT6323 ISINK0/1 with the shared Y2 driver, never above LK's duty; write policy; admission |
+| [Y1 root filesystem plan](planning/Y1-ROOTFS-PLAN.md) | The Y2's Buildroot userspace from the microSD: read-only image file first (RAM overlay), own ext4 partition later; kernel features; admission |
+| [Y1 system plan](planning/Y1-SYSTEM-PLAN.md) | The Y2's init and services on the Y1: per-service review, a Y1-safe set, milestone A (init, nothing written), later data, networking, power, player |
+| [Y1 network plan](planning/Y1-NETWORK-PLAN.md) | Milestone C: Ethernet over USB (g_cdc), IPv4 at the Y2's 10.42.0.1, key-only SSH with dropbear; admission |
+| [Y1 SMP plan](planning/Y1-SMP-PLAN.md) | The MT6572's second core: mainline's boot-ROM key path; LK already powers CPU1 (read on the device); admission |
+| [Y1 audio plan](planning/Y1-AUDIO-PLAN.md) | ALSA playback: MT6572 AFE (from the Y2's), a new MT6323 codec, the AW87559; stock sequences from the HAL; staged admission |
+| [Y1 power plan](planning/Y1-POWER-PLAN.md) | Milestone D: power-off, the Y2 power daemon with a Y1 battery profile, CPU scaling at fixed VPROC; stock facts; staged admission |
+| [Y1 Reborn plan](planning/Y1-REBORN-PLAN.md) | Milestone E: Y2Reborn on the Y1; source review, GPU (Lima on the Mali-400, MFG domain), first UI, sound, power off, screen timeout, sleep: all PASS |
+| [Y1 data plan](planning/Y1-DATA-PLAN.md) | Milestone B: Y2DATA on USRDATA through a guarded loop, created offline like the Y2's; staged admission |
+| [Y1 MTP plan](planning/Y1-MTP-PLAN.md) | Milestone B3: music over MTP with the Y2's umtprd, a configfs gadget built by PID1, one storage `/data/music`; admission |
+| [Y1 charge-mode plan](planning/Y1-CHARGE-MODE-PLAN.md) | Robust charging: a charge-only mode in PID1, the latched-fault fix, wall chargers, the full charge; admission |
+| [Y1 boot splash plan](planning/Y1-BOOT-SPLASH-PLAN.md) | The Y2's quiet boot on the Y1: loglevel 3, PID1 text on serial, reborn-splash before the services |
+| [Y1 Bluetooth plan](planning/Y1-BLUETOOTH-PLAN.md) | Bluetooth by adapting the Y2's connectivity driver: same core, Y1 register map and firmware, staged to hci0; admission |
+| [Y1 Wi-Fi plan](planning/Y1-WIFI-PLAN.md) | Wi-Fi on the Y1, shipped disabled and without firmware: evidence, firmware source options, stages W0–W6; admission |
+| [Y1 recovery plan](planning/Y1-RECOVERY-PLAN.md) | Over-the-air updates on the Y1: a recovery image in RECOVERY, LK's door (the RTC PDN1 flag), the guard by mode, Y1 geometry in the update core; stages R0–R6 (done) with their device runs; how a Y1 release is built, signed and published (§13) |
+| [Y1 OTA release notes draft](release/Y1LINUX-OTA-RELEASE-NOTES.md) | The listener-facing text for the first Y1Linux release with over-the-air updates (VERSION and SEQUENCE to fill in) |
 | [Plugins plan](planning/PLUGINS-PLAN.md) | One unified kind of plugin (WebAssembly only) for everything optional: extension points, the core after the move, security model, store, SDK, phases P0–P6 |
 | [Release notes format](RELEASE-NOTES-TEMPLATE.md) | How the GitHub release text is written for listeners, the `github-only` markers updaters leave out, and the template `release.py publish` checks |
 | [Coding standard](CODING-STANDARD.md) | How the platform and Reborn are written (functions, workers, dispatchers, records, errors, `unsafe`), what the gate and its code-quality ratchet enforce |
@@ -372,6 +391,11 @@ Indexed pages: **353**. Explicit scope notices: **228**.
 | [Y2Linux 1.0 Beta 9.3.28 report](validation/Y2-LINUX-1.0-BETA-9.3.28.md) | Beta 9.3.28 (Baseline 256): a fast Audiobooks list for big collections (Y2Reborn #27), films follow a seek during catch-up (Y2Reborn #129), films with few reference pictures play on the video chip |
 | [Y2Linux 1.0 Beta 9.3.29 report](validation/Y2-LINUX-1.0-BETA-9.3.29.md) | Beta 9.3.29 (Baseline 259): Buttons (Customize > Buttons): layouts for the menus, Now Playing and the dark, Reborn Default always back, nobody locked out; what was tested on the player |
 | [Y2Linux 1.0 Beta 9.3.30 report](validation/Y2-LINUX-1.0-BETA-9.3.30.md) | Beta 9.3.30 (Baseline 261): films in every skin (Y2Reborn #131), albums by Album Artist rules (Various Artists), Shuffle in folders, Zero:BLUE2 profile |
+| [Y2Linux 1.0 Beta 9.3.31 report](validation/Y2-LINUX-1.0-BETA-9.3.31.md) | Beta 9.3.31 (Baseline 262): the End of Song sleep timer follows the song you choose instead of pausing it (Y2Reborn #137) |
+| [Y2Linux 1.0 Beta 9.3.32 report](validation/Y2-LINUX-1.0-BETA-9.3.32.md) | Beta 9.3.32 (Baseline 263): newer memory chips (RPMB 4 MB, Y2Reborn #130), USB set up again after an unbind (#117), wheel click after a stop (#127), films in step on Bluetooth (Y2Reborn #133), Clear Playlist, no song twice in a playlist, album year, skin values |
+| [Y2Linux 1.0 Beta 9.3.33 report](validation/Y2-LINUX-1.0-BETA-9.3.33.md) | Beta 9.3.33 (Baseline 266): lyrics (Y2Reborn #126), Recently Added, Recently Played and Most Played (#109, #158), Play All and Shuffle All on Songs (#163), the cover after a restart (#150), a quiet start with one scan (#155, #156) |
+| [Y2Linux 1.0 Beta 9.3.34 report](validation/Y2-LINUX-1.0-BETA-9.3.34.md) | Beta 9.3.34 (Baseline 267): Bluetooth stalls written to the system log for error reports; the open Bluetooth issues reviewed and Bluetooth's hardware limit explained (wired headphones advised) |
+| [Y2Linux 1.0 Beta 9.3.35 report](validation/Y2-LINUX-1.0-BETA-9.3.35.md) | Beta 9.3.35 (Baseline 268): Reborn Light (Y2Linux #112), What's New on the player (#128), cover colours that match the cover (Y2Reborn #161), a book for audiobooks without a cover (#162) |
 | [Y2Linux 1.0 Beta 9.3.25 report](validation/Y2-LINUX-1.0-BETA-9.3.25.md) | Beta 9.3.25 (Baseline 248): videos (own hardware decoder driver, H.264 and MPEG-4 on the video chip, Videos in Reborn; early version), genres split at "/" (Y2Reborn #124) |
 | [Y2Linux 1.0 Beta 9.3.24 report](validation/Y2-LINUX-1.0-BETA-9.3.24.md) | Beta 9.3.24 (Baseline 235): SBC XQ removed (Y2Reborn #123), battery level after charging while off (#113), encoder rate log in reports |
 | [Y2Linux 1.0 Beta 9.3.19 report](validation/Y2-LINUX-1.0-BETA-9.3.19.md) | Beta 9.3.19 (Baseline 228): the update message works again and is opt-in: Update Notifications on Software Update, off by default (Y2Reborn #97) |

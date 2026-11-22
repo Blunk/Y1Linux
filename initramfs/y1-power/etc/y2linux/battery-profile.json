@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "source": "stock Y1 3.0.2 fuel-gauge profile, battery id 0 (fgauge_get_profile(25 C) 0xc07ebd9c; the id is not read on the device, id 0 likely), DOD converted to SOC and rescaled so the Linux charge limit 4.175 V (stock SOC 87.3 %) is 100 %; Q_MAX 1200 mAh (0xc07ea7a0+0x294) scaled to the same window; no stock r_profile extracted (docs/planning/Y1-POWER-PLAN.md, D2)",
+  "provisional": true,
+  "voltage_soc": [
+    [
+      3417000,
+      0
+    ],
+    [
+      3504000,
+      1
+    ],
+    [
+      3562000,
+      2
+    ],
+    [
+      3599000,
+      3
+    ],
+    [
+      3618000,
+      5
+    ],
+    [
+      3627000,
+      6
+    ],
+    [
+      3655000,
+      11
+    ],
+    [
+      3687000,
+      17
+    ],
+    [
+      3713000,
+      23
+    ],
+    [
+      3728000,
+      29
+    ],
+    [
+      3739000,
+      34
+    ],
+    [
+      3750000,
+      40
+    ],
+    [
+      3767000,
+      46
+    ],
+    [
+      3787000,
+      52
+    ],
+    [
+      3811000,
+      57
+    ],
+    [
+      3843000,
+      63
+    ],
+    [
+      3888000,
+      69
+    ],
+    [
+      3927000,
+      74
+    ],
+    [
+      3979000,
+      80
+    ],
+    [
+      4033000,
+      86
+    ],
+    [
+      4089000,
+      92
+    ],
+    [
+      4146000,
+      97
+    ],
+    [
+      4175000,
+      100
+    ]
+  ],
+  "design_capacity_uah": 1048000,
+  "filter_seconds": 30,
+  "rest_seconds": 120,
+  "rest_band_uv": 15000,
+  "charging_offset_uv": 75000,
+  "seconds_per_percent": 60
+}
