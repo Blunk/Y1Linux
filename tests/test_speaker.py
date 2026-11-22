@@ -102,7 +102,11 @@ class JackPoll(unittest.TestCase):
 
     def test_poll_never_keeps_the_codec_powered(self):
         poll = function(self.codec, 'y2_jack_poll')
-        self.assertIn('pm_runtime_get_if_active(cs43130->dev) <= 0', poll)
+        self.assertIn('!y2_jack_get(cs43130->dev)', poll)
+        # Only the first read (state unknown) powers the codec; later reads need it on.
+        get = function(self.codec, 'y2_jack_get')
+        self.assertIn('if (y2_jack_state < 0)\n\t\treturn !pm_runtime_resume_and_get(dev);', get)
+        self.assertIn('return pm_runtime_get_if_active(dev) > 0;', get)
         self.assertIn('__pm_runtime_put_autosuspend(cs43130->dev);', poll)
         self.assertNotIn('pm_runtime_get_sync', poll)
         self.assertNotIn('pm_runtime_resume', poll)

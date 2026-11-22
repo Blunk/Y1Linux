@@ -13,7 +13,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = [Path('/src'), ROOT / '.cache/sources/linux-6.18']
+# The pristine tree first: the build container's /src carries one manifest's overlays (the Y2's), so a Y1
+# overlay of the same file would find the Y2 result there instead of its base.
+SOURCES = [ROOT / '.cache/sources/linux-6.18', Path('/src')]
 # The Y2 set (kernel/patches) and the Y1 set (kernel/patches-y1); patches are relative to their manifest.
 MANIFESTS = sorted(ROOT.glob('kernel/patches*/manifest.json'))
 

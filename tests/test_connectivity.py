@@ -742,6 +742,7 @@ typedef unsigned char u8;
 #define HCI_OP_READ_LOCAL_EXT_FEATURES 0x1004
 #define HCI_QUIRK_BROKEN_LOCAL_EXT_FEATURES_PAGE_2 2
 #define HCI_CMD_TIMEOUT 2000
+#define Y2_CONN_EXT_FEATURES_QUIRK_CHIP 0x6582 /* the Y2's conn.h; the Y1's names 0x6572 */
 #define bt_dev_dbg(...) ((void)0)
 #define bt_dev_warn(...) ((void)0)
 struct hci_dev {

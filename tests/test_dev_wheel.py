@@ -9,7 +9,9 @@ SHIM=r'''
 #include <stdio.h>
 #include <string.h>
 typedef unsigned char u8;
+typedef unsigned int u32;
 typedef int irqreturn_t;
+#define BIT(n) (1U << (n))
 #define IRQ_HANDLED 1
 #define I2C_M_RD 1
 #define KEY_UP 103
@@ -18,7 +20,11 @@ typedef int irqreturn_t;
 #define KEY_PAGEDOWN 109
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define dev_warn_ratelimited(...) ((void)0)
-struct i2c_client {unsigned addr;void *adapter;int dev;};
+struct device {int unused;};
+struct i2c_client {unsigned addr;void *adapter;struct device dev;};
+/* The Y2 describes no vdd supply (the Y1's VGP1): apt32f_power_on does nothing. */
+static int devm_regulator_get_enable_optional(struct device *dev,const char *id) {(void)dev;(void)id;return -ENODEV;}
+static int dev_err_probe(struct device *dev,int err,const char *fmt) {(void)dev;(void)fmt;return err;}
 struct input_dev {int unused;};
 struct gpio_desc {int value;};
 struct i2c_msg {unsigned addr,flags,len;u8 *buf;};
