@@ -148,37 +148,7 @@ def build(args):
         [('root-privacy', ['python3', 'tools/production/privacy.py', '--root-image', root])],
     ])
 
-    ota = release / 'ota'
-    steps.run('ota-sign', ['python3', 'tools/update/package.py', 'package', '--device', 'y1', '--image', root,
-                           '--bootimg', boot / 'BOOTIMG.img', '--recovery', boot / 'RECOVERY.img',
-                           '--versions', folder / 'versions.json', '--sequence', versions['update_sequence'],
-                           '--rollback-allowed', '--key-id', base.KEY_ID, '--private', args.key,
-                           '--notes', args.notes], log='ota-release.json')
-    manifest, signature = (ota / 'manifest.json').read_bytes(), (ota / 'manifest.sig').read_bytes()
-    stores = {'root image': json.loads(image_file(root, '/etc/y2linux/update-trust.json')),
-              'recovery': json.loads((boot / INSTALLER_TRUST).read_text())}
-    for where, store in stores.items():
-        if not verify(manifest, signature, store, base.KEY_ID):
-            raise SystemExit(f'the signed manifest does not verify with the trust store of the {where}')
-
-    moment = time.monotonic()
-    images = {'rootfs.ext4': root, 'BOOTIMG.img': boot / 'BOOTIMG.img', 'RECOVERY.img': boot / 'RECOVERY.img'}
-    scan = {name: hit for name, hit in zip(images, base.firmware_free(list(images.values()), firmware).values())}
-    steps.durations['firmware-scan'] = round(time.monotonic() - moment, 1)
-    if any(scan.values()):
-        raise SystemExit(f'MediaTek firmware found in {[name for name, hit in scan.items() if hit]}')
-
-    moment = time.monotonic()
-    assets = release / 'assets'
-    assets.mkdir()
-    for path in ota.iterdir():
-        shutil.copy2(path, assets / path.name)
-    first_install(release, assets, version, images)
-    base.source_assets(assets, release, folder, versions, 'Y1Linux')
-    sums = ''.join(f'{base.sha256(path)}  {path.name}\n' for path in sorted(assets.iterdir())
-                   if path.name != 'SHA256SUMS')
-    (assets / 'SHA256SUMS').write_text(sums)
-    steps.durations['assets'] = round(time.monotonic() - moment, 1)
+    scan, stores, images, assets = assemble(args, release, steps, folder, boot, versions, firmware)
     steps.durations['total'] = round(time.monotonic() - started, 1)
 
     kernel = boot / 'kernel/include/config/kernel.release'
@@ -188,8 +158,46 @@ def build(args):
                'linux_commit': versions['build_git_commit'], 'reborn_commit': versions['reborn_source_commit'],
                'build': str(folder.relative_to(PROJECT)), 'clean_build': fresh, 'production_tests': ran,
                'firmware_found': scan,
-               'trust_verified': sorted(stores),
+               'trust_verified': stores,
                'images': {name: base.sha256(path) for name, path in images.items()},
                'assets': {path.name: path.stat().st_size for path in sorted(assets.iterdir())},
                'durations_s': steps.durations}
     base.finish(release, summary, args)
+
+
+def assemble(args, release, steps, folder, boot, versions, firmware):
+    """Sign the update, check it against the images' trust stores, scan the images for firmware and put the
+    assets together in release/assets; (firmware scan, trust stores checked, images, assets)."""
+    root = (folder / 'buildroot/images/rootfs.ext4').resolve()
+    ota = release / 'ota'
+    steps.run('ota-sign', ['python3', 'tools/update/package.py', 'package', '--device', 'y1', '--image', root,
+                           '--bootimg', boot / 'BOOTIMG.img', '--recovery', boot / 'RECOVERY.img',
+                           '--versions', folder / 'versions.json', '--sequence', versions['update_sequence'],
+                           '--rollback-allowed', '--key-id', base.KEY_ID, '--private', args.key,
+                           '--notes', args.notes, '--output', ota], log='ota-release.json')
+    manifest, signature = (ota / 'manifest.json').read_bytes(), (ota / 'manifest.sig').read_bytes()
+    stores = {'root image': json.loads(image_file(root, '/etc/y2linux/update-trust.json')),
+              'recovery': json.loads((boot / INSTALLER_TRUST).read_text())}
+    for where, store in stores.items():
+        if not verify(manifest, signature, store, base.KEY_ID):
+            raise SystemExit(f'the signed manifest does not verify with the trust store of the {where}')
+
+    moment = time.monotonic()
+    images = {'rootfs.ext4': root, 'BOOTIMG.img': boot / 'BOOTIMG.img', 'RECOVERY.img': boot / 'RECOVERY.img'}
+    scan = dict(zip(images, base.firmware_free(list(images.values()), firmware).values()))
+    steps.durations['firmware-scan'] = round(time.monotonic() - moment, 1)
+    if any(scan.values()):
+        raise SystemExit(f'MediaTek firmware found in {[name for name, hit in scan.items() if hit]}')
+
+    moment = time.monotonic()
+    assets = release / 'assets'
+    assets.mkdir()
+    for path in ota.iterdir():
+        shutil.copy2(path, assets / path.name)
+    first_install(release, assets, versions['release_version'], images)
+    base.source_assets(assets, release, folder, versions, 'Y1Linux')
+    sums = ''.join(f'{base.sha256(path)}  {path.name}\n' for path in sorted(assets.iterdir())
+                   if path.name != 'SHA256SUMS')
+    (assets / 'SHA256SUMS').write_text(sums)
+    steps.durations['assets'] = round(time.monotonic() - moment, 1)
+    return scan, sorted(stores), images, assets
