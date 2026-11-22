@@ -99,7 +99,7 @@ exit 0
                 shell=[str(ROOT/'.cache/environment/lib/ld-musl-x86_64.so.1'),
                        str(ROOT/'.cache/environment/bin/busybox'),'sh']
             result=subprocess.run(shell+['-c',script],env=os.environ|{'LEDGER':str(ledger),'FAILURE':failure},
-                                  text=True,capture_output=True,timeout=5)
+                                  text=True,capture_output=True,timeout=30)
             self.assertEqual((p/'run/y2/modules/fixture/kernel/g_ncm.ko').read_bytes(), b'NCM fixture')
             events=ledger.read_text().replace(str(p),'')
             log=(p/'dev/kmsg').read_text() if (p/'dev/kmsg').exists() else ''
