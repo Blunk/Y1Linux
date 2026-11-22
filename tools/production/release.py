@@ -4,6 +4,8 @@
     release.py bump --version 1.0.0-beta.3
     release.py build --label 52            # resumes out/build; --clean starts over
     release.py publish --label 52 --title "Y2Linux 1.0 Beta 3" --notes notes.md --yes
+    release.py bump --device y1 --version 1.0.0-beta.9.3.36   # the Y1 (tools/production/y1_release.py)
+    release.py build --device y1 --label y1-9.3.36
     release.py prune --dry-run
     release.py sync-contract               # copy y2p-contract into Y2Reborn (then commit Y2Reborn)
 
@@ -20,6 +22,11 @@ Y2Reborn's copy of the shared contract crate differs from Y2Linux's
 both repositories and creates the GitHub release; it re-uploads the large
 third-party source archive and the Linux source only when they changed and
 links the identical files of the release that carries them otherwise.
+
+On this branch the player is the Innioasis Y1 (--device y1, the default): the
+same steps make the Y1's release (y1_release.py), tagged y1linux-<version>
+and published to Blunk/Y1Linux as the latest release, which the players' update
+channel reads.
 """
 import argparse
 import concurrent.futures
@@ -41,8 +48,8 @@ PROJECT = Path(__file__).resolve().parents[2]
 REBORN = PROJECT.parent / 'Y2Reborn'
 OUT = PROJECT / 'out'
 REPO = 'Blunk/Y1Linux'
-KEY = Path.home() / '.local/share/y1linux/signing/y1linux-release-20261112.key'
-KEY_ID = 'y1linux-release-20261112'
+KEY = Path.home() / '.local/share/y1linux/signing/y1linux-release-20261122.key'
+KEY_ID = 'y1linux-release-20261122'
 STOCK = Path(os.environ.get('Y2_STOCK_PACKAGE', '/home/luca/Dokumente/Code/Y2Player/y2_v3.2.0_FM-20260813'))
 WORKSPACE = OUT / 'build'
 # The platform/Reborn contract types (docs/planning/PLATFORM-RUST-PORT-PLAN.md §4): Y2Linux holds the crate,
@@ -124,7 +131,7 @@ def bump(args):
     prefix, minor = identity['rootfs_version'].rsplit('.', 1)
     identity.update(release_version=args.version,
                     rootfs_version=f'{prefix}.{int(minor) + 1}',
-                    build_id='Y2LINUX-' + re.sub(r'-([A-Z]+)\.(\d+(\.\d+)*)$', r'-\1-\2', args.version.upper()),  # Y2LINUX-1.0.0-BETA-3, -BETA-4.1, -BETA-9.2.1
+                    build_id=('Y1LINUX-' if args.device == 'y1' else 'Y2LINUX-') + re.sub(r'-([A-Z]+)\.(\d+(\.\d+)*)$', r'-\1-\2', args.version.upper()),  # Y2LINUX-1.0.0-BETA-3, -BETA-4.1, -BETA-9.2.1
                     update_sequence=args.sequence or identity['update_sequence'] + 100)
     release.write_text(json.dumps(identity, indent=2) + '\n')
     config = PROJECT / 'kernel/config/production.config'
@@ -162,11 +169,12 @@ def stock_radio_files(stock_system):
         return {path.name: path.read_bytes() for path in sorted(installed.iterdir()) if path.is_file()}
 
 
-def firmware_free(images, stock_system):
-    files = stock_radio_files(stock_system)
+def firmware_free(images, files):
+    """image name -> whether a 64-byte probe of any large firmware file (name -> bytes) occurs in it or in one of
+    its gzip streams."""
     probes = [data[4096:4160] for data in files.values() if len(data) > 8192]
     if not probes:
-        raise SystemExit('firmware scan: no probes from the stock system.img')
+        raise SystemExit('firmware scan: no probes from the firmware files')
     result = {}
     for image in images:
         data = image.read_bytes()
@@ -192,25 +200,28 @@ def deterministic_tar(output, root, members, epoch):
                 archive.add(path, arcname=path.relative_to(root.parent).as_posix(), recursive=False, filter=normalise)
 
 
-def build(args):
+def start(label):
+    """A fresh out/release-<label> for a release built from committed sources, and its step runner."""
     for repo in (PROJECT, REBORN):
         if git(repo, 'status', '--porcelain'):
             raise SystemExit(f'{repo.name}: commit the reviewed source first')
     difference = contract_difference()
     if difference:
         raise SystemExit(f'{difference}: run release.py sync-contract and commit Y2Reborn')
-    folder = WORKSPACE
-    release = OUT / f'release-{args.label}'
+    release = OUT / f'release-{label}'
     if (release / 'summary.json').exists():
         raise SystemExit(f'{release.name} is a finished release output; pick another label')
     shutil.rmtree(release, ignore_errors=True)  # a failed attempt
     release.mkdir(parents=True)
     logs = release / 'receipts'
     logs.mkdir()
-    steps = Steps(logs)
-    started = time.monotonic()
+    return release, Steps(logs)
 
-    fresh = args.clean or not (folder / 'buildroot/.config').exists()
+
+def build_root(steps, clean):
+    """Y2ROOT in the workspace out/build (resumed at the kernel unless clean or new); whether it started over."""
+    folder = WORKSPACE
+    fresh = clean or not (folder / 'buildroot/.config').exists()
     if fresh:
         shutil.rmtree(folder, ignore_errors=True)
     else:
@@ -222,46 +233,59 @@ def build(args):
     if not fresh:
         command += ['--resume', 'kernel']
     steps.run('build', command, log='build.log')
+    return fresh
+
+
+def checks(steps, folder, lanes):
+    """The release checks every player's build gets, in parallel with the player's own `lanes`: the production
+    tests, the ELF closure, the installed ARM programs, the release inventory and Buildroot's legal-info.
+    Returns the number of production tests run."""
+    builder = ['python3', 'tools/build/run.py', '--output', folder.relative_to(PROJECT), '--']
+    legal_env = dict(os.environ, PATH=str(PROJECT / '.cache/host-tools') + os.pathsep + os.environ['PATH'],
+                     BR2_DL_DIR=str(PROJECT / '.cache/buildroot-dl'), Y2_ARTIFACT_DIR=str(folder), LC_ALL='C', TZ='UTC')
+    moment = time.monotonic()
+    common = [
+        [('production-tests', builder + ['sh', '/project/tools/production/tests.sh'])],
+        [('elf-closure', ['python3', 'tools/production/check_elf.py', folder / 'buildroot/target']),
+         ('installed-arm', ['python3', 'tools/production/check_installed_arm.py', '--build', folder])],
+        [('release-inventory', ['python3', 'tools/production/release_inventory.py', '--build', folder,
+                                '--output', folder / 'release-inventory.json'])],
+    ]
+    with concurrent.futures.ThreadPoolExecutor(len(common) + len(lanes)) as pool:
+        futures = [pool.submit(lambda lane=lane: [steps.run(*step) for step in lane]) for lane in common + lanes]
+        # Buildroot's make must not run twice on one output folder at a time.
+        futures[2] = pool.submit(lambda inventory=futures[2]: (inventory.result(), steps.run(
+            'legal-info', ['make', '-C', PROJECT / '.cache/sources/buildroot-2026.08', f'O={folder / "buildroot"}',
+                           f'BR2_EXTERNAL={PROJECT / "buildroot"}', 'legal-info'], env=legal_env)))
+        for future in futures:
+            future.result()
+    steps.durations['checks (parallel)'] = round(time.monotonic() - moment, 1)
+    suite = (steps.logs / 'production-tests.log').read_text()
+    if re.search(r'^(FAIL|ERROR):', suite, re.M):
+        raise SystemExit('production tests reported failures')
+    return sum(int(n) for n in re.findall(r'^Ran (\d+) tests?', suite, re.M))
+
+
+def build(args):
+    release, steps = start(args.label)
+    started = time.monotonic()
+    folder = WORKSPACE
+    fresh = build_root(steps, args.clean)
     versions = json.loads((folder / 'versions.json').read_text())
     version = versions['release_version']
     base = args.base_package.resolve() if args.base_package else previous_package(release)
 
     update, first = release / 'update', release / 'first-install'
-    builder = ['python3', 'tools/build/run.py', '--output', folder.relative_to(PROJECT), '--']
-    legal_env = dict(os.environ, PATH=str(PROJECT / '.cache/host-tools') + os.pathsep + os.environ['PATH'],
-                     BR2_DL_DIR=str(PROJECT / '.cache/buildroot-dl'), Y2_ARTIFACT_DIR=str(folder), LC_ALL='C', TZ='UTC')
-    moment = time.monotonic()
-
-    def legal(name, argv, log=None):
-        steps.run(name, argv, env=legal_env, log=log)
-    with concurrent.futures.ThreadPoolExecutor(5) as pool:
-        lanes = [
-            [('production-tests', builder + ['sh', '/project/tools/production/tests.sh'])],
-            [('package', ['python3', 'tools/production/system_update.py', '--build', folder, '--base', base,
-                          '--fallback-rootfs', base / 'Y2ROOT.img', '--output', update, '--public']),
-             ('package-validation', ['python3', 'tools/production/validate.py', update, '--build', folder]),
-             ('package-privacy', ['sh', '-c', f'python3 tools/production/privacy.py --tree "{update}" && '
-                                  f'python3 tools/production/privacy.py --root-image "{update}/Y2ROOT.img"'])],
-            [('elf-closure', ['python3', 'tools/production/check_elf.py', folder / 'buildroot/target']),
-             ('installed-arm', ['python3', 'tools/production/check_installed_arm.py', '--build', folder])],
-            [('release-inventory', ['python3', 'tools/production/release_inventory.py', '--build', folder,
-                                    '--output', folder / 'release-inventory.json'])],
-            [('first-install-package', ['python3', 'tools/production/package.py', '--build', folder, '--output', first,
-                                        '--stock', STOCK, '--public']),
-             ('first-install-validation', ['python3', 'tools/production/validate.py', first, '--build', folder])],
-        ]
-        futures = [pool.submit(lambda lane=lane: [steps.run(*step) for step in lane]) for lane in lanes]
-        # Buildroot's make must not run twice on one output folder at a time.
-        futures[3] = pool.submit(lambda inventory=futures[3]: (inventory.result(), legal(
-            'legal-info', ['make', '-C', PROJECT / '.cache/sources/buildroot-2026.08', f'O={folder / "buildroot"}',
-                           f'BR2_EXTERNAL={PROJECT / "buildroot"}', 'legal-info'])))
-        for future in futures:
-            future.result()
-    steps.durations['checks (parallel)'] = round(time.monotonic() - moment, 1)
-    suite = (logs / 'production-tests.log').read_text()
-    ran = sum(int(n) for n in re.findall(r'^Ran (\d+) tests?', suite, re.M))
-    if re.search(r'^(FAIL|ERROR):', suite, re.M):
-        raise SystemExit('production tests reported failures')
+    ran = checks(steps, folder, [
+        [('package', ['python3', 'tools/production/system_update.py', '--build', folder, '--base', base,
+                      '--fallback-rootfs', base / 'Y2ROOT.img', '--output', update, '--public']),
+         ('package-validation', ['python3', 'tools/production/validate.py', update, '--build', folder]),
+         ('package-privacy', ['sh', '-c', f'python3 tools/production/privacy.py --tree "{update}" && '
+                              f'python3 tools/production/privacy.py --root-image "{update}/Y2ROOT.img"'])],
+        [('first-install-package', ['python3', 'tools/production/package.py', '--build', folder, '--output', first,
+                                    '--stock', STOCK, '--public']),
+         ('first-install-validation', ['python3', 'tools/production/validate.py', first, '--build', folder])],
+    ])
 
     ota = release / 'ota'
     steps.run('ota-sign', ['python3', 'tools/update/package.py', 'candidate', update, '--output', ota,
@@ -269,7 +293,7 @@ def build(args):
               log='ota-release.json')
     moment = time.monotonic()
     images = [first / name for name in ('Y2ROOT.img', 'BOOTIMG.img', 'RECOVERY.img', 'Y2DATA.img')]
-    scan = firmware_free(images, STOCK / 'system.img')
+    scan = firmware_free(images, stock_radio_files(STOCK / 'system.img'))
     steps.durations['firmware-scan'] = round(time.monotonic() - moment, 1)
     if any(scan.values()):
         raise SystemExit(f'MediaTek firmware found in {[name for name, hit in scan.items() if hit]}')
@@ -285,6 +309,39 @@ def build(args):
     # The images barely compress; -6 instead of -9 costs ~1 % size.
     subprocess.run(['zip', '-q', '-r', '-6', assets / f'{name}.zip', name], cwd=release, check=True)
     shutil.rmtree(staging)
+    source_assets(assets, release, folder, versions, 'Y2Linux')
+    sums = ''.join(f'{sha256(path)}  {path.name}\n' for path in sorted(assets.iterdir()) if path.name != 'SHA256SUMS')
+    (assets / 'SHA256SUMS').write_text(sums)
+    steps.durations['assets'] = round(time.monotonic() - moment, 1)
+    steps.durations['total'] = round(time.monotonic() - started, 1)
+
+    summary = {'label': args.label, 'release_version': version, 'kernel_version': versions['kernel_version'],
+               'update_sequence': versions['update_sequence'], 'linux_commit': versions['build_git_commit'],
+               'reborn_commit': versions['reborn_source_commit'], 'build': str(folder.relative_to(PROJECT)),
+               'clean_build': fresh,
+               'base_package': str(base), 'production_tests': ran, 'firmware_found': scan,
+               'images': {path.name: sha256(path) for path in images},
+               'assets': {path.name: path.stat().st_size for path in sorted(assets.iterdir())},
+               'durations_s': steps.durations}
+    finish(release, summary, args)
+
+
+def finish(release, summary, args):
+    """summary.json, its receipts kept apart from the prunable output, and the prune."""
+    (release / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    # Small receipts outlive the pruned build (archive convention since 13).
+    receipts = OUT / f'deep-sleep-final/build{args.label}-receipts'
+    shutil.copytree(release / 'receipts', receipts, dirs_exist_ok=True)
+    shutil.copy2(release / 'summary.json', receipts / 'summary.json')
+    print(json.dumps(summary, indent=2))
+    if not args.no_prune:
+        prune(args.keep)
+
+
+def source_assets(assets, release, folder, versions, product):
+    """The corresponding source every release carries: this project's own Buildroot packages and legal-info
+    (<product>-<version>-sources-buildroot-legal-info.tar), the third-party package sources, the toolchain's
+    library sources and the Linux release the kernels are built from."""
     legal_info = folder / 'buildroot/legal-info'
     epoch = int(json.loads((PROJECT / 'buildroot/inputs.lock.json').read_text())['source_date_epoch'])
     own = sorted(path.name for path in (legal_info / 'sources').iterdir()
@@ -307,33 +364,12 @@ def build(args):
     with note.open('a') as stream:
         stream.write(f'glibc and the GCC runtime libraries come from the prebuilt Bootlin toolchain; their sources '
                      f'are in {toolchain.name} (SHA-256 {sha256(toolchain)}), attached to or linked from this release.\n')
-    deterministic_tar(assets / f'Y2Linux-{version}-sources-buildroot-legal-info.tar', legal_info,
+    deterministic_tar(assets / f'{product}-{versions["release_version"]}-sources-buildroot-legal-info.tar', legal_info,
                       [path.name for path in legal_info.iterdir() if path.name not in ('sources', 'host-sources')]
                       + [f'sources/{name}' for name in own], epoch)
     # The exact kernel release the images carry, e.g. linux-6.18.56.tar.xz.
     linux = PROJECT / '.cache/downloads' / f"linux-{versions['kernel_version'].split('-', 1)[0]}.tar.xz"
     shutil.copy2(linux, assets / linux.name)
-    sums = ''.join(f'{sha256(path)}  {path.name}\n' for path in sorted(assets.iterdir()) if path.name != 'SHA256SUMS')
-    (assets / 'SHA256SUMS').write_text(sums)
-    steps.durations['assets'] = round(time.monotonic() - moment, 1)
-    steps.durations['total'] = round(time.monotonic() - started, 1)
-
-    summary = {'label': args.label, 'release_version': version, 'kernel_version': versions['kernel_version'],
-               'update_sequence': versions['update_sequence'], 'linux_commit': versions['build_git_commit'],
-               'reborn_commit': versions['reborn_source_commit'], 'build': str(folder.relative_to(PROJECT)),
-               'clean_build': fresh,
-               'base_package': str(base), 'production_tests': ran, 'firmware_found': scan,
-               'images': {path.name: sha256(path) for path in images},
-               'assets': {path.name: path.stat().st_size for path in sorted(assets.iterdir())},
-               'durations_s': steps.durations}
-    (release / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
-    # Small receipts outlive the pruned build (archive convention since 13).
-    receipts = OUT / f'deep-sleep-final/build{args.label}-receipts'
-    shutil.copytree(logs, receipts, dirs_exist_ok=True)
-    shutil.copy2(release / 'summary.json', receipts / 'summary.json')
-    print(json.dumps(summary, indent=2))
-    if not args.no_prune:
-        prune(args.keep)
 
 
 def previous_package(current=None):
@@ -508,7 +544,7 @@ def publish(args):
         raise SystemExit('publishing is outward-facing: pass --yes once the owner said to publish')
     release = OUT / f'release-{args.label}'
     summary = json.loads((release / 'summary.json').read_text())
-    tag = f'baseline-{args.label}'
+    tag = summary.get('tag', f'baseline-{args.label}')
     for repo in (PROJECT, REBORN):
         if git(repo, 'status', '--porcelain'):
             raise SystemExit(f'{repo.name}: uncommitted changes')
@@ -541,12 +577,13 @@ def publish(args):
     notes_file = release / 'release-notes.md'
     notes_file.write_text(notes + '\n')
 
-    message = f'{args.title} (Baseline {args.label})\n\n{Path(args.notes).read_text().split(chr(10) + chr(10))[0]}'
+    heading = args.title if 'tag' in summary else f'{args.title} (Baseline {args.label})'
+    message = f'{heading}\n\n{Path(args.notes).read_text().split(chr(10) + chr(10))[0]}'
     for repo in (PROJECT, REBORN):
         if subprocess.run(['git', 'rev-parse', '-q', '--verify', f'refs/tags/{tag}'], cwd=repo,
                           capture_output=True).returncode:
             subprocess.run(['git', 'tag', '-a', tag, '-m', message], cwd=repo, check=True)
-        subprocess.run(['git', 'push', 'origin', 'main', tag], cwd=repo, check=True)
+        subprocess.run(['git', 'push', 'origin', git(repo, 'branch', '--show-current'), tag], cwd=repo, check=True)
     subprocess.run(['gh', 'release', 'create', tag, '-R', REPO, '--title', args.title, '--notes-file', notes_file,
                     '--latest', *upload], check=True)
     served = subprocess.run(['curl', '-sSL', f'https://github.com/{REPO}/releases/latest/download/manifest.json'],
@@ -563,8 +600,12 @@ def main():
     p = sub.add_parser('bump', help='set the release identity in both repositories')
     p.add_argument('--version', required=True)
     p.add_argument('--sequence', type=int, help='update sequence (default: previous + 100)')
+    p.add_argument('--device', choices=('y1', 'y2'), default='y1', help='the build ID prefix (Y1LINUX-/Y2LINUX-)')
     p = sub.add_parser('build', help='build, check, sign and assemble a release (local only)')
     p.add_argument('--label', required=True, help='baseline number, e.g. 52')
+    p.add_argument('--device', choices=('y1', 'y2'), default='y1')
+    p.add_argument('--firmware', type=Path, help="the Y1's radio firmware for the firmware scan "
+                   '(default ~/.local/share/y1linux/stock-firmware)')
     p.add_argument('--clean', action='store_true', help='rebuild the workspace out/build from scratch')
     p.add_argument('--base-package', type=Path, help='sealed update package of the previous release')
     p.add_argument('--key', type=Path, default=KEY)
@@ -583,6 +624,12 @@ def main():
     args = parser.parse_args()
     if args.command == 'prune':
         prune(args.keep, args.dry_run)
+        return
+    if args.command == 'build' and args.device == 'y1':
+        sys.path.insert(0, str(PROJECT))  # run as a script: tools/ is not on the path
+        from tools.production import y1_release
+        args.firmware = args.firmware or y1_release.FIRMWARE
+        y1_release.build(args)
         return
     {'bump': bump, 'build': build, 'publish': publish, 'sync-contract': sync_contract}[args.command](args)
 

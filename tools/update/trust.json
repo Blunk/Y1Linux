@@ -2,10 +2,10 @@
   "schema": 1,
   "keys": [
     {
-      "id": "y1linux-release-20261112",
+      "id": "y1linux-release-20261122",
       "purpose": "release",
       "status": "active",
-      "public_key_hex": "355383696fb28d54a0b5fc51357a8e370997b2c9c2550df42303d3bdcea485cc",
+      "public_key_hex": "589ecdc90e7fdaaa5eec67a92e884f288573fcd42dc06aef700b6aaa198fbb99",
       "minimum_sequence": 16000,
       "maximum_sequence": 2147483647,
       "allow_downgrade": false

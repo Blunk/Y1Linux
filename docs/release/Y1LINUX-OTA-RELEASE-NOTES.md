@@ -15,12 +15,11 @@ is in the plan's §13. -->
 
 <!-- github-only -->
 
-## Already running Y1Linux 1.0.0 Beta 9.3.24 or older
-Your player cannot update itself yet. Write this release once with mtkclient, as in [INSTALL](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/INSTALL.md#updating), **including `RECOVERY.img`**:
+## Already running Y1Linux
+Your player cannot update itself to this release. Unzip `Y1Linux-VERSION-first-install.zip` and write it once with mtkclient, as in [INSTALL](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/INSTALL.md#updating), **including `RECOVERY.img`**:
 
 ```sh
 sha256sum -c SHA256SUMS
-gunzip -k rootfs.ext4.gz
 python mtk.py r RECOVERY recovery-stock.img      # keep it: your way back to the stock recovery
 python mtk.py w ANDROID rootfs.ext4
 python mtk.py w BOOTIMG BOOTIMG.img
@@ -30,15 +29,15 @@ python mtk.py w RECOVERY RECOVERY.img
 **Never write USRDATA again**: it wipes settings, library, music and the radio firmware. From then on, updates come over Wi-Fi.
 
 ## First install
-Follow [INSTALL](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/INSTALL.md): back up the whole eMMC, build the data image (USRDATA) yourself, and write `rootfs.ext4`, `BOOTIMG.img` and `RECOVERY.img` from this release with mtkclient. How updates work on the Y1: [Recovery and updates](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/RECOVERY-AND-UPDATES.md#on-the-y1).
+Follow [INSTALL](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/INSTALL.md): back up the whole eMMC, build the data image (USRDATA) yourself, and write `rootfs.ext4`, `BOOTIMG.img` and `RECOVERY.img` from `Y1Linux-VERSION-first-install.zip` with mtkclient. How updates work on the Y1: [Recovery and updates](https://github.com/Blunk/Y1Linux/blob/y1linux-1.0.0-beta.VERSION/docs/RECOVERY-AND-UPDATES.md#on-the-y1).
 
 ## How it was tested
 On a Type A Y1 (stock 3.0.2 bootloader): the recovery started from every way the Y1 starts, the kernel's write guard refusing the system partitions from the normal system, and test releases installed, cancelled, rolled back after a failed health check and restored by hand. A flat battery during an install and a frozen installer were tested on the computer (the updater's test suite) and on the Y2, not on a Y1.
 
 ## Files
-- `BOOTIMG.img`, `RECOVERY.img`: the Y1 kernel with its init, and the recovery image that installs updates (mtkclient).
-- `rootfs.ext4.gz`: the system (Y2ROOT) for the ANDROID partition; `gunzip` it before writing with mtkclient. The same file is the system part of the update.
-- `manifest.json`, `manifest.sig`, `bootimg.img.gz`, `recovery.img.gz`: the signed over-the-air update (Ed25519 key `y1linux-release-20261112`, sequence SEQUENCE).
+- `Y1Linux-VERSION-first-install.zip`: the images mtkclient writes: `rootfs.ext4` (the system, Y2ROOT, for the ANDROID partition), `BOOTIMG.img` (the Y1 kernel with its init) and `RECOVERY.img` (the recovery that installs updates), with their checksums and the steps.
+- `manifest.json`, `manifest.sig`, `rootfs.ext4.gz`, `bootimg.img.gz`, `recovery.img.gz`: the signed over-the-air update (Ed25519 key `y1linux-release-20261122`, sequence SEQUENCE).
+- `Y1Linux-VERSION-sources-buildroot-legal-info.tar`, `Y2Linux-sources-third-party-….tar`, `Y2Linux-sources-toolchain-….tar`, `linux-….tar.xz`: the source code and licences of everything in the images (with this release's tag of Y1Linux and Y1Reborn).
 - `SHA256SUMS`: checksums of every file.
 
 Y1Linux is a beta for one player model; use it at your own risk and keep your eMMC backup.

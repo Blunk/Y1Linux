@@ -133,9 +133,10 @@ python mtk.py w BOOTIMG <repo>/out/y1-boot/BOOTIMG.img
 python mtk.py w RECOVERY <repo>/out/y1-boot/RECOVERY.img
 ```
 
-From a [release](https://github.com/Blunk/Y1Linux/releases): check the files with `sha256sum -c SHA256SUMS`,
-`gunzip rootfs.ext4.gz`, and write `rootfs.ext4`, `BOOTIMG.img` and `RECOVERY.img` the same way; build only
-Y2DATA (step 4) yourself.
+From a [release](https://github.com/Blunk/Y1Linux/releases): unzip `Y1Linux-<version>-first-install.zip`, check
+the files with `sha256sum -c SHA256SUMS` in its folder, and write `rootfs.ext4`, `BOOTIMG.img` and `RECOVERY.img`
+the same way; build only Y2DATA (step 4) yourself. (Releases up to 1.0.0 Beta 9.3.24 had `rootfs.ext4.gz` and
+`BOOTIMG.img` loose: `gunzip rootfs.ext4.gz` first.)
 
 `w` finds the partition by name and stops if it is absent. Never write PRELOADER, MBR, EBR1, UBOOT, NVRAM,
 PROTECT_F, PROTECT_S or SECCFG. To check a write, read the partition back (`python mtk.py r BOOTIMG readback.img`)

@@ -493,32 +493,54 @@ No image built for the player and nothing written to it. Closing audit:
 
 ### Making a Y1 release (the owner's step)
 
-`release.py build` makes the Y2's release (SP Flash Tool package, Y2 kernel) and `bump` writes a `Y2LINUX-` build
-ID, so a Y1 release is made by hand, as 9.3.24 was:
+Since 2026-11-22 `release.py` makes the Y1's release (`--device y1`, the default on this branch;
+`tools/production/y1_release.py`), with every asset a Y2 release has. The first release key
+(`y1linux-release-20261112`) is lost; `trust.json` holds only `y1linux-release-20261122` (private half in
+`~/.local/share/y1linux/signing/`, keep a copy elsewhere). Players built before then trust only the lost key, so
+each writes this release once with mtkclient (the release notes say how); the public 9.3.24 never had OTA.
 
-1. **Identity**: `tools/production/release.json`: `release_version`, `build_id` `Y1LINUX-…`, `rootfs_version` one
-   up, and `update_sequence` **at least 16100**: the owner's player accepted test sequences up to 16004 in R5, and a
-   lower or equal sequence is refused. Reborn's version as `release.py bump` sets it. Commit, tag
-   `y1linux-<version>` in Y2Linux and Y2Reborn.
-2. **Build** from that commit ([INSTALL](../INSTALL.md#build-the-images) steps 2 and 3): `out/y1-root-<version>`
-   (Y2ROOT with `y1-update-core`, `versions.json`), then `out/y1-boot-<version>` from it (`BOOTIMG.img`,
-   `RECOVERY.img`).
-3. **Sign**:
+1. **Identity**: the version follows the upstream release the `y1` branch is rebased on (the rule below). After a
+   rebase `tools/production/release.json` is upstream's with the build ID prefix `Y1LINUX-` instead of
+   `Y2LINUX-` (`release.py build --device y1` refuses a `Y2LINUX-` one); for a Y1-only release on the same base,
+   `release.py bump --device y1 --version <version> --sequence <sequence>`. Commit both repositories.
 
-   ```sh
-   python3 tools/update/package.py package --device y1 \
-       --image out/y1-root-<version>/buildroot/images/rootfs.ext4 \
-       --bootimg out/y1-boot-<version>/BOOTIMG.img --recovery out/y1-boot-<version>/RECOVERY.img \
-       --versions out/y1-root-<version>/versions.json --sequence <update_sequence> --rollback-allowed \
-       --key-id y1linux-release-20261112 --private ~/.local/share/y1linux/signing/y1linux-release-20261112.key \
-       --output out/y1-ota-<version>
-   ```
+#### Version names (decided 2026-11-22; no need to ask again)
 
-   `--rollback-allowed` lets Restore Previous System go back from this release, as the Y2's releases do.
-4. **Check on the player** before publishing (R5's way): copy the package to `/data/r6`, `y2-platform update stage
-   --package /data/r6`, Install Now, and see it acknowledged. That consumes the sequence on this player only.
-5. **Publish** to Blunk/Y1Linux as the **latest** release (the player reads
-   `releases/latest/download/manifest.json`): `manifest.json`, `manifest.sig`, `rootfs.ext4.gz`, `bootimg.img.gz`,
-   `recovery.img.gz` from step 3, `BOOTIMG.img` and `RECOVERY.img` from step 2 for mtkclient, `SHA256SUMS` over all
-   seven. The update's `rootfs.ext4.gz` is one gzip stream of the exact image, so it is the mtkclient download too.
+A Y1 release is named after the Y2 release it is built on: `y1` rebased on upstream main at **Y2Linux 1.0 Beta
+9.3.35** gives **Y1Linux 1.0 Beta 9.3.35**.
+
+| | Upstream Y2 release | Y1 release on it | Y1-only follow-up on the same base |
+|---|---|---|---|
+| Title | Y2Linux 1.0 Beta 9.3.35 | Y1Linux 1.0 Beta 9.3.35 | Y1Linux 1.0 Beta 9.3.35.1, .2, … |
+| `release_version` | `1.0.0-beta.9.3.35` | `1.0.0-beta.9.3.35` | `1.0.0-beta.9.3.35.1` |
+| `build_id` | `Y2LINUX-1.0.0-BETA-9.3.35` | `Y1LINUX-1.0.0-BETA-9.3.35` | `Y1LINUX-1.0.0-BETA-9.3.35.1` |
+| `update_sequence` | 17300 | 17300 (upstream's) | 17310, 17320, … (+10 each) |
+| Tag (both repositories) | `baseline-<n>` | `y1linux-1.0.0-beta.9.3.35` | `y1linux-1.0.0-beta.9.3.35.1` |
+
+- Everything else in `release.json` (`rootfs_version` and the schema versions) stays upstream's for a release on a
+  new base; `bump` moves `rootfs_version` one up for a follow-up.
+- Upstream moves its sequence by 100 per release, so up to nine follow-ups (+10 each) stay below the next
+  upstream release's sequence and a player always accepts the next rebase. A tenth would need the next rebase
+  first.
+- Every sequence must lie in the release key's range in `trust.json` (from 16000) and above every sequence a
+  player ran. The owner's player ran R5 test sequences up to 16004.
+2. **Build, check, sign**: `release.py build --device y1 --label <label>` (local only). Y2ROOT in `out/build`, the
+   Y1 BOOTIMG and RECOVERY in `out/release-<label>/boot`, the Y2 release's checks plus the Y1 tests, the privacy
+   scan of the root image and the recovery's files, and a firmware scan of the three images against the player's
+   radio firmware (a copy of `/data/firmware/mt6572` in `~/.local/share/y1linux/stock-firmware`). It refuses a
+   key whose public half is not the trusted one and a manifest that does not verify with the trust stores inside
+   the root image and the recovery. `--rollback-allowed` as on the Y2. Result: `out/release-<label>/assets`:
+   `manifest.json`, `manifest.sig`, `rootfs.ext4.gz`, `bootimg.img.gz`, `recovery.img.gz`,
+   `Y1Linux-<version>-first-install.zip` (`rootfs.ext4`, `BOOTIMG.img`, `RECOVERY.img`, `README.txt`,
+   `SHA256SUMS`), `Y1Linux-<version>-sources-buildroot-legal-info.tar`, the third-party and toolchain source
+   archives, `linux-<version>.tar.xz` and `SHA256SUMS`. The data image is not an asset: it carries the owner's
+   SSH key.
+3. **Check on the player** before publishing (R5's way): copy the five update files to `/data/r6`,
+   `y2-platform update stage --package /data/r6`, Install Now, and see it acknowledged. That consumes the
+   sequence on this player only.
+4. **Publish**: `release.py publish --label <label> --title "Y1Linux <version>" --notes <notes.md> --yes` tags
+   `y1linux-<version>` in both repositories, pushes the current branch, and creates the release on Blunk/Y1Linux
+   as the **latest** release, never a pre-release: the player reads `releases/latest/download/manifest.json`,
+   and GitHub's latest skips pre-releases. It checks that latest serves the new manifest. Source archives
+   already attached to an earlier Y1Linux release are linked instead of uploaded again.
    The text: the draft with VERSION and SEQUENCE filled in.
