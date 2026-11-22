@@ -98,8 +98,10 @@ exit 0
             else:
                 shell=[str(ROOT/'.cache/environment/lib/ld-musl-x86_64.so.1'),
                        str(ROOT/'.cache/environment/bin/busybox'),'sh']
+            # A hang guard, not a speed limit: the missing-partition case runs init's 800-step poll (sleep is a
+            # no-op here), each step an emulated process; ~7 s alone, past 30 s beside the release's kernel build.
             result=subprocess.run(shell+['-c',script],env=os.environ|{'LEDGER':str(ledger),'FAILURE':failure},
-                                  text=True,capture_output=True,timeout=30)
+                                  text=True,capture_output=True,timeout=120)
             self.assertEqual((p/'run/y2/modules/fixture/kernel/g_ncm.ko').read_bytes(), b'NCM fixture')
             events=ledger.read_text().replace(str(p),'')
             log=(p/'dev/kmsg').read_text() if (p/'dev/kmsg').exists() else ''
