@@ -4,7 +4,7 @@
 > below (the *N*th boot, its variant, tree, fragment and PID1 header) are the record of the test images that ran
 > on the player; their files are folded into that build.
 
-Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). **D7c** VPROC sleep voltage: button and timer wakes at 0.85 V PASS on the owner's Y1, drain A/B open ([§19](#19-d7c-vproc-sleep-voltage--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
+Status: **D0 done**, **D1 PASS** (2026-11-05, [run](#12-d1-run--2026-11-05)), **D2 running** ([run](#14-d2-run--2026-11-05): percentage, charging state and daemon-coordinated restart verified; the low-battery shutdown test deferred by the owner); **D3 on the owner's Y1, acceptance PASS** ([build](#15-baseline-tools-and-d3-build--2026-11-15)); **D4 PASS**, **D5 PASS** (hotplug and the screen-off policy) ([idle plan](#16-idle-states-d4d7--2026-11-15)). **D6d** deep idle on at boot (§17). **D7b** system sleep: SPM sleep, timer, button and cable wakes and the product path PASS on the owner's Y1, on at boot from build `y1-boot-d7b8` ([§18](#18-d7-system-sleep--2026-11-21)). **D7c** VPROC sleep voltage: button and timer wakes at 0.85 V PASS on the owner's Y1; a night asleep -2.1 %/h, A/B open ([§19](#19-d7c-vproc-sleep-voltage--2026-11-21)). The owner asked for milestone D after the audio PASS. Today the
 Y1 cannot switch itself off: no power-off handler is built (`# CONFIG_POWER_RESET` unset), so
 `busybox poweroff` halts with the PMIC still on and the pack draining; there is no battery percentage, no
 low-battery shutdown, and the CPU runs at LK's fixed rate (`CPU_FREQ` and `CPU_IDLE` off). Each stage below
@@ -1281,7 +1281,8 @@ clock matching the host.
 ## 19. D7c VPROC sleep voltage — 2026-11-21
 
 **Status: admitted by the owner (2026-11-21, "start d7c"). On the owner's Y1: `pm_test platform`, a button wake and a
-timer wake PASS (runs 1–3 below); the night's drain A/B is open.**
+timer wake PASS (runs 1–3 below); a 12.6 h night asleep fell -13.6 mV/h, -2.1 %/h (run 4); the `vproc_sleep` 0
+night for the A/B is open.**
 
 **What.** Stock lowers VPROC (the CPU cluster and SoC core) to 0.85 V while the suspend firmware has released
 SRCLKEN with 26 MHz, through the MT6323's own sleep mode, not through DVFS. D7b sleeps at 1.15 V.
@@ -1376,6 +1377,24 @@ without any voltage change. The same read showed `entries=3 normal=3`, last `wak
   the host's, radios back. The helper then restored and completed (`complete_result_0`, `wake_reason` unknown)
   instead of sleeping again, so the owner's later press found the player awake. That is the shared helper's
   maintenance handling, not D7c; on the Y1 it had only run with 600 s and 1800 s maintenance before. Open.
-- **Open:** a night asleep (D7c) against D7b's, then a `vproc_sleep` 0 night for the A/B; the helper's re-entry
-  after a maintenance wake.
+- **Run 4, the night (test 6, 2026-11-21/22): PASS, the first night in system sleep.**
+  - **Setup:** the `y1-power-log.sh` logger (`d7c-sleep-night-vproc1`, 60 s interval, 14 h cap), started over Wi-Fi.
+    Cable out, untouched, `vproc_sleep` 1, maintenance 1800 s. The product path put the player to sleep after the
+    dark-idle delay. The owner ended the run by plugging the cable in after 12.64 h.
+  - **Sleep:** 24 maintenance wakes logged, the player asleep about 95 % of the time (2 244 s awake of 45 487 s; CPU busy
+    6.4 % while awake).
+  - **Counters at the end (since boot):** SPM `entries=28 normal=28 aborts=0 restore_failures=0`;
+    `vproc_entries=29 vproc_restores=29 vproc_failures=0`, `vproc_actual` 0x48; `suspend_stats` 29 successes, 1 fail
+    (run 1's radio refusal). No kernel warning. The last wake was the cable (`wake=0x20` after 704 s).
+  - **Drain:** 3.952 V → 3.796 V; least squares on the raw voltage -13.6 mV/h (the daemon's filtered voltage
+    -14.0 mV/h; the settled second sample of each wake -14.0 mV/h). The daemon's percentage fell 82 → 57 (-2.1 %/h).
+    By thirds: -19.3, -11.2, -7.7 mV/h.
+  - **Against earlier nights:** D3's screen-off, radios-off run over almost the same voltage range (2026-11-16, 3.970 →
+    3.763 V) fell -30.3 mV/h, 85 → 48 % (-7.4 %/h). D6d's deep-idle blocks fell -24.8 mV/h, at 4.09–3.93 V.
+    Tonight's slope is less than half of D3's at equal charge, and the percentage falls about 3.5 times slower.
+  - **Reading:** system sleep with the stock sleep voltage roughly halves the voltage slope again against D6d. At
+    -2.1 %/h a full charge would last about two days asleep with 30 min maintenance wakes. The size is INFERRED, as in
+    §17: the cell's voltage is not a current. No D7b night (1.15 V asleep) exists, so this run does not split D7b's share
+    from D7c's. The `vproc_sleep` 0 night does that.
+- **Open:** the `vproc_sleep` 0 night for the A/B, from a similar charge; the helper's re-entry after a maintenance wake.
 
